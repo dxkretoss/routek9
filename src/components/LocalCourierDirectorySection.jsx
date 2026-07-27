@@ -98,7 +98,7 @@ export default function LocalCourierDirectorySection() {
   };
 
   return (
-    <section id="local-courier-section" className="py-16 sm:py-24 bg-[#FAF9F6] border-t border-slate-200/60">
+    <section id="local-courier-section" className="py-10 sm:py-14 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
         
         {/* Section Header */}
