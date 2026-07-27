@@ -106,12 +106,12 @@ export default function StateDirectoryGrid({ onSelectState }) {
   };
 
   return (
-    <section className="py-16 sm:py-20 bg-[#FAF9F6] border-t border-slate-200/60">
+    <section id="find-a-route-section" className="py-16 sm:py-20 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+
         {/* Header matching screenshot 1 */}
         <div className="mb-10 space-y-3">
-          
+
           {/* Badge Line */}
           <div className="flex items-center gap-2">
             <span className="w-6 h-0.5 bg-rose-600 rounded-full" />
@@ -134,7 +134,7 @@ export default function StateDirectoryGrid({ onSelectState }) {
 
         {/* Main Card Container matching screenshot 1, 2, 3 */}
         <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200/90 shadow-sm space-y-8">
-          
+
           {/* 1. OPPORTUNITY TYPE Selector */}
           <div className="space-y-2">
             <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
@@ -165,7 +165,7 @@ export default function StateDirectoryGrid({ onSelectState }) {
             <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
               TAP A STATE
             </label>
-            
+
             <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-13 gap-2">
               {ALL_STATES_ORDERED.map((st) => {
                 const isSelected = selectedStateItem?.code === st.code;
@@ -173,11 +173,10 @@ export default function StateDirectoryGrid({ onSelectState }) {
                   <button
                     key={st.code}
                     onClick={() => handleStateClick(st)}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-extrabold border transition-all duration-150 cursor-pointer text-center ${
-                      isSelected
-                        ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20'
-                        : 'bg-white text-slate-800 border-slate-200/90 hover:border-slate-400 hover:bg-slate-50'
-                    }`}
+                    className={`py-2.5 px-2 rounded-xl text-xs font-extrabold border transition-all duration-150 cursor-pointer text-center ${isSelected
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20'
+                      : 'bg-white text-slate-800 border-slate-200/90 hover:border-slate-400 hover:bg-slate-50'
+                      }`}
                   >
                     {st.code}
                   </button>
@@ -207,7 +206,7 @@ export default function StateDirectoryGrid({ onSelectState }) {
             </p>
           ) : (
             <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              
+
               {/* Card 1: Google Jobs */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between space-y-4">
                 <div className="space-y-2">

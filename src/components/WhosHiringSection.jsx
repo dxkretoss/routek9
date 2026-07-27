@@ -207,7 +207,7 @@ function CompanyLogoCard({ company }) {
     >
       {currentSrc ? (
         <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 p-2 shrink-0 flex items-center justify-center overflow-hidden">
-          <img 
+          <img
             src={currentSrc}
             alt={company.name}
             className="w-full h-full object-contain"
@@ -215,7 +215,7 @@ function CompanyLogoCard({ company }) {
           />
         </div>
       ) : (
-        <div 
+        <div
           className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-extrabold text-xs shrink-0 shadow-2xs"
           style={{ backgroundColor: company.color || '#6366f1' }}
         >
@@ -240,12 +240,12 @@ export default function WhosHiringSection() {
   const [showWarnings, setShowWarnings] = useState(false);
 
   return (
-    <section id="whos-hiring-section" className="py-16 sm:py-24 bg-[#FAF9F6] border-t border-slate-200/60">
+    <section id="whos-hiring-section" className="py-8 sm:py-16 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
-        
+
         {/* Sub-Section 1: Delivery Apps Logo Grid */}
         <div className="space-y-8">
-          
+
           {/* Header */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
@@ -275,7 +275,7 @@ export default function WhosHiringSection() {
 
         {/* Sub-Section 2: Regional & Specialty Courier Companies */}
         <div className="space-y-8 pt-4">
-          
+
           {/* Header */}
           <div className="space-y-2">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-tight">
@@ -314,7 +314,7 @@ export default function WhosHiringSection() {
 
           {showWarnings && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-              
+
               {/* Warning Box 1 */}
               <div className="p-6 sm:p-8 rounded-3xl border border-rose-200/90 bg-rose-50/20 space-y-4">
                 <h3 className="text-base font-bold text-[#0b132b] font-serif-heading">

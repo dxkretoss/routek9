@@ -63,7 +63,7 @@ function HomePage({ currentUser, onLogout }) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('All Vehicles');
-  
+
   // Modals
   const [activeRouteModal, setActiveRouteModal] = useState(null);
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
@@ -75,8 +75,8 @@ function HomePage({ currentUser, onLogout }) {
   const handleFilterCategory = (categoryType, stateObj) => {
     setActiveCategory(categoryType);
     setSelectedState(stateObj);
-    
-    let targetId = 'buy-a-route-section';
+
+    let targetId = 'find-a-route-section';
     if (categoryType === 'business-hiring') {
       targetId = 'local-courier-section';
     } else if (categoryType === 'gov-contracts') {
@@ -92,15 +92,15 @@ function HomePage({ currentUser, onLogout }) {
   const handleSearchSubmit = () => {
     if (searchQuery) {
       const matchingState = Object.values(US_STATES).find(
-        (st) => 
-          st.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        (st) =>
+          st.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           st.code.toLowerCase() === searchQuery.toLowerCase()
       );
       if (matchingState) {
         setSelectedState(matchingState);
       }
     }
-    
+
     const routesElement = document.getElementById('map-section');
     if (routesElement) {
       routesElement.scrollIntoView({ behavior: 'smooth' });
@@ -116,13 +116,13 @@ function HomePage({ currentUser, onLogout }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-rose-600 selection:text-white">
-      
+
       {/* Clean Navbar Header */}
       <Navbar currentUser={currentUser} onLogout={onLogout} />
 
       {/* Main App Body */}
       <main className="flex-1">
-        
+
         {/* 1. Hero Section */}
         <Hero
           searchQuery={searchQuery}
@@ -236,17 +236,17 @@ export default function App() {
     <>
       <ScrollToTop />
       <Routes>
-      <Route path="/" element={<HomePage currentUser={currentUser} onLogout={handleLogout} />} />
-      <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
-      <Route path="/signup" element={<SignupPage onSignup={handleLogin} />} />
-      <Route path="/training" element={<TrainingListPage currentUser={currentUser} onLogout={handleLogout} />} />
-      <Route path="/training/:courseId" element={<CourseDetailPage currentUser={currentUser} onLogout={handleLogout} />} />
-      <Route path="/checkout/:courseId" element={<CheckoutPage currentUser={currentUser} onLogout={handleLogout} onCompletePurchase={handleCompletePurchase} />} />
-      <Route path="/dashboard" element={<DashboardPage currentUser={currentUser} onLogout={handleLogout} purchasedCourses={purchasedCourses} onUpdateProfile={handleUpdateProfile} />} />
-      <Route path="/profile" element={<ProfilePage currentUser={currentUser} onLogout={handleLogout} onUpdateProfile={handleUpdateProfile} />} />
-      <Route path="/notifications" element={<NotificationsPage currentUser={currentUser} onLogout={handleLogout} />} />
-      <Route path="/drivers" element={<DriversPage currentUser={currentUser} onLogout={handleLogout} />} />
-    </Routes>
+        <Route path="/" element={<HomePage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
+        <Route path="/signup" element={<SignupPage onSignup={handleLogin} />} />
+        <Route path="/training" element={<TrainingListPage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/training/:courseId" element={<CourseDetailPage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/checkout/:courseId" element={<CheckoutPage currentUser={currentUser} onLogout={handleLogout} onCompletePurchase={handleCompletePurchase} />} />
+        <Route path="/dashboard" element={<DashboardPage currentUser={currentUser} onLogout={handleLogout} purchasedCourses={purchasedCourses} onUpdateProfile={handleUpdateProfile} />} />
+        <Route path="/profile" element={<ProfilePage currentUser={currentUser} onLogout={handleLogout} onUpdateProfile={handleUpdateProfile} />} />
+        <Route path="/notifications" element={<NotificationsPage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/drivers" element={<DriversPage currentUser={currentUser} onLogout={handleLogout} />} />
+      </Routes>
     </>
   );
 }

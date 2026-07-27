@@ -30,12 +30,12 @@ const VEHICLE_QUALIFICATIONS = [
 
 export default function VehicleQualificationsSection() {
   return (
-    <section id="vehicle-qualifications-section" className="py-16 sm:py-24 bg-[#FAF9F6] border-t border-slate-200/60">
+    <section id="vehicle-qualifications-section" className="py-8 sm:py-16 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-        
+
         {/* Header matching user screenshot */}
         <div className="space-y-3">
-          
+
           {/* Badge Line */}
           <div className="flex items-center gap-2">
             <span className="w-6 h-0.5 bg-rose-600 rounded-full" />

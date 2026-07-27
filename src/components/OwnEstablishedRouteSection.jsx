@@ -148,12 +148,12 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
   };
 
   return (
-    <section id="buy-a-route-section" className="py-16 sm:py-24 bg-[#FAF9F6] border-t border-slate-200/60">
+    <section id="buy-a-route-section" className="py-8 sm:py-16 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-        
+
         {/* Section Header matching screenshot */}
         <div className="space-y-3">
-          
+
           {/* Badge Line */}
           <div className="flex items-center gap-2">
             <span className="w-6 h-0.5 bg-rose-600 rounded-full" />
@@ -176,12 +176,12 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
 
         {/* 1. TAP A STATE Card Container matching screenshot 1 & 2 */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
-          
+
           <div className="space-y-3">
             <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
               TAP A STATE
             </label>
-            
+
             <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-13 gap-2">
               {ALL_STATES_ORDERED.map((st) => {
                 const isSelected = selectedState?.code === st.code;
@@ -189,11 +189,10 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
                   <button
                     key={st.code}
                     onClick={() => handleStateClick(st)}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-extrabold border transition-all duration-150 cursor-pointer text-center ${
-                      isSelected
+                    className={`py-2.5 px-2 rounded-xl text-xs font-extrabold border transition-all duration-150 cursor-pointer text-center ${isSelected
                         ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20 scale-105'
                         : 'bg-white text-slate-800 border-slate-200/90 hover:border-slate-400 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     {st.code}
                   </button>
@@ -256,7 +255,7 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
 
         {/* 3. Due Diligence Checklist Card matching screenshot */}
         <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
-          
+
           {/* Title & Counter */}
           <div className="space-y-1">
             <h3 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
@@ -284,16 +283,15 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
                 <label
                   key={idx}
                   onClick={() => toggleCheck(idx)}
-                  className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
-                    isChecked
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${isChecked
                       ? 'bg-emerald-50/60 border-emerald-300 text-slate-900'
                       : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
-                  }`}
+                    }`}
                 >
                   <input
                     type="checkbox"
                     checked={isChecked}
-                    onChange={() => {}}
+                    onChange={() => { }}
                     className="mt-0.5 w-4 h-4 accent-rose-600 rounded cursor-pointer shrink-0"
                   />
                   <span className="text-xs sm:text-sm font-medium leading-relaxed select-none">

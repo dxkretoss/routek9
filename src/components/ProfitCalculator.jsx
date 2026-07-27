@@ -68,10 +68,10 @@ export default function ProfitCalculator() {
     const fuelCostWeekly = gallonsUsed * Number(fuelPrice);
 
     // 3. Operating Expenses
-    const operatingExpensesWeekly = 
-      Number(insuranceWeekly) + 
-      Number(maintenanceWeekly) + 
-      Number(phoneWeekly) + 
+    const operatingExpensesWeekly =
+      Number(insuranceWeekly) +
+      Number(maintenanceWeekly) +
+      Number(phoneWeekly) +
       Number(otherWeekly);
 
     const subtotalBeforeTax = grossWeeklyPay - fuelCostWeekly - operatingExpensesWeekly;
@@ -139,12 +139,12 @@ export default function ProfitCalculator() {
   }, [calcPayTotal, calcMilesTotal]);
 
   return (
-    <section id="calculator-section" className="py-16 sm:py-24 bg-[#FAF9F6] border-t border-slate-200/60">
+    <section id="calculator-section" className="py-8 sm:py-16 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-        
+
         {/* Header matching screenshot */}
         <div className="space-y-3">
-          
+
           {/* Badge Line */}
           <div className="flex items-center gap-2">
             <span className="w-6 h-0.5 bg-rose-600 rounded-full" />
@@ -167,19 +167,19 @@ export default function ProfitCalculator() {
 
         {/* 2-Column Calculator Grid matching screenshot */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
+
           {/* Left Column: Inputs Form */}
           <div className="lg:col-span-7 space-y-6">
-            
+
             {/* White Form Card */}
             <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
-              
+
               {/* 1. HOW IS THIS ROUTE PAID? */}
               <div className="space-y-3">
                 <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
                   HOW IS THIS ROUTE PAID?
                 </label>
-                
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {PAYMENT_MODES.map((mode) => {
                     const isSelected = payMode === mode.id;
@@ -188,11 +188,10 @@ export default function ProfitCalculator() {
                         key={mode.id}
                         type="button"
                         onClick={() => setPayMode(mode.id)}
-                        className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
-                          isSelected
+                        className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${isSelected
                             ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
                             : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
+                          }`}
                       >
                         {mode.label}
                       </button>
@@ -459,7 +458,7 @@ export default function ProfitCalculator() {
 
           {/* Right Column: Output Cards & Verdict */}
           <div className="lg:col-span-5 space-y-6">
-            
+
             {/* 1. Top Verdict Banner (Green Box in screenshot) */}
             <div className={`p-6 rounded-3xl border ${metrics.verdictColorClass} shadow-xs space-y-3`}>
               <div className="text-xs font-extrabold uppercase tracking-widest">
