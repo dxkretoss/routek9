@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Playfair Display', ui-serif, Georgia, serif;
+}
+
+/* Default Body & General UI text uses Google Inter */
+html,
+body,
+p,
+a,
+span,
+div,
+button,
+input,
+select,
+textarea,
+label,
+.font-sans {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Section Titles, Main Headlines & Highlighted Titles use Playfair Display */
+h1,
+h2,
+h3,
+.font-serif-heading {
+  font-family: 'Playfair Display', ui-serif, Georgia, serif !important;
+}
+
+body {
+  background-color: #faf9f6;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Authentic Realistic US Map SVG state path styling matching 1st screenshot */
+.state-path {
+  transition: fill 220ms ease, stroke 220ms ease, filter 220ms ease;
+  cursor: pointer;
+  stroke: #5c6b80;
+  stroke-width: 0.75px;
+  fill: #efece6;
+  outline: none;
+}
+
+.state-path:hover {
+  fill: #fecdd3;
+  stroke: #e11d48;
+  stroke-width: 1.5px;
+  filter: url(#state-glow);
+}
+
+.state-path.selected {
+  fill: #ef4444 !important;
+  stroke: #b91c1c !important;
+  stroke-width: 1.5px !important;
+  filter: url(#state-glow) !important;
+}
+
+/* Glassmorphism Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.05);
+}

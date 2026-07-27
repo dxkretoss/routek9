@@ -1,0 +1,627 @@
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
+import { COURSES_DATA } from '../data/coursesData';
+import { 
+  Award, 
+  BookOpen, 
+  Download, 
+  ShieldCheck, 
+  Truck, 
+  CheckCircle2, 
+  ArrowRight,
+  Inbox,
+  Lock,
+  User,
+  Settings,
+  Bell,
+  Mail,
+  Save,
+  KeyRound,
+  FileText,
+  Clock,
+  Sparkles
+} from 'lucide-react';
+
+const MOCK_INBOX_MESSAGES = [
+  {
+    id: 1,
+    sender: "RouteK9 Contract Dispatch",
+    title: "New VA Medical Specimen Contract in Baltimore, MD",
+    snippet: "Solicitation #36C24524Q0189 match for your Cargo Van profile.",
+    time: "2 hours ago",
+    unread: true,
+    category: "Contract Alert"
+  },
+  {
+    id: 2,
+    sender: "Master Contractor Masterclass",
+    title: "Course Certificate Issued & Ready for Download",
+    snippet: "Congratulations! Your official RouteK9 completion certificate has been verified.",
+    time: "Yesterday",
+    unread: false,
+    category: "Training"
+  },
+  {
+    id: 3,
+    sender: "SAM.gov Federal Feed",
+    title: "NAICS 492110 Weekly Opportunity Digest",
+    snippet: "5 new federal courier bids posted in Texas and Nevada region.",
+    time: "3 days ago",
+    unread: false,
+    category: "Gov Digest"
+  }
+];
+
+export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], onUpdateProfile }) {
+  const [activeTab, setActiveTab] = useState('courses'); // 'courses', 'inbox', 'settings', 'profile'
+
+  // Settings State
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [emailAlerts, setEmailAlerts] = useState(true);
+  const [smsAlerts, setSmsAlerts] = useState(true);
+
+  // Profile State
+  const [fullName, setFullName] = useState(currentUser?.name || 'Jane A. Driver');
+  const [email, setEmail] = useState(currentUser?.email || 'driver@routek9.com');
+  const [vehicleClass, setVehicleClass] = useState(currentUser?.vehicle || 'Cargo Van');
+  const [stateCode, setStateCode] = useState(currentUser?.stateCode || 'TX');
+  const [cityName, setCityName] = useState(currentUser?.city || 'Houston');
+  const [dotNumber, setDotNumber] = useState('3849120');
+  const [insurancePolicy, setInsurancePolicy] = useState('Commercial Auto ($1,000,000 Liability)');
+  const [profileSuccess, setProfileSuccess] = useState(false);
+  const [passwordError, setPasswordError] = useState(null);
+  const [downloadToast, setDownloadToast] = useState(null);
+
+  const enrolledCourses = COURSES_DATA.filter((c) => purchasedCourses.includes(c.id));
+
+  const handleDownloadCertificate = (courseTitle) => {
+    setDownloadToast(`📜 Downloading RouteK9 Completion Certificate for "${courseTitle}"`);
+    setTimeout(() => setDownloadToast(null), 4000);
+  };
+
+  const handlePasswordChangeSubmit = (e) => {
+    e.preventDefault();
+    setPasswordError(null);
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match!");
+      return;
+    }
+    setPasswordSuccess(true);
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setTimeout(() => setPasswordSuccess(false), 3000);
+  };
+
+  const handleProfileSubmit = (e) => {
+    e.preventDefault();
+    if (onUpdateProfile) {
+      onUpdateProfile({
+        name: fullName,
+        email,
+        vehicle: vehicleClass,
+        stateCode,
+        city: cityName
+      });
+    }
+    setProfileSuccess(true);
+    setTimeout(() => setProfileSuccess(false), 3000);
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
+      
+      {/* Navbar Header */}
+      <Navbar currentUser={currentUser} onLogout={onLogout} />
+
+      {/* Hero Welcome Header */}
+      <section className="bg-[#0b132b] text-white py-12 sm:py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+          
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold uppercase tracking-wider">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Driver Member Dashboard</span>
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight font-serif-heading">
+            Welcome back, <span className="text-rose-500">{fullName}</span>
+          </h1>
+
+          <p className="text-slate-300 text-xs sm:text-sm font-normal max-w-2xl">
+            Access your purchased training courses, inbox notifications, security settings, and driver authority profile.
+          </p>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
+            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
+              <div className="text-2xl font-extrabold text-white">{enrolledCourses.length}</div>
+              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Purchased Courses</div>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
+              <div className="text-2xl font-extrabold text-emerald-400">{MOCK_INBOX_MESSAGES.length}</div>
+              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Inbox Messages</div>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
+              <div className="text-2xl font-extrabold text-rose-400">12,400+</div>
+              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Active Routes Access</div>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
+              <div className="text-2xl font-extrabold text-amber-400">Verified</div>
+              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Member Status</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* Navigation Tabs Bar */}
+      <div className="sticky top-20 z-30 bg-white border-b border-slate-200 shadow-2xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-2 overflow-x-auto py-2">
+          
+          <button
+            onClick={() => setActiveTab('courses')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+              activeTab === 'courses'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>Purchased Courses ({enrolledCourses.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('inbox')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+              activeTab === 'inbox'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <Inbox className="w-4 h-4" />
+            <span>Inbox ({MOCK_INBOX_MESSAGES.length})</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+              activeTab === 'settings'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <Lock className="w-4 h-4" />
+            <span>Change Password & Settings</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+              activeTab === 'profile'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span>Driver Profile</span>
+          </button>
+
+        </div>
+      </div>
+
+      {/* Main Tab Content */}
+      <main className="flex-1 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          {/* TAB 1: Purchased Courses */}
+          {activeTab === 'courses' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+                    Purchased Courses & Certificates
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    Self-paced training with downloadable RouteK9 completion certificates.
+                  </p>
+                </div>
+
+                <Link
+                  to="/training"
+                  className="text-xs font-bold text-rose-600 hover:underline flex items-center gap-1"
+                >
+                  <span>Browse All Courses</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              {enrolledCourses.length === 0 ? (
+                <div className="bg-white p-8 sm:p-12 rounded-3xl border border-slate-200 text-center space-y-4">
+                  <BookOpen className="w-12 h-12 text-slate-300 mx-auto" />
+                  <h3 className="text-lg font-bold text-[#0b132b]">No purchased courses yet</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Explore our self-paced courier training courses to scale your delivery business, earn certifications, and win prime contracts.
+                  </p>
+                  <Link
+                    to="/training"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition-all"
+                  >
+                    <span>Explore Training Library ($49)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {enrolledCourses.map((course) => (
+                    <div
+                      key={course.id}
+                      className="bg-white p-7 rounded-3xl border border-slate-200 shadow-sm space-y-6 flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold border border-emerald-200">
+                            Active Enrollment • 100% Progress
+                          </span>
+                          <Award className="w-6 h-6 text-amber-500" />
+                        </div>
+
+                        <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">
+                          {course.title}
+                        </h3>
+
+                        <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                          {course.subtitle}
+                        </p>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                        <button
+                          onClick={() => handleDownloadCertificate(course.title)}
+                          className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-2 cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Download Certificate</span>
+                        </button>
+
+                        <Link
+                          to={`/training/${course.id}`}
+                          className="text-xs font-extrabold text-slate-700 hover:text-rose-600 transition-colors"
+                        >
+                          Review Lessons →
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: Inbox & Notifications */}
+          {activeTab === 'inbox' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+                    Inbox & Platform Alerts
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    Contract notifications, SAM.gov opportunity matches, and dispatcher updates.
+                  </p>
+                </div>
+
+                <Link
+                  to="/notifications"
+                  className="text-xs font-bold text-rose-600 hover:underline flex items-center gap-1"
+                >
+                  <span>View All Notifications</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm divide-y divide-slate-100 overflow-hidden">
+                {MOCK_INBOX_MESSAGES.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                      msg.unread ? 'bg-rose-50/20' : 'hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-extrabold text-[10px]">
+                          {msg.category}
+                        </span>
+                        {msg.unread && (
+                          <span className="w-2 h-2 rounded-full bg-rose-600" />
+                        )}
+                        <span className="text-xs font-bold text-slate-900">{msg.sender}</span>
+                      </div>
+                      <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
+                        {msg.title}
+                      </h4>
+                      <p className="text-xs text-slate-500 font-medium">
+                        {msg.snippet}
+                      </p>
+                    </div>
+
+                    <div className="text-xs text-slate-400 font-semibold shrink-0">
+                      {msg.time}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: Change Password & Security Settings */}
+          {activeTab === 'settings' && (
+            <div className="max-w-2xl mx-auto space-y-6">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+                  Security & Password Settings
+                </h2>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  Change your password and manage notification preferences.
+                </p>
+              </div>
+
+              <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/90 shadow-lg space-y-6">
+                
+                {passwordSuccess && (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-bold flex items-center gap-2 animate-fadeIn">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Password updated successfully!</span>
+                  </div>
+                )}
+
+                {passwordError && (
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-bold flex items-center gap-2 animate-fadeIn">
+                    <span className="w-2 h-2 rounded-full bg-rose-600" />
+                    <span>{passwordError}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Current Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      New Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Enter new password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    <span>Update Password</span>
+                  </button>
+                </form>
+
+                {/* Notifications Toggles */}
+                <div className="pt-6 border-t border-slate-100 space-y-4">
+                  <h4 className="text-sm font-bold text-[#0b132b]">Notification Preferences</h4>
+                  
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-xs text-slate-700 font-semibold">Email Contract Match Digest</span>
+                    <input
+                      type="checkbox"
+                      checked={emailAlerts}
+                      onChange={(e) => setEmailAlerts(e.target.checked)}
+                      className="w-4 h-4 accent-rose-600 rounded"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-xs text-slate-700 font-semibold">SMS Instant Dispatch Alerts</span>
+                    <input
+                      type="checkbox"
+                      checked={smsAlerts}
+                      onChange={(e) => setSmsAlerts(e.target.checked)}
+                      className="w-4 h-4 accent-rose-600 rounded"
+                    />
+                  </label>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Driver & Fleet Profile */}
+          {activeTab === 'profile' && (
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+                  Driver & Authority Profile
+                </h2>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  Manage your personal credentials, operating authority details, and vehicle classification.
+                </p>
+              </div>
+
+              <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/90 shadow-lg space-y-8">
+                
+                {profileSuccess && (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-bold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Driver profile updated successfully!</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleProfileSubmit} className="space-y-6">
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Full Name (Certificate & Bids)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Primary Vehicle Class
+                      </label>
+                      <select
+                        value={vehicleClass}
+                        onChange={(e) => setVehicleClass(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      >
+                        <option value="Sedan / Hatchback">Sedan / Hatchback</option>
+                        <option value="Minivan / SUV">Minivan / SUV</option>
+                        <option value="Cargo Van">Cargo Van</option>
+                        <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
+                        <option value="16ft Box Truck">16ft Box Truck</option>
+                        <option value="26ft Box Truck">26ft Box Truck</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        USDOT / MC Number (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={dotNumber}
+                        onChange={(e) => setDotNumber(e.target.value)}
+                        placeholder="e.g. 3849120"
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Home State
+                      </label>
+                      <input
+                        type="text"
+                        value={stateCode}
+                        onChange={(e) => setStateCode(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Operating Metro / City
+                      </label>
+                      <input
+                        type="text"
+                        value={cityName}
+                        onChange={(e) => setCityName(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Insurance & Compliance Policy
+                    </label>
+                    <input
+                      type="text"
+                      value={insurancePolicy}
+                      onChange={(e) => setInsurancePolicy(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-8 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Save Driver Profile</span>
+                  </button>
+
+                </form>
+
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
+
+      {/* Footer */}
+      <Footer />
+
+      {/* Download Toast Notification */}
+      {downloadToast && (
+        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-[#0b132b] text-white shadow-2xl border border-slate-700 flex items-center gap-3 text-xs font-bold animate-slideUp">
+          <Download className="w-5 h-5 text-rose-500 shrink-0" />
+          <span>{downloadToast}</span>
+        </div>
+      )}
+
+    </div>
+  );
+}

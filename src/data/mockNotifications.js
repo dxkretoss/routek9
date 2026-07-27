@@ -1,0 +1,93 @@
+export const INITIAL_NOTIFICATIONS = [
+  {
+    id: 'notif-1',
+    title: 'High-Paying Medical Route Available',
+    message: 'A new dedicated VA Hospital medical specimen route in Houston, TX ($2,450/wk for Cargo Van) matched your driver profile.',
+    category: 'Route Match',
+    time: '10 mins ago',
+    date: '2026-07-27',
+    unread: true,
+    important: true,
+    actionUrl: '/#map-section',
+    actionText: 'View Route Details',
+    badgeColor: 'rose'
+  },
+  {
+    id: 'notif-2',
+    title: 'SAM.gov Federal Contract Opportunity',
+    message: 'Solicitation #36C24524Q0189 (VA Medical Center Courier Transport) in Texas & Oklahoma is open for contractor bids.',
+    category: 'SAM Bids',
+    time: '1 hour ago',
+    date: '2026-07-27',
+    unread: true,
+    important: true,
+    actionUrl: '/#government-contracts-section',
+    actionText: 'Inspect Federal Bid',
+    badgeColor: 'sky'
+  },
+  {
+    id: 'notif-3',
+    title: 'Weekly Settlement Payout Complete',
+    message: 'Your weekly settlement payout of $1,850.00 from Apex Regional Courier Logistics has been direct deposited.',
+    category: 'Earnings',
+    time: '3 hours ago',
+    date: '2026-07-27',
+    unread: true,
+    important: false,
+    actionUrl: '/dashboard',
+    actionText: 'View Earnings Breakdown',
+    badgeColor: 'emerald'
+  },
+  {
+    id: 'notif-4',
+    title: 'Emergency Hot-Shot Courier Request',
+    message: 'URGENT: Austin to Dallas Hot-Shot Parts Delivery requested. Rate: $4.20/mile ($840 total payout for Box Truck or Sprinter).',
+    category: 'Dispatch Alert',
+    time: '5 hours ago',
+    date: '2026-07-27',
+    unread: false,
+    important: true,
+    actionUrl: '/#map-section',
+    actionText: 'Accept Dispatch Order',
+    badgeColor: 'amber'
+  },
+  {
+    id: 'notif-5',
+    title: 'Master Courier Certification Ready',
+    message: 'Congratulations! Your RouteK9 Master Contractor Masterclass certificate (2026 TSA Security Threat Assessment module) is ready for download.',
+    category: 'Certification',
+    time: '1 day ago',
+    date: '2026-07-26',
+    unread: false,
+    important: false,
+    actionUrl: '/dashboard',
+    actionText: 'Download Certificate',
+    badgeColor: 'indigo'
+  },
+  {
+    id: 'notif-6',
+    title: 'Direct Driver Inquiry Received',
+    message: 'Express Courier Solutions sent you a contractor availability request for 5-day scheduled auto parts routes.',
+    category: 'Route Match',
+    time: '2 days ago',
+    date: '2026-07-25',
+    unread: false,
+    important: false,
+    actionUrl: '/#local-courier-section',
+    actionText: 'Review Carrier Offer',
+    badgeColor: 'purple'
+  },
+  {
+    id: 'notif-7',
+    title: 'Insurance Policy Expiration Warning',
+    message: 'Your Commercial Auto Liability Policy (#CA-88921) is set to renew in 14 days. Please update your certificate of insurance.',
+    category: 'System',
+    time: '3 days ago',
+    date: '2026-07-24',
+    unread: false,
+    important: false,
+    actionUrl: '/profile',
+    actionText: 'Update Compliance Profile',
+    badgeColor: 'slate'
+  }
+];
