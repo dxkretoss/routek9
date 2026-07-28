@@ -3,7 +3,6 @@ import { Routes, Route, useNavigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import MapSection from './components/MapSection';
-import StateDirectoryGrid from './components/StateDirectoryGrid';
 import GovernmentContractsSection from './components/GovernmentContractsSection';
 import OwnEstablishedRouteSection from './components/OwnEstablishedRouteSection';
 import LocalCourierDirectorySection from './components/LocalCourierDirectorySection';
@@ -63,6 +62,7 @@ const deleteCookie = (name) => {
 
 function HomePage({ currentUser, onLogout }) {
   const [selectedState, setSelectedState] = useState(null);
+  const [selectedBuyState, setSelectedBuyState] = useState(null);
   const [routes, setRoutes] = useState(initialRoutes);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,6 +96,7 @@ function HomePage({ currentUser, onLogout }) {
       targetId = 'government-contracts-section';
     } else if (categoryType === 'for-sale') {
       targetId = 'buy-a-route-section';
+      setSelectedBuyState(resolvedState);
     }
 
     const targetElement = document.getElementById(targetId);
@@ -157,23 +158,18 @@ function HomePage({ currentUser, onLogout }) {
           onFilterCategory={handleFilterCategory}
         />
 
-        {/* 4. 50 States Directory & Search Generator */}
-        <StateDirectoryGrid
-          selectedState={selectedState}
-          onSelectState={handleSelectState}
-        />
 
         {/* 5. Federal Courier Contracts — NAICS 492110 */}
         <GovernmentContractsSection />
 
         {/* 6. Buy A Route — Own an established route — all 50 states */}
         <OwnEstablishedRouteSection
-          selectedState={selectedState}
-          onSelectState={handleSelectState}
+          selectedState={selectedBuyState}
+          onSelectState={setSelectedBuyState}
         />
 
         {/* 7. Local Courier Directory Section */}
-        <LocalCourierDirectorySection />
+        <LocalCourierDirectorySection selectedState={selectedState} />
 
         {/* 8. Contract Readiness & Vehicle Qualifications — merged */}
         <ContractReadinessSection />

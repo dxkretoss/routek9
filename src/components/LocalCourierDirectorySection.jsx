@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapPin, Search, ExternalLink, Building2 } from 'lucide-react';
 import { US_STATES } from '../data/statesData';
 
@@ -19,62 +19,73 @@ const BUSINESS_TYPES = [
 
 const STATE_OPTIONS = [
   { code: 'AL', name: 'Alabama', largestCity: 'Birmingham', cities: ["Birmingham", "Montgomery", "Huntsville", "Mobile", "Tuscaloosa"] },
-  { code: 'AK', name: 'Alaska', largestCity: 'Anchorage', cities: ["Anchorage", "Fairbanks", "Juneau", "Sitka", "Ketchikan"] },
-  { code: 'AZ', name: 'Arizona', largestCity: 'Phoenix', cities: ["Phoenix", "Tucson", "Mesa", "Chandler", "Scottsdale", "Glendale"] },
+  { code: 'AK', name: 'Alaska', largestCity: 'Anchorage', cities: ["Anchorage", "Fairbanks", "Juneau"] },
+  { code: 'AZ', name: 'Arizona', largestCity: 'Phoenix', cities: ["Phoenix", "Tucson", "Mesa", "Chandler", "Glendale"] },
   { code: 'AR', name: 'Arkansas', largestCity: 'Little Rock', cities: ["Little Rock", "Fort Smith", "Fayetteville", "Springdale", "Jonesboro"] },
-  { code: 'CA', name: 'California', largestCity: 'Los Angeles', cities: ["Los Angeles", "San Francisco", "San Diego", "San Jose", "Sacramento", "Fresno", "Oakland", "Long Beach"] },
+  { code: 'CA', name: 'California', largestCity: 'Los Angeles', cities: ["Los Angeles", "San Diego", "San Jose", "San Francisco", "Fresno"] },
   { code: 'CO', name: 'Colorado', largestCity: 'Denver', cities: ["Denver", "Colorado Springs", "Aurora", "Fort Collins", "Lakewood"] },
-  { code: 'CT', name: 'Connecticut', largestCity: 'Bridgeport', cities: ["Bridgeport", "Stamford", "New Haven", "Hartford", "Waterbury"] },
-  { code: 'DE', name: 'Delaware', largestCity: 'Wilmington', cities: ["Wilmington", "Dover", "Newark", "Middletown"] },
-  { code: 'FL', name: 'Florida', largestCity: 'Miami', cities: ["Miami", "Orlando", "Tampa", "Jacksonville", "Fort Lauderdale", "St. Petersburg"] },
+  { code: 'CT', name: 'Connecticut', largestCity: 'Bridgeport', cities: ["Bridgeport", "New Haven", "Stamford", "Hartford", "Waterbury"] },
+  { code: 'DE', name: 'Delaware', largestCity: 'Wilmington', cities: ["Wilmington", "Dover", "Newark"] },
+  { code: 'FL', name: 'Florida', largestCity: 'Miami', cities: ["Miami", "Tampa", "Orlando", "Jacksonville", "St. Petersburg"] },
   { code: 'GA', name: 'Georgia', largestCity: 'Atlanta', cities: ["Atlanta", "Augusta", "Columbus", "Savannah", "Athens"] },
-  { code: 'HI', name: 'Hawaii', largestCity: 'Honolulu', cities: ["Honolulu", "Pearl City", "Hilo", "Kailua", "Waipahu"] },
-  { code: 'ID', name: 'Idaho', largestCity: 'Boise', cities: ["Boise", "Meridian", "Nampa", "Idaho Falls", "Pocatello"] },
-  { code: 'IL', name: 'Illinois', largestCity: 'Chicago', cities: ["Chicago", "Aurora", "Naperville", "Joliet", "Rockford", "Springfield"] },
-  { code: 'IN', name: 'Indiana', largestCity: 'Indianapolis', cities: ["Indianapolis", "Fort Wayne", "Evansville", "South Bend", "Carmel"] },
+  { code: 'HI', name: 'Hawaii', largestCity: 'Honolulu', cities: ["Honolulu", "Hilo", "Kailua"] },
+  { code: 'ID', name: 'Idaho', largestCity: 'Boise', cities: ["Boise", "Meridian", "Nampa", "Idaho Falls"] },
+  { code: 'IL', name: 'Illinois', largestCity: 'Chicago', cities: ["Chicago", "Aurora", "Naperville", "Joliet", "Rockford"] },
+  { code: 'IN', name: 'Indiana', largestCity: 'Indianapolis', cities: ["Indianapolis", "Fort Wayne", "Bloomington", "Evansville", "South Bend"] },
   { code: 'IA', name: 'Iowa', largestCity: 'Des Moines', cities: ["Des Moines", "Cedar Rapids", "Davenport", "Sioux City", "Iowa City"] },
-  { code: 'KS', name: 'Kansas', largestCity: 'Wichita', cities: ["Wichita", "Overland Park", "Kansas City", "Olathe", "Topeka"] },
-  { code: 'KY', name: 'Kentucky', largestCity: 'Louisville', cities: ["Louisville", "Lexington", "Bowling Green", "Owensboro", "Covington"] },
-  { code: 'LA', name: 'Louisiana', largestCity: 'New Orleans', cities: ["New Orleans", "Baton Rouge", "Shreveport", "Lafayette", "Lake Charles"] },
-  { code: 'ME', name: 'Maine', largestCity: 'Portland', cities: ["Portland", "Lewiston", "Bangor", "South Portland", "Auburn"] },
-  { code: 'MD', name: 'Maryland', largestCity: 'Baltimore', cities: ["Baltimore", "Columbia", "Germantown", "Silver Spring", "Annapolis"] },
+  { code: 'KS', name: 'Kansas', largestCity: 'Wichita', cities: ["Wichita", "Overland Park", "Kansas City", "Topeka", "Olathe"] },
+  { code: 'KY', name: 'Kentucky', largestCity: 'Louisville', cities: ["Louisville", "Lexington", "Bowling Green", "Owensboro"] },
+  { code: 'LA', name: 'Louisiana', largestCity: 'New Orleans', cities: ["New Orleans", "Baton Rouge", "Shreveport", "Metairie", "Lafayette"] },
+  { code: 'ME', name: 'Maine', largestCity: 'Portland', cities: ["Portland", "Lewiston", "Bangor"] },
+  { code: 'MD', name: 'Maryland', largestCity: 'Baltimore', cities: ["Baltimore", "Columbia", "Germantown", "Silver Spring"] },
   { code: 'MA', name: 'Massachusetts', largestCity: 'Boston', cities: ["Boston", "Worcester", "Springfield", "Cambridge", "Lowell"] },
-  { code: 'MI', name: 'Michigan', largestCity: 'Detroit', cities: ["Detroit", "Grand Rapids", "Warren", "Sterling Heights", "Lansing", "Ann Arbor"] },
+  { code: 'MI', name: 'Michigan', largestCity: 'Detroit', cities: ["Detroit", "Grand Rapids", "Warren", "Sterling Heights", "Ann Arbor"] },
   { code: 'MN', name: 'Minnesota', largestCity: 'Minneapolis', cities: ["Minneapolis", "St. Paul", "Rochester", "Duluth", "Bloomington"] },
-  { code: 'MS', name: 'Mississippi', largestCity: 'Jackson', cities: ["Jackson", "Gulfport", "Southaven", "Biloxi", "Hattiesburg"] },
+  { code: 'MS', name: 'Mississippi', largestCity: 'Jackson', cities: ["Jackson", "Gulfport", "Southaven", "Hattiesburg", "Biloxi"] },
   { code: 'MO', name: 'Missouri', largestCity: 'Kansas City', cities: ["Kansas City", "St. Louis", "Springfield", "Columbia", "Independence"] },
   { code: 'MT', name: 'Montana', largestCity: 'Billings', cities: ["Billings", "Missoula", "Great Falls", "Bozeman", "Helena"] },
-  { code: 'NE', name: 'Nebraska', largestCity: 'Omaha', cities: ["Omaha", "Lincoln", "Bellevue", "Grand Island", "Kearney"] },
+  { code: 'NE', name: 'Nebraska', largestCity: 'Omaha', cities: ["Omaha", "Lincoln", "Bellevue", "Grand Island"] },
   { code: 'NV', name: 'Nevada', largestCity: 'Las Vegas', cities: ["Las Vegas", "Reno", "Henderson", "North Las Vegas", "Sparks"] },
-  { code: 'NH', name: 'New Hampshire', largestCity: 'Manchester', cities: ["Manchester", "Nashua", "Concord", "Dover", "Rochester"] },
-  { code: 'NJ', name: 'New Jersey', largestCity: 'Newark', cities: ["Newark", "Jersey City", "Paterson", "Elizabeth", "Edison", "Trenton"] },
-  { code: 'NM', name: 'New Mexico', largestCity: 'Albuquerque', cities: ["Albuquerque", "Las Cruces", "Rio Rancho", "Santa Fe", "Roswell"] },
-  { code: 'NY', name: 'New York', largestCity: 'New York City', cities: ["New York City", "Buffalo", "Rochester", "Yonkers", "Syracuse", "Albany"] },
+  { code: 'NH', name: 'New Hampshire', largestCity: 'Manchester', cities: ["Manchester", "Nashua", "Concord"] },
+  { code: 'NJ', name: 'New Jersey', largestCity: 'Newark', cities: ["Newark", "Jersey City", "Paterson", "Elizabeth", "Clifton"] },
+  { code: 'NM', name: 'New Mexico', largestCity: 'Albuquerque', cities: ["Albuquerque", "Las Cruces", "Santa Fe", "Rio Rancho"] },
+  { code: 'NY', name: 'New York', largestCity: 'New York City', cities: ["New York City", "Buffalo", "Rochester", "Yonkers", "Syracuse"] },
   { code: 'NC', name: 'North Carolina', largestCity: 'Charlotte', cities: ["Charlotte", "Raleigh", "Greensboro", "Durham", "Winston-Salem"] },
-  { code: 'ND', name: 'North Dakota', largestCity: 'Fargo', cities: ["Fargo", "Bismarck", "Grand Forks", "Minot", "Williston"] },
-  { code: 'OH', name: 'Ohio', largestCity: 'Columbus', cities: ["Columbus", "Cleveland", "Cincinnati", "Toledo", "Akron", "Dayton"] },
-  { code: 'OK', name: 'Oklahoma', largestCity: 'Oklahoma City', cities: ["Oklahoma City", "Tulsa", "Norman", "Broken Arrow", "Edmond"] },
+  { code: 'ND', name: 'North Dakota', largestCity: 'Fargo', cities: ["Fargo", "Bismarck", "Grand Forks"] },
+  { code: 'OH', name: 'Ohio', largestCity: 'Columbus', cities: ["Columbus", "Cleveland", "Cincinnati", "Toledo", "Akron"] },
+  { code: 'OK', name: 'Oklahoma', largestCity: 'Oklahoma City', cities: ["Oklahoma City", "Tulsa", "Norman", "Broken Arrow", "Lawton"] },
   { code: 'OR', name: 'Oregon', largestCity: 'Portland', cities: ["Portland", "Salem", "Eugene", "Gresham", "Hillsboro"] },
-  { code: 'PA', name: 'Pennsylvania', largestCity: 'Philadelphia', cities: ["Philadelphia", "Pittsburgh", "Allentown", "Erie", "Reading", "Scranton"] },
-  { code: 'RI', name: 'Rhode Island', largestCity: 'Providence', cities: ["Providence", "Warwick", "Cranston", "Pawtucket"] },
-  { code: 'SC', name: 'South Carolina', largestCity: 'Charleston', cities: ["Charleston", "Columbia", "North Charleston", "Mount Pleasant", "Greenville"] },
-  { code: 'SD', name: 'South Dakota', largestCity: 'Sioux Falls', cities: ["Sioux Falls", "Rapid City", "Aberdeen", "Brookings"] },
+  { code: 'PA', name: 'Pennsylvania', largestCity: 'Philadelphia', cities: ["Philadelphia", "Pittsburgh", "Allentown", "Erie", "Reading"] },
+  { code: 'RI', name: 'Rhode Island', largestCity: 'Providence', cities: ["Providence", "Warwick", "Cranston"] },
+  { code: 'SC', name: 'South Carolina', largestCity: 'Charleston', cities: ["Charleston", "Columbia", "North Charleston", "Mount Pleasant", "Rock Hill"] },
+  { code: 'SD', name: 'South Dakota', largestCity: 'Sioux Falls', cities: ["Sioux Falls", "Rapid City", "Aberdeen"] },
   { code: 'TN', name: 'Tennessee', largestCity: 'Nashville', cities: ["Nashville", "Memphis", "Knoxville", "Chattanooga", "Clarksville"] },
-  { code: 'TX', name: 'Texas', largestCity: 'Houston', cities: ["Houston", "Dallas", "Austin", "San Antonio", "Fort Worth", "El Paso", "Arlington"] },
-  { code: 'UT', name: 'Utah', largestCity: 'Salt Lake City', cities: ["Salt Lake City", "West Valley City", "Provo", "West Jordan", "Orem", "Ogden"] },
-  { code: 'VT', name: 'Vermont', largestCity: 'Burlington', cities: ["Burlington", "South Burlington", "Rutland", "Barre", "Montpelier"] },
-  { code: 'VA', name: 'Virginia', largestCity: 'Virginia Beach', cities: ["Virginia Beach", "Chesapeake", "Norfolk", "Richmond", "Roanoke", "Alexandria"] },
-  { code: 'WA', name: 'Washington', largestCity: 'Seattle', cities: ["Seattle", "Spokane", "Tacoma", "Vancouver", "Bellevue", "Kent"] },
-  { code: 'WV', name: 'West Virginia', largestCity: 'Charleston', cities: ["Charleston", "Huntington", "Morgantown", "Parkersburg", "Wheeling"] },
+  { code: 'TX', name: 'Texas', largestCity: 'Houston', cities: ["Houston", "Dallas", "Austin", "San Antonio", "Fort Worth", "El Paso"] },
+  { code: 'UT', name: 'Utah', largestCity: 'Salt Lake City', cities: ["Salt Lake City", "West Valley City", "Provo", "West Jordan", "Orem"] },
+  { code: 'VT', name: 'Vermont', largestCity: 'Burlington', cities: ["Burlington", "Rutland"] },
+  { code: 'VA', name: 'Virginia', largestCity: 'Virginia Beach', cities: ["Virginia Beach", "Norfolk", "Chesapeake", "Richmond", "Newport News"] },
+  { code: 'WA', name: 'Washington', largestCity: 'Seattle', cities: ["Seattle", "Spokane", "Tacoma", "Vancouver", "Bellevue"] },
+  { code: 'WV', name: 'West Virginia', largestCity: 'Charleston', cities: ["Charleston", "Huntington", "Morgantown"] },
   { code: 'WI', name: 'Wisconsin', largestCity: 'Milwaukee', cities: ["Milwaukee", "Madison", "Green Bay", "Kenosha", "Racine"] },
   { code: 'WY', name: 'Wyoming', largestCity: 'Cheyenne', cities: ["Cheyenne", "Casper", "Laramie", "Gillette", "Rock Springs"] },
   { code: 'DC', name: 'District of Columbia', largestCity: 'Washington', cities: ["Washington"] }
 ];
 
-export default function LocalCourierDirectorySection() {
+export default function LocalCourierDirectorySection({ selectedState }) {
   const [selectedBusinessType, setSelectedBusinessType] = useState("Hospitals");
   const [selectedStateCode, setSelectedStateCode] = useState('');
   const [selectedCity, setSelectedCity] = useState('');
+
+  // Sync with main map selectedState when it changes
+  useEffect(() => {
+    if (selectedState && selectedState.code) {
+      setSelectedStateCode(selectedState.code);
+      const matchingState = STATE_OPTIONS.find((s) => s.code === selectedState.code);
+      if (matchingState) {
+        setSelectedCity(matchingState.largestCity);
+      }
+    }
+  }, [selectedState]);
 
   const currentState = STATE_OPTIONS.find((s) => s.code === selectedStateCode) || null;
   const cityList = currentState ? currentState.cities : ["Houston", "Los Angeles", "Chicago", "Miami", "Dallas", "Phoenix", "Seattle"];
@@ -100,15 +111,15 @@ export default function LocalCourierDirectorySection() {
   return (
     <section id="local-courier-section" className="py-10 sm:py-14 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-        
+
         {/* Section Header */}
         <div className="space-y-3">
-          
+
           {/* Badge Line */}
           <div className="flex items-center gap-2">
             <span className="w-6 h-0.5 bg-rose-600 rounded-full" />
             <span className="text-xs font-bold uppercase tracking-widest text-rose-600 font-sans">
-              DIRECTORY
+              Business finder
             </span>
           </div>
 
@@ -126,13 +137,13 @@ export default function LocalCourierDirectorySection() {
 
         {/* Main Form Container */}
         <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
-          
+
           {/* 1. BUSINESS TYPE Pill Buttons Row */}
           <div className="space-y-3">
             <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
               BUSINESS TYPE
             </label>
-            
+
             <div className="flex flex-wrap items-center gap-2">
               {BUSINESS_TYPES.map((bType) => {
                 const isSelected = selectedBusinessType === bType;
@@ -140,11 +151,10 @@ export default function LocalCourierDirectorySection() {
                   <button
                     key={bType}
                     onClick={() => setSelectedBusinessType(bType)}
-                    className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer border ${
-                      isSelected
+                    className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer border ${isSelected
                         ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
                         : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     {bType}
                   </button>
@@ -155,7 +165,7 @@ export default function LocalCourierDirectorySection() {
 
           {/* 2. STATE Dropdown & CITY Dropdown Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-            
+
             {/* STATE Dropdown */}
             <div className="space-y-1.5">
               <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">

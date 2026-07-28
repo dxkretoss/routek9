@@ -120,10 +120,9 @@ const DUE_DILIGENCE_CHECKLIST = [
 ];
 
 export default function OwnEstablishedRouteSection({ selectedState: propState, onSelectState }) {
-  const [internalState, setInternalState] = useState(null);
   const [checkedItems, setCheckedItems] = useState({});
 
-  const selectedState = propState || internalState;
+  const selectedState = propState;
 
   const toggleCheck = (idx) => {
     setCheckedItems((prev) => ({
@@ -136,9 +135,11 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
 
   const handleStateClick = (st) => {
     if (onSelectState) {
-      onSelectState(st);
-    } else {
-      setInternalState(st);
+      if (selectedState && selectedState.code === st.code) {
+        onSelectState(null);
+      } else {
+        onSelectState(st);
+      }
     }
   };
 
