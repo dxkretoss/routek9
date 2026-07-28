@@ -274,7 +274,7 @@ export default function WhosHiringSection() {
         </div>
 
         {/* Sub-Section 2: Regional & Specialty Courier Companies */}
-        <div className="space-y-8 pt-4">
+        <div className="space-y-4 pt-4">
 
           {/* Header */}
           <div className="space-y-2">

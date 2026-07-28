@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const OPPORTUNITY_TYPES = [
   "Courier driver",
@@ -72,10 +72,21 @@ const ALL_STATES_ORDERED = [
   { code: 'DC', name: 'District of Columbia', largestCity: 'Washington' }
 ];
 
-export default function StateDirectoryGrid({ onSelectState }) {
+export default function StateDirectoryGrid({ selectedState, onSelectState }) {
   const [selectedOpportunity, setSelectedOpportunity] = useState("Courier driver");
   const [selectedStateItem, setSelectedStateItem] = useState(null);
   const [customCity, setCustomCity] = useState('');
+
+  useEffect(() => {
+    if (selectedState) {
+      const match = ALL_STATES_ORDERED.find((st) => st.code === selectedState.code);
+      if (match) {
+        setSelectedStateItem(match);
+      }
+    } else {
+      setSelectedStateItem(null);
+    }
+  }, [selectedState]);
 
   const handleStateClick = (st) => {
     setSelectedStateItem(st);

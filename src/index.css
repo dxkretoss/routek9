@@ -1,8 +1,38 @@
 @import "tailwindcss";
 
+:root {
+  --background: #ffffff;
+  --foreground: #0b132b;
+  --primary: #0b132b;
+  --primary-foreground: #ffffff;
+  --accent: #e11d48;
+  --accent-foreground: #ffffff;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --border: #e2e8f0;
+  --card: #ffffff;
+  --secondary: #f1f5f9;
+}
+
 @theme {
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-serif: 'Playfair Display', ui-serif, Georgia, serif;
+  
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-card: var(--card);
+  --color-secondary: var(--secondary);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 /* Default Body & General UI text uses Google Inter */
@@ -66,4 +96,23 @@ body {
   backdrop-filter: blur(12px);
   border: 1px solid rgba(226, 232, 240, 0.8);
   box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.05);
+}
+
+/* AI Route Planner Custom Background Styles */
+.patriot .patriot-grid {
+  background-image:
+    linear-gradient(to right, rgba(11, 19, 43, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(11, 19, 43, 0.08) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+.patriot .patriot-halo::before {
+  content: "";
+  position: absolute;
+  inset: -20% -10% auto auto;
+  height: 55%;
+  width: 55%;
+  z-index: 0;
+  background: radial-gradient(closest-side, rgba(225, 29, 72, 0.3), transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
 }

@@ -1,14 +1,50 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Menu, X, LogOut, LayoutDashboard, GraduationCap, Bell, Users } from 'lucide-react';
 
 export default function Navbar({ currentUser, onLogout }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const { pathname, hash } = useLocation();
 
   // Controls visibility of optional nav links (set to false/hidden)
   const showBuyRoute = false;
   const showWhosHiring = false;
+
+  const isLinkActive = (path, targetHash) => {
+    if (path !== '/' && path !== '/#hero') {
+      return pathname.startsWith(path);
+    }
+    if (pathname === '/') {
+      if (!targetHash && !hash) return true;
+      if (targetHash === '#hero' && (!hash || hash === '#hero')) return true;
+      return hash === targetHash;
+    }
+    return false;
+  };
+
+  const renderLink = (label, path, targetHash, isAnchor = false) => {
+    const active = isLinkActive(path, targetHash);
+    const cls = `relative py-2 transition-colors hover:text-rose-600 ${
+      active ? 'text-rose-600 font-bold' : 'text-slate-600 font-semibold'
+    }`;
+    
+    if (isAnchor) {
+      return (
+        <a href={`${path}${targetHash ?? ''}`} className={cls}>
+          {label}
+          {active && <span className="absolute -bottom-1.5 left-0 right-0 h-0.5 bg-rose-600 rounded-full" />}
+        </a>
+      );
+    }
+    
+    return (
+      <Link to={`${path}${targetHash ?? ''}`} className={cls}>
+        {label}
+        {active && <span className="absolute -bottom-1.5 left-0 right-0 h-0.5 bg-rose-600 rounded-full" />}
+      </Link>
+    );
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
@@ -41,40 +77,20 @@ export default function Navbar({ currentUser, onLogout }) {
           {/* Desktop Navigation Links Container */}
           <nav className="hidden xl:flex items-center">
 
-            {/* Nav Links Pills Container */}
-            <div className="flex items-center gap-4 px-5 py-2 rounded-full bg-slate-100/80 border border-slate-200/70 text-xs font-semibold text-slate-700">
-              {/* <Link to="/" className="hover:text-rose-600 transition-colors">Home</Link> */}
-              <a href="/#map-section" className="hover:text-rose-600 transition-colors flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-rose-600" />
-                Find Routes
-              </a>
-              <a href="/#government-contracts-section" className="hover:text-rose-600 transition-colors">Gov Contracts</a>
-
-              {/* Buy a Route (Hidden) */}
-              <a href="/#buy-a-route-section" className={`hover:text-rose-600 transition-colors ${showBuyRoute ? 'inline-block' : 'hidden'}`}>
-                Buy a Route
-              </a>
-
-              <a href="/#calculator-section" className="hover:text-rose-600 transition-colors">Profit Calculator</a>
-              {/* <Link to="/notifications" className="hover:text-rose-600 transition-colors flex items-center gap-1 font-semibold">
-                <Bell className="w-3.5 h-3.5 text-rose-600" />
-                Notifications
-              </Link> */}
-              <Link to="/drivers" className="hover:text-rose-600 transition-colors flex items-center gap-1 font-semibold">
-                <Users className="w-3.5 h-3.5 text-rose-600" />
-                Drivers Directory
-              </Link>
-              <Link to="/training" className="hover:text-rose-600 transition-colors text-rose-600 font-extrabold flex items-center gap-1">
-                <GraduationCap className="w-3.5 h-3.5" />
-                Training
-              </Link>
-
-              {/* Who's Hiring (Hidden) */}
-              <a href="/#whos-hiring-section" className={`hover:text-rose-600 transition-colors ${showWhosHiring ? 'inline-block' : 'hidden'}`}>
-                Who's Hiring
-              </a>
-
-              <a href="/#faq-section" className="hover:text-rose-600 transition-colors">FAQ</a>
+            {/* Nav Links Container */}
+            <div className="flex items-center gap-4 text-xs font-semibold text-slate-600">
+              {renderLink('Home', '/', '#hero')}
+              {renderLink('Calculator', '/', '#calculator-section', true)}
+              {renderLink('Find Routes', '/', '#map-section', true)}
+              {renderLink('Gov Contracts', '/', '#government-contracts-section', true)}
+              {renderLink('Route Planner', '/planner')}
+              {showBuyRoute && renderLink('Buy a Route', '/', '#buy-a-route-section', true)}
+              {renderLink('Drivers', '/drivers')}
+              {renderLink('Companies', '/companies')}
+              {renderLink('Growth', '/growth')}
+              {renderLink('Training', '/training')}
+              {renderLink('Certification', '/certification')}
+              {showWhosHiring && renderLink("Who's Hiring", '/', '#whos-hiring-section', true)}
             </div>
 
           </nav>
@@ -85,13 +101,13 @@ export default function Navbar({ currentUser, onLogout }) {
             {currentUser ? (
               <div className="flex items-center gap-2">
 
-                {/* Single Clean "My Dashboard" Button */}
+                {/* User Initials Avatar Circle linking to Dashboard */}
                 <Link
                   to="/dashboard"
-                  className="px-5 py-2.5 rounded-full bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs shadow-sm transition-all flex items-center gap-2"
+                  title="My Dashboard"
+                  className="w-9 h-9 rounded-full bg-[#0b132b] hover:bg-rose-600 text-white font-extrabold text-xs shadow-sm transition-all flex items-center justify-center border border-slate-200/50"
                 >
-                  <LayoutDashboard className="w-4 h-4 text-rose-500" />
-                  <span>My Dashboard</span>
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
                 </Link>
 
                 {/* Notification Bell Button */}
@@ -162,6 +178,7 @@ export default function Navbar({ currentUser, onLogout }) {
         <div className="xl:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 space-y-3 text-xs font-semibold text-slate-700">
           <Link to="/" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Home</Link>
           <a href="/#map-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Find Routes</a>
+          <Link to="/planner" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Route Planner</Link>
           <a href="/#government-contracts-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Gov Contracts</a>
 
           {showBuyRoute && (
@@ -175,6 +192,15 @@ export default function Navbar({ currentUser, onLogout }) {
           </Link>
           <Link to="/drivers" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
             Drivers Directory
+          </Link>
+          <Link to="/companies" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+            Companies Directory
+          </Link>
+          <Link to="/growth" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+            Growth Paths
+          </Link>
+          <Link to="/certification" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+            Get Certified
           </Link>
           <Link to="/training" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-rose-600 font-extrabold">Training Library</Link>
 

@@ -105,46 +105,60 @@ export default function DriversPage({ currentUser, onLogout }) {
       <Navbar currentUser={currentUser} onLogout={onLogout} />
 
       {/* Header Banner */}
-      <section className="bg-[#0b132b] text-white py-12 sm:py-16 relative overflow-hidden">
+      <section className="bg-gradient-to-br from-slate-50 via-[#faf9f6] to-rose-50/20 py-16 sm:py-20 border-b border-slate-200/60 relative overflow-hidden">
         {/* Decorative background glow */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-rose-600/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-600/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute -top-24 -left-24 w-96 h-96 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4 relative z-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold uppercase tracking-wider">
-            <UserCheck className="w-4 h-4 text-rose-400" />
-            <span>RouteK9 Pro Drivers Directory</span>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            
+            {/* Left Column: Heading and intro */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold uppercase tracking-wider">
+                <UserCheck className="w-4 h-4 text-rose-600" />
+                <span>RouteK9 Pro Drivers Directory</span>
+              </div>
 
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight font-serif-heading">
-            Contract Couriers Available Now
-          </h1>
-          
-          <p className="text-slate-350 text-xs sm:text-sm font-normal max-w-2xl">
-            Browse verified independent owner-operators and courier drivers across all 50 states. Contact drivers directly to assign contracts and dispatch loads.
-          </p>
-
-          {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center backdrop-blur-xs">
-              <div className="text-2xl font-extrabold text-white">{totalDrivers}</div>
-              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Verified Drivers</div>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-tight">
+                Contract Couriers <br className="hidden sm:inline" />
+                <span className="text-rose-600">Available Now</span>
+              </h1>
+              
+              <p className="text-slate-600 text-xs sm:text-sm font-normal leading-relaxed max-w-xl">
+                Browse verified independent owner-operators and courier drivers across all 50 states. Contact drivers directly to assign contracts and dispatch loads.
+              </p>
             </div>
 
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center backdrop-blur-xs">
-              <div className="text-2xl font-extrabold text-rose-400">{cdlDrivers}</div>
-              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">CDL Certified</div>
+            {/* Right Column: Premium Metric Showcase Card */}
+            <div className="lg:col-span-5">
+              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm grid grid-cols-2 gap-6 relative overflow-hidden">
+                <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-rose-500/5 rounded-full blur-xl pointer-events-none" />
+                
+                <div className="space-y-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Verified Drivers</span>
+                  <div className="text-3xl font-extrabold text-[#0b132b] tracking-tight">{totalDrivers}</div>
+                  <div className="w-6 h-0.5 bg-rose-600 rounded-full" />
+                </div>
+                
+                <div className="space-y-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">CDL Certified</span>
+                  <div className="text-3xl font-extrabold text-rose-600 tracking-tight">{cdlDrivers}</div>
+                  <div className="w-6 h-0.5 bg-rose-600 rounded-full" />
+                </div>
+                
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Avg. Experience</span>
+                  <div className="text-3xl font-extrabold text-[#0b132b] tracking-tight">{avgExp} Yrs</div>
+                </div>
+                
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Active Status</span>
+                  <div className="text-3xl font-extrabold text-emerald-600 tracking-tight">100%</div>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center backdrop-blur-xs">
-              <div className="text-2xl font-extrabold text-emerald-400">{avgExp} Years</div>
-              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Avg. Experience</div>
-            </div>
-
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center backdrop-blur-xs">
-              <div className="text-2xl font-extrabold text-amber-400">100%</div>
-              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Active Status</div>
-            </div>
           </div>
         </div>
       </section>

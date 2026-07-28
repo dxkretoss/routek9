@@ -46,12 +46,12 @@ const HERO_SLIDES = [
   { src: heroImg5, alt: 'Route planning dashboard with GPS map tracking' },
 ];
 
-export default function Hero({ 
-  searchQuery, 
-  setSearchQuery, 
-  selectedVehicle, 
-  setSelectedVehicle, 
-  onSearch 
+export default function Hero({
+  searchQuery,
+  setSearchQuery,
+  selectedVehicle,
+  setSelectedVehicle,
+  onSearch
 }) {
   const [activeSlide, setActiveSlide] = useState(0);
 
@@ -68,13 +68,13 @@ export default function Hero({
   }, []);
 
   return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-rose-50/30 to-slate-50 pt-10 pb-12 lg:pt-14 lg:pb-20 border-b border-slate-200/60">
-      
+    <section id='hero' className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-rose-50/30 to-slate-50 pt-10 pb-12 lg:pt-14 lg:pb-20 border-b border-slate-200/60">
+
       {/* Background Decorative Pattern */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-40 pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
 
           {/* LEFT — Text & Search */}
@@ -101,7 +101,7 @@ export default function Hero({
 
             {/* Search Bar */}
             <div className="bg-white p-3 sm:p-4 rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 flex flex-col sm:flex-row gap-3 max-w-xl">
-              
+
               <div className="flex-1 relative flex items-center">
                 <Search className="w-5 h-5 text-slate-400 absolute left-3.5" />
                 <input
@@ -159,16 +159,15 @@ export default function Hero({
           {/* RIGHT — Hero Image Carousel with Dot Navigation */}
           <div className="hidden lg:block relative">
             <div className="relative rounded-3xl overflow-hidden shadow-2xl shadow-slate-300/40 border border-slate-200/60 bg-slate-900 min-h-[420px]">
-              
+
               {/* Image Slides with Crossfade */}
               {HERO_SLIDES.map((slide, index) => (
                 <img
                   key={index}
                   src={slide.src}
                   alt={slide.alt}
-                  className={`absolute inset-0 w-full h-[420px] object-cover transition-opacity duration-700 ease-in-out ${
-                    index === activeSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
-                  }`}
+                  className={`absolute inset-0 w-full h-[420px] object-cover transition-opacity duration-700 ease-in-out ${index === activeSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
+                    }`}
                 />
               ))}
 
@@ -182,18 +181,17 @@ export default function Hero({
                     key={index}
                     onClick={() => goToSlide(index)}
                     aria-label={`Go to slide ${index + 1}`}
-                    className={`rounded-full transition-all duration-300 cursor-pointer ${
-                      index === activeSlide
-                        ? 'w-6 h-2.5 bg-rose-500 shadow-sm shadow-rose-500/40'
-                        : 'w-2.5 h-2.5 bg-white/50 hover:bg-white/80'
-                    }`}
+                    className={`rounded-full transition-all duration-300 cursor-pointer ${index === activeSlide
+                      ? 'w-6 h-2.5 bg-rose-500 shadow-sm shadow-rose-500/40'
+                      : 'w-2.5 h-2.5 bg-white/50 hover:bg-white/80'
+                      }`}
                   />
                 ))}
               </div>
-              
+
               {/* Floating stat cards on image with Animated Counters */}
               <div className="absolute bottom-5 left-5 right-5 flex gap-3 z-30">
-                
+
                 <div className="bg-white/95 backdrop-blur-md px-4 py-3 rounded-2xl shadow-lg flex-1 text-center">
                   <div className="text-xl sm:text-2xl font-extrabold text-rose-600 font-serif-heading">
                     <AnimatedCounter end={1200} prefix="$" />

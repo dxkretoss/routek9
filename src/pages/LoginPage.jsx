@@ -27,6 +27,19 @@ export default function LoginPage({ onLogin }) {
     navigate(redirectPath);
   };
 
+  const handleGoogleLogin = () => {
+    if (onLogin) {
+      onLogin({
+        name: 'Google User',
+        email: 'googleuser@gmail.com',
+        vehicle: 'Cargo Van',
+        stateCode: 'TX',
+        city: 'Houston'
+      });
+    }
+    navigate(redirectPath);
+  };
+
   const handleForgotPassword = (e) => {
     e.preventDefault();
     setResetMessage(true);
@@ -34,95 +47,143 @@ export default function LoginPage({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] flex flex-col justify-between font-sans selection:bg-rose-600 selection:text-white">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-white font-sans selection:bg-rose-600 selection:text-white">
       
-      {/* Centered Logo */}
-      <div className="p-6 sm:p-8 flex items-center justify-center">
-        <Link to="/" className="flex items-center gap-3 group">
-          <div className="w-11 h-11 rounded-full bg-[#0d1b2a] border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-            <span className="text-[7px] font-bold uppercase text-slate-300">ROUTE</span>
-            <span className="text-xs font-extrabold text-rose-500 leading-none">K9</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xl font-bold tracking-tight text-[#0b132b] font-sans">
-                ROUTE K9
-              </span>
-              <span className="px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-600 rounded-full border border-rose-200">
-                PRO
-              </span>
+      {/* Left Column: Full-Height Branding Pane */}
+      <div className="hidden lg:flex lg:w-1/2 bg-[#0b132b] text-white p-12 lg:p-16 flex-col justify-between relative overflow-hidden min-h-screen">
+        {/* Background Decorative Gradient Blobs */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-rose-600/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Logo */}
+        <div className="relative z-10 animate-fadeIn">
+          <Link to="/" className="flex items-center gap-3 group inline-flex">
+            <div className="w-11 h-11 rounded-full bg-[#0d1b2a] border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+              <span className="text-[7px] font-bold uppercase text-slate-300">ROUTE</span>
+              <span className="text-xs font-extrabold text-rose-500 leading-none">K9</span>
             </div>
-            <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
-              CONTRACT DRIVERS OF AMERICA
-            </p>
-          </div>
-        </Link>
-      </div>
-
-      {/* Main 2-Column Split Page Container */}
-      <div className="flex-1 flex flex-col lg:flex-row max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 gap-8 items-center justify-center">
-        
-        {/* Left Side: Platform Artwork & Showcase Banner */}
-        <div className="w-full lg:w-1/2 bg-[#0b132b] text-white p-8 sm:p-12 rounded-3xl border border-slate-800 shadow-2xl flex flex-col justify-between min-h-[520px] relative overflow-hidden">
-          
-          {/* Background Decorative Gradient Blobs */}
-          <div className="absolute top-0 right-0 w-80 h-80 bg-rose-600/20 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-600/10 rounded-full blur-2xl pointer-events-none" />
-
-          <div className="relative z-10 space-y-6">
-            
-            {/* Top Badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/10 text-xs font-semibold text-rose-400 backdrop-blur-md">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Verified Logistics Drivers Platform</span>
+            <div className="text-left font-sans">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-bold tracking-tight text-white">
+                  ROUTE K9
+                </span>
+                <span className="px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-rose-600 text-white rounded-full border border-rose-500">
+                  PRO
+                </span>
+              </div>
+              <p className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                CONTRACT DRIVERS OF AMERICA
+              </p>
             </div>
-
-            {/* Headline */}
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-tight font-serif-heading">
-              Welcome back to <span className="text-rose-500">RouteK9</span> Pro
-            </h1>
-
-            <p className="text-slate-300 text-sm sm:text-base leading-relaxed font-normal">
-              Access over 12,400+ active courier routes, bid on SAM.gov government contracts, and track your daily net earnings nationwide.
-            </p>
-
-          </div>
-
-          {/* Key Platform Stats Cards */}
-          <div className="relative z-10 grid grid-cols-3 gap-3 pt-8 border-t border-slate-800/80 mt-8">
-            <div className="bg-white/5 backdrop-blur-sm p-3.5 rounded-2xl border border-white/10 text-center">
-              <div className="text-xl font-extrabold text-white">50 States</div>
-              <div className="text-[10px] text-slate-400 font-medium mt-0.5">Full US Coverage</div>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-sm p-3.5 rounded-2xl border border-white/10 text-center">
-              <div className="text-xl font-extrabold text-rose-500">12,400+</div>
-              <div className="text-[10px] text-slate-400 font-medium mt-0.5">Active Routes</div>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-sm p-3.5 rounded-2xl border border-white/10 text-center">
-              <div className="text-xl font-extrabold text-emerald-400">100%</div>
-              <div className="text-[10px] text-slate-400 font-medium mt-0.5">Verified Carriers</div>
-            </div>
-          </div>
-
+          </Link>
         </div>
 
-        {/* Right Side: Clean Authentication Box */}
-        <div className="w-full lg:w-1/2 max-w-md bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/90 shadow-xl space-y-6">
-          
-          <div className="space-y-1">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
+        {/* Center Branding Content */}
+        <div className="relative z-10 space-y-6 my-auto max-w-lg">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/10 text-xs font-semibold text-rose-400 backdrop-blur-md">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Verified Logistics Drivers Platform</span>
+          </div>
+          <h1 className="text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-tight font-serif-heading">
+            Welcome back to <span className="text-rose-500">RouteK9</span> Pro
+          </h1>
+          <p className="text-slate-300 text-sm sm:text-base leading-relaxed font-normal">
+            Access over 12,400+ active courier routes, bid on SAM.gov government contracts, and track your daily net earnings nationwide.
+          </p>
+        </div>
+
+        {/* Stats at bottom */}
+        <div className="relative z-10 grid grid-cols-3 gap-4 pt-8 border-t border-slate-800/80">
+          <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10 text-center">
+            <div className="text-lg lg:text-xl font-extrabold text-white">50 States</div>
+            <div className="text-[10px] text-slate-400 font-medium mt-0.5">Full US Coverage</div>
+          </div>
+          <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10 text-center">
+            <div className="text-lg lg:text-xl font-extrabold text-rose-500">12,400+</div>
+            <div className="text-[10px] text-slate-400 font-medium mt-0.5">Active Routes</div>
+          </div>
+          <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10 text-center">
+            <div className="text-lg lg:text-xl font-extrabold text-emerald-400">100%</div>
+            <div className="text-[10px] text-slate-400 font-medium mt-0.5">Verified Carriers</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Column: Clean Form Container */}
+      <div className="w-full lg:w-1/2 flex flex-col justify-between min-h-screen bg-white p-8 sm:p-12 lg:p-16">
+        
+        {/* Logo for mobile viewports only */}
+        <div className="flex lg:hidden items-center justify-center mb-8">
+          <Link to="/" className="flex items-center gap-3 group">
+            <div className="w-11 h-11 rounded-full bg-[#0d1b2a] border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-xs shrink-0">
+              <span className="text-[7px] font-bold uppercase text-slate-300">ROUTE</span>
+              <span className="text-xs font-extrabold text-rose-500 leading-none">K9</span>
+            </div>
+            <div className="text-left font-sans">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-bold tracking-tight text-[#0b132b]">
+                  ROUTE K9
+                </span>
+                <span className="px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-600 rounded-full border border-rose-200">
+                  PRO
+                </span>
+              </div>
+              <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                CONTRACT DRIVERS OF AMERICA
+              </p>
+            </div>
+          </Link>
+        </div>
+
+        {/* Centered Form */}
+        <div className="my-auto w-full max-w-md mx-auto space-y-8 animate-fadeIn">
+          <div className="space-y-2 text-center lg:text-left">
+            <h2 className="text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
               Log in to your account
             </h2>
-            <p className="text-xs text-slate-500 font-medium">
+            <p className="text-sm text-slate-500 font-medium">
               Enter your credentials below to access your route dashboard.
             </p>
           </div>
 
-          {/* Reset Password Sent Banner */}
+          {/* Continue with Google */}
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              className="w-full py-3 px-4 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer"
+            >
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" width="24" height="24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+              <span>Continue with Google</span>
+            </button>
+
+            {/* Divider */}
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t border-slate-200"></div>
+              <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-widest">Or</span>
+              <div className="flex-grow border-t border-slate-200"></div>
+            </div>
+          </div>
+
           {resetMessage && (
-            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-2 animate-fadeIn">
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Password reset link sent to your email!</span>
             </div>
@@ -200,15 +261,13 @@ export default function LoginPage({ onLogin }) {
               Create an account →
             </Link>
           </div>
-
         </div>
 
+        {/* Footer */}
+        <footer className="pt-8 text-center text-xs text-slate-400 font-medium">
+          © 2026 RouteK9 Pro • Contract Drivers of America. All rights reserved.
+        </footer>
       </div>
-
-      {/* Footer */}
-      <footer className="p-4 border-t border-slate-200 text-center text-xs text-slate-400 font-medium">
-        © 2026 RouteK9 Pro • Contract Drivers of America. All rights reserved.
-      </footer>
 
     </div>
   );

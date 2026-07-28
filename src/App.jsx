@@ -25,6 +25,10 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import NotificationsPage from './pages/NotificationsPage';
 import DriversPage from './pages/DriversPage';
+import PlannerPage from './pages/PlannerPage';
+import CompaniesPage from './pages/CompaniesPage';
+import GrowthPage from './pages/GrowthPage';
+import CertificationPage from './pages/CertificationPage';
 
 import { US_STATES } from './data/statesData';
 import { mockRoutes as initialRoutes } from './data/mockRoutes';
@@ -69,18 +73,29 @@ function HomePage({ currentUser, onLogout }) {
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
 
   const handleSelectState = (stateObj) => {
-    setSelectedState(stateObj);
+    if (stateObj && stateObj.code && US_STATES[stateObj.code]) {
+      setSelectedState(US_STATES[stateObj.code]);
+    } else {
+      setSelectedState(stateObj);
+    }
   };
 
   const handleFilterCategory = (categoryType, stateObj) => {
     setActiveCategory(categoryType);
-    setSelectedState(stateObj);
+    
+    let resolvedState = stateObj;
+    if (stateObj && stateObj.code && US_STATES[stateObj.code]) {
+      resolvedState = US_STATES[stateObj.code];
+    }
+    setSelectedState(resolvedState);
 
     let targetId = 'find-a-route-section';
     if (categoryType === 'business-hiring') {
       targetId = 'local-courier-section';
     } else if (categoryType === 'gov-contracts') {
       targetId = 'government-contracts-section';
+    } else if (categoryType === 'for-sale') {
+      targetId = 'buy-a-route-section';
     }
 
     const targetElement = document.getElementById(targetId);
@@ -144,6 +159,7 @@ function HomePage({ currentUser, onLogout }) {
 
         {/* 4. 50 States Directory & Search Generator */}
         <StateDirectoryGrid
+          selectedState={selectedState}
           onSelectState={handleSelectState}
         />
 
@@ -193,6 +209,7 @@ function HomePage({ currentUser, onLogout }) {
 }
 
 export default function App() {
+  const navigate = useNavigate();
   // Read initial user from session cookie (DEFAULT IS NULL - LOGGED OUT!)
   const [currentUser, setCurrentUser] = useState(() => getCookie(SESSION_COOKIE_NAME) || null);
   const [purchasedCourses, setPurchasedCourses] = useState(() => getCookie(COURSES_COOKIE_NAME) || []);
@@ -212,6 +229,7 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     deleteCookie(SESSION_COOKIE_NAME);
+    navigate('/');
   };
 
   const handleCompletePurchase = (courseId, certName) => {
@@ -246,6 +264,10 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage currentUser={currentUser} onLogout={handleLogout} onUpdateProfile={handleUpdateProfile} />} />
         <Route path="/notifications" element={<NotificationsPage currentUser={currentUser} onLogout={handleLogout} />} />
         <Route path="/drivers" element={<DriversPage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/companies" element={<CompaniesPage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/planner" element={<PlannerPage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/growth" element={<GrowthPage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/certification" element={<CertificationPage currentUser={currentUser} onLogout={handleLogout} />} />
       </Routes>
     </>
   );

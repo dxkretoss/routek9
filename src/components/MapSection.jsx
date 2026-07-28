@@ -45,6 +45,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
           <div className="lg:col-span-5">
             <StateDetailCard 
               state={selectedState} 
+              onSelectState={onSelectState}
               onFilterCategory={onFilterCategory} 
             />
           </div>
