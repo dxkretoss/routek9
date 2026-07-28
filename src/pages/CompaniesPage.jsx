@@ -15,6 +15,9 @@ import {
   Building
 } from 'lucide-react';
 
+import heroBgPattern from '../assets/hero_bg_pattern.png';
+import heroFleetImg from '../assets/hero_fleet_trucks.png';
+
 export default function CompaniesPage({ currentUser, onLogout }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [stateFilter, setStateFilter] = useState('');
@@ -80,49 +83,58 @@ export default function CompaniesPage({ currentUser, onLogout }) {
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
       <Navbar currentUser={currentUser} onLogout={onLogout} />
 
-      {/* Modern Asymmetric Light-Gradient Banner */}
-      <section className="bg-gradient-to-br from-slate-50 via-[#faf9f6] to-rose-50/20 py-16 sm:py-20 border-b border-slate-200/60 relative overflow-hidden">
-        {/* Decorative elements */}
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            
-            <div className="lg:col-span-7 space-y-4">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold uppercase tracking-wider">
-                <Building className="w-3.5 h-3.5" />
-                <span>Hiring Directory</span>
-              </div>
-              
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-tight">
-                Partner with Active <br className="hidden sm:inline" />
-                <span className="text-rose-600 italic font-serif-heading">Courier Companies</span>
-              </h1>
-              
-              <p className="text-slate-655 text-xs sm:text-sm font-normal max-w-xl leading-relaxed">
-                Connect directly with delivery, medical logistics, and expedited freight companies hiring independent owner-operator drivers. Filter profiles by state or contract type and reach out instantly.
-              </p>
+      {/* Full-Width Background Image Hero Section */}
+      <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden">
+        {/* Full-Screen Background Image */}
+        <img
+          src={heroFleetImg}
+          alt="Active Courier Companies Background"
+          className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-1000 scale-105"
+        />
+
+        {/* Dark Translucent Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-slate-950/75 to-slate-950/90 backdrop-blur-[2px] pointer-events-none" />
+
+        {/* Platform Route Pattern Overlay */}
+        <div
+          className="absolute inset-0 opacity-10 mix-blend-overlay pointer-events-none bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${heroBgPattern})` }}
+        />
+
+        {/* Ambient Decorative Glows */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-rose-500/15 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Centered Content */}
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-6">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+            <Building className="w-4 h-4 text-rose-400" />
+            <span>Hiring Directory</span>
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight font-serif-heading leading-tight max-w-3xl mx-auto">
+            Partner with Active <br /><span className="text-rose-500 italic font-serif-heading">Courier Companies</span>
+          </h1>
+
+          <p className="text-slate-300 text-sm sm:text-base font-normal max-w-2xl mx-auto leading-relaxed">
+            Connect directly with delivery, medical logistics, and expedited freight companies hiring independent owner-operator drivers. Filter profiles by state or contract type and reach out instantly.
+          </p>
+
+          {/* Centered Floating Metric Glass Cards */}
+          <div className="pt-4 grid grid-cols-3 gap-3 max-w-2xl mx-auto">
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{MOCK_COMPANIES.length}</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Total Partners</div>
             </div>
 
-            {/* Metrics cards box */}
-            <div className="lg:col-span-5">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs grid grid-cols-3 gap-4 text-center max-w-md mx-auto lg:ml-auto">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Total Partners</span>
-                  <div className="text-3xl font-extrabold text-[#0b132b] tracking-tight">{MOCK_COMPANIES.length}</div>
-                </div>
-                <div className="space-y-1 border-l border-slate-100">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Open Seats</span>
-                  <div className="text-3xl font-extrabold text-rose-600 tracking-tight">85+</div>
-                </div>
-                <div className="space-y-1 border-l border-slate-100">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Active States</span>
-                  <div className="text-3xl font-extrabold text-emerald-600 tracking-tight">6+</div>
-                </div>
-              </div>
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-rose-400 tracking-tight">85+</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Open Seats</div>
             </div>
 
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-emerald-400 tracking-tight">6+</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Active States</div>
+            </div>
           </div>
         </div>
       </section>

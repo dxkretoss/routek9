@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Navigate, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { mockDrivers } from '../data/mockDrivers';
@@ -21,17 +21,17 @@ import {
   Star
 } from 'lucide-react';
 
+import heroBgPattern from '../assets/hero_bg_pattern.png';
+import heroDriverImg from '../assets/hero_driver_route.png';
+
 export default function DriversPage({ currentUser, onLogout }) {
-  // 1. Auth Guard: If not logged in, redirect to login page with redirect param
-  if (!currentUser) {
-    return <Navigate to="/login?redirect=/drivers" replace />;
-  }
+  const navigate = useNavigate();
 
   // 2. States for Filters and Search
   const [searchTerm, setSearchTerm] = useState('');
   const [stateFilter, setStateFilter] = useState('');
   const [vehicleFilter, setVehicleFilter] = useState('All Vehicles');
-  
+
   // Modal State for Contacting Driver
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [contactSubject, setContactSubject] = useState('');
@@ -45,8 +45,12 @@ export default function DriversPage({ currentUser, onLogout }) {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Open Contact Modal
+  // Open Contact Modal (Requires Login)
   const handleOpenContactModal = (driver) => {
+    if (!currentUser) {
+      navigate('/login?redirect=/drivers');
+      return;
+    }
     setSelectedDriver(driver);
     setContactSubject(`Contract Courier Inquiry from RouteK9`);
     setContactMessage(
@@ -58,7 +62,7 @@ export default function DriversPage({ currentUser, onLogout }) {
   const handleSendMessage = (e) => {
     e.preventDefault();
     setIsSending(true);
-    
+
     // Simulate sending network request
     setTimeout(() => {
       setIsSending(false);
@@ -76,15 +80,15 @@ export default function DriversPage({ currentUser, onLogout }) {
 
   // Filtering Logic
   const filteredDrivers = mockDrivers.filter((driver) => {
-    const matchesSearch = 
+    const matchesSearch =
       driver.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (driver.bio && driver.bio.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (driver.city && driver.city.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesState = !stateFilter || driver.state.toUpperCase() === stateFilter.toUpperCase();
-    
-    const matchesVehicle = 
-      vehicleFilter === 'All Vehicles' || 
+
+    const matchesVehicle =
+      vehicleFilter === 'All Vehicles' ||
       driver.vehicle_type.toLowerCase() === vehicleFilter.toLowerCase() ||
       (vehicleFilter === 'Cargo Van' && driver.vehicle_type.includes('Van')) ||
       (vehicleFilter === 'Sprinter / High-Top Van' && driver.vehicle_type.includes('Sprinter')) ||
@@ -104,61 +108,63 @@ export default function DriversPage({ currentUser, onLogout }) {
       {/* Navbar */}
       <Navbar currentUser={currentUser} onLogout={onLogout} />
 
-      {/* Header Banner */}
-      <section className="bg-gradient-to-br from-slate-50 via-[#faf9f6] to-rose-50/20 py-16 sm:py-20 border-b border-slate-200/60 relative overflow-hidden">
-        {/* Decorative background glow */}
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+      {/* Full-Width Background Image Hero Section */}
+      <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden">
+        {/* Full-Screen Background Image */}
+        <img
+          src={heroDriverImg}
+          alt="Contract Drivers Background"
+          className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-1000 scale-105"
+        />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            
-            {/* Left Column: Heading and intro */}
-            <div className="lg:col-span-7 space-y-4">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold uppercase tracking-wider">
-                <UserCheck className="w-4 h-4 text-rose-600" />
-                <span>RouteK9 Pro Drivers Directory</span>
-              </div>
+        {/* Dark Translucent Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-slate-950/75 to-slate-950/90 backdrop-blur-[2px] pointer-events-none" />
 
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-tight">
-                Contract Couriers <br className="hidden sm:inline" />
-                <span className="text-rose-600">Available Now</span>
-              </h1>
-              
-              <p className="text-slate-600 text-xs sm:text-sm font-normal leading-relaxed max-w-xl">
-                Browse verified independent owner-operators and courier drivers across all 50 states. Contact drivers directly to assign contracts and dispatch loads.
-              </p>
+        {/* Platform Route Pattern Overlay */}
+        <div
+          className="absolute inset-0 opacity-10 mix-blend-overlay pointer-events-none bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${heroBgPattern})` }}
+        />
+
+        {/* Ambient Decorative Glows */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-rose-500/15 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Centered Content */}
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-6">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+            <UserCheck className="w-4 h-4 text-rose-400" />
+            <span>RouteK9 Pro Drivers Directory</span>
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight font-serif-heading leading-tight max-w-3xl mx-auto">
+            Contract Couriers <br /><span className="text-rose-500 italic font-serif-heading">Available Now</span>
+          </h1>
+
+          <p className="text-slate-300 text-sm sm:text-base font-normal max-w-2xl mx-auto leading-relaxed">
+            Browse verified independent owner-operators and courier drivers across all 50 states. Contact drivers directly to assign contracts and dispatch loads.
+          </p>
+
+          {/* Centered Floating Metric Glass Cards */}
+          <div className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto">
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{totalDrivers}</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Verified Drivers</div>
             </div>
 
-            {/* Right Column: Premium Metric Showcase Card */}
-            <div className="lg:col-span-5">
-              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm grid grid-cols-2 gap-6 relative overflow-hidden">
-                <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-rose-500/5 rounded-full blur-xl pointer-events-none" />
-                
-                <div className="space-y-1">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Verified Drivers</span>
-                  <div className="text-3xl font-extrabold text-[#0b132b] tracking-tight">{totalDrivers}</div>
-                  <div className="w-6 h-0.5 bg-rose-600 rounded-full" />
-                </div>
-                
-                <div className="space-y-1">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">CDL Certified</span>
-                  <div className="text-3xl font-extrabold text-rose-600 tracking-tight">{cdlDrivers}</div>
-                  <div className="w-6 h-0.5 bg-rose-600 rounded-full" />
-                </div>
-                
-                <div className="space-y-1 pt-2 border-t border-slate-100">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Avg. Experience</span>
-                  <div className="text-3xl font-extrabold text-[#0b132b] tracking-tight">{avgExp} Yrs</div>
-                </div>
-                
-                <div className="space-y-1 pt-2 border-t border-slate-100">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Active Status</span>
-                  <div className="text-3xl font-extrabold text-emerald-600 tracking-tight">100%</div>
-                </div>
-              </div>
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-rose-400 tracking-tight">{cdlDrivers}</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">CDL Certified</div>
             </div>
 
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{avgExp} Yrs</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Avg. Experience</div>
+            </div>
+
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-emerald-400 tracking-tight">100%</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Active Status</div>
+            </div>
           </div>
         </div>
       </section>
@@ -166,7 +172,7 @@ export default function DriversPage({ currentUser, onLogout }) {
       {/* Main Filter and Directory Section */}
       <main className="flex-1 py-8 sm:py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-          
+
           {/* Advanced Filter panel */}
           <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
             <div className="flex items-center gap-2 text-sm font-bold text-[#0b132b] border-b border-slate-100 pb-3">

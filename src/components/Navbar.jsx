@@ -25,10 +25,9 @@ export default function Navbar({ currentUser, onLogout }) {
 
   const renderLink = (label, path, targetHash, isAnchor = false) => {
     const active = isLinkActive(path, targetHash);
-    const cls = `relative py-2 transition-colors hover:text-rose-600 ${
-      active ? 'text-rose-600 font-bold' : 'text-slate-600 font-semibold'
-    }`;
-    
+    const cls = `relative py-2 transition-colors hover:text-rose-600 ${active ? 'text-rose-600 font-bold' : 'text-slate-600 font-semibold'
+      }`;
+
     if (isAnchor) {
       return (
         <a href={`${path}${targetHash ?? ''}`} className={cls}>
@@ -37,7 +36,7 @@ export default function Navbar({ currentUser, onLogout }) {
         </a>
       );
     }
-    
+
     return (
       <Link to={`${path}${targetHash ?? ''}`} className={cls}>
         {label}
@@ -68,7 +67,7 @@ export default function Navbar({ currentUser, onLogout }) {
                   PRO
                 </span>
               </div>
-              <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+              <p className="text-[8px] font-semibold tracking-wider text-slate-500 uppercase">
                 CONTRACT DRIVERS OF AMERICA
               </p>
             </div>
@@ -101,15 +100,6 @@ export default function Navbar({ currentUser, onLogout }) {
             {currentUser ? (
               <div className="flex items-center gap-2">
 
-                {/* User Initials Avatar Circle linking to Dashboard */}
-                <Link
-                  to="/dashboard"
-                  title="My Dashboard"
-                  className="w-9 h-9 rounded-full bg-[#0b132b] hover:bg-rose-600 text-white font-extrabold text-xs shadow-sm transition-all flex items-center justify-center border border-slate-200/50"
-                >
-                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-                </Link>
-
                 {/* Notification Bell Button */}
                 <Link
                   to="/notifications"
@@ -120,14 +110,51 @@ export default function Navbar({ currentUser, onLogout }) {
                   <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-rose-600 text-[8px] font-extrabold text-white flex items-center justify-center ring-2 ring-white animate-pulse">3</span>
                 </Link>
 
-                {/* Log Out Button */}
-                <button
-                  onClick={onLogout}
-                  title="Log out"
-                  className="p-2.5 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
+                {/* User Avatar Circle with Hover Dropdown */}
+                <div className="relative group">
+                  <Link
+                    to="/dashboard"
+                    title="User Profile & Account"
+                    className="w-9 h-9 rounded-full bg-[#0b132b] hover:bg-rose-600 text-white font-extrabold text-xs shadow-sm transition-all flex items-center justify-center border border-slate-200/50 cursor-pointer"
+                  >
+                    {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                  </Link>
+
+                  {/* Hover Dropdown Menu */}
+                  <div className="absolute right-0 top-full pt-2 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xl p-2 space-y-1">
+                      
+                      {/* User Info Header */}
+                      <div className="px-3 py-2.5 border-b border-slate-100 space-y-0.5">
+                        <p className="text-xs font-extrabold text-[#0b132b] truncate">
+                          {currentUser.name || 'Account Member'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 truncate font-medium">
+                          {currentUser.email || 'member@routek9.com'}
+                        </p>
+                      </div>
+
+                      {/* My Dashboard Link */}
+                      <Link
+                        to="/dashboard"
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 transition-colors"
+                      >
+                        <LayoutDashboard className="w-4 h-4 text-slate-500 group-hover:text-rose-600" />
+                        <span>My Dashboard</span>
+                      </Link>
+
+                      {/* Log Out Option */}
+                      <button
+                        onClick={onLogout}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer text-left"
+                      >
+                        <LogOut className="w-4 h-4 text-rose-600" />
+                        <span>Log Out</span>
+                      </button>
+
+                    </div>
+                  </div>
+                </div>
 
               </div>
             ) : (
@@ -145,7 +172,7 @@ export default function Navbar({ currentUser, onLogout }) {
                   to="/signup"
                   className="px-5 py-2.5 rounded-full bg-[#0b132b] hover:bg-[#1a264a] text-white font-medium text-xs shadow-sm transition-all cursor-pointer inline-flex items-center justify-center"
                 >
-                  Not a member?
+                  Register?
                 </Link>
               </>
             )}

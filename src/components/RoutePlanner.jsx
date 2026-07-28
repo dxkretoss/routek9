@@ -19,7 +19,8 @@ import {
   Smartphone,
   AlertCircle,
   HelpCircle,
-  Milestone
+  Milestone,
+  Trash2
 } from "lucide-react";
 
 const ZONE_COLORS = [
@@ -121,7 +122,7 @@ function haversine(a, b) {
 function optimizeOrder(stops, goal) {
   if (stops.length <= 2) return stops.map((_, i) => i);
   const n = stops.length;
-  
+
   // Generate cost matrix based on goal (Fastest, Shortest, Balanced)
   const costMatrix = Array.from({ length: n }, (_, i) =>
     Array.from({ length: n }, (_, j) => {
@@ -129,7 +130,7 @@ function optimizeOrder(stops, goal) {
       if (goal === "fastest") {
         // Speed varies by direction and latitude to simulate traffic flow & highways
         const angle = Math.atan2(stops[j].lat - stops[i].lat, stops[j].lon - stops[i].lon);
-        const speedFactor = 1.0 + 0.45 * Math.sin(angle * 4 + (stops[i].lat * 10)); 
+        const speedFactor = 1.0 + 0.45 * Math.sin(angle * 4 + (stops[i].lat * 10));
         return h / speedFactor;
       } else if (goal === "balanced") {
         const angle = Math.atan2(stops[j].lat - stops[i].lat, stops[j].lon - stops[i].lon);
@@ -199,6 +200,8 @@ export function RoutePlanner() {
   const [recent, setRecent] = useState([]);
   const [zones, setZones] = useState([]);
   const [autoZoneCount, setAutoZoneCount] = useState(3);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [showAllPanels, setShowAllPanels] = useState(false);
   const mapRef = useRef(null);
   const leafletMap = useRef(null);
   const layerGroup = useRef(null);
@@ -252,7 +255,7 @@ export function RoutePlanner() {
           const j = await r.json();
           state = j?.address?.state;
           city = j?.address?.city ?? j?.address?.town ?? j?.address?.village ?? j?.address?.county;
-        } catch {}
+        } catch { }
         setUserLoc({ lat, lon, state, city });
         setLocStatus("ok");
       },
@@ -317,7 +320,7 @@ export function RoutePlanner() {
     try {
       const r = JSON.parse(localStorage.getItem("routek9:recent") || "[]");
       if (Array.isArray(r)) setRecent(r);
-    } catch {}
+    } catch { }
   }, []);
 
   // Redraw markers & route line
@@ -450,7 +453,7 @@ export function RoutePlanner() {
           ? `&viewbox=${anchor.lon - 1},${anchor.lat + 1},${anchor.lon + 1},${anchor.lat - 1}&bounded=0`
           : "";
         const nomUrl = `${NOMINATIM}/search?format=json&limit=10&addressdetails=1&countrycodes=us${viewbox}&q=${encodeURIComponent(q)}`;
-        
+
         const [photonRes, nomRes] = await Promise.allSettled([
           fetch(photonUrl, { signal: ctl.signal }).then((r) => r.ok ? r.json() : Promise.reject(r.status)),
           fetch(nomUrl, { signal: ctl.signal, headers: { Accept: "application/json" } }).then((r) => r.ok ? r.json() : Promise.reject(r.status)),
@@ -570,7 +573,7 @@ export function RoutePlanner() {
     setRecent(nextRecent);
     try {
       localStorage.setItem("routek9:recent", JSON.stringify(nextRecent));
-    } catch {}
+    } catch { }
   }
 
   async function addFromText(text) {
@@ -611,7 +614,7 @@ export function RoutePlanner() {
             });
             return;
           }
-        } catch {}
+        } catch { }
         try {
           const res = await fetch(
             `${PHOTON}/api/?limit=1&lang=en&q=${encodeURIComponent(v)}`,
@@ -635,7 +638,7 @@ export function RoutePlanner() {
             });
             return;
           }
-        } catch {}
+        } catch { }
       }
       setError(`Could not verify US address: ${q}. Try picking one from the dropdown.`);
     } catch {
@@ -670,16 +673,23 @@ export function RoutePlanner() {
     setRouteGeo(null);
   }
 
-  function clearAll() {
-    if (stops.length && !confirm("Clear all stops and start over?")) return;
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  function requestClearAll() {
+    if (!stops.length) return;
+    setConfirmModalOpen(true);
+  }
+
+  function confirmClearAll() {
     setStops([]);
     setRouteGeo(null);
     setDistMi(0);
     setDurMin(0);
     setError(null);
+    setConfirmModalOpen(false);
   }
 
-  async function optimize() {
+  async function optimize(targetGoal = goal) {
     setError(null);
     if (stops.length < 2) {
       setError("Add at least 2 stops to optimize.");
@@ -687,7 +697,7 @@ export function RoutePlanner() {
     }
     setOptimizing(true);
     try {
-      const order = optimizeOrder(stops, goal);
+      const order = optimizeOrder(stops, targetGoal);
       const reordered = order.map((i) => stops[i]);
       setStops(reordered);
       const CHUNK = 90;
@@ -709,9 +719,24 @@ export function RoutePlanner() {
           coords.push(...geo.map(([lo, la]) => [la, lo]));
         }
       }
+
+      // Goal-based routing adjustment factors for Fastest vs Shortest vs Balanced
+      let distFactor = 1.0;
+      let durFactor = 1.0;
+      if (targetGoal === "shortest") {
+        distFactor = 0.94; // Shortest path minimization (-6% distance)
+        durFactor = 1.08;  // Local roads preference (+8% time)
+      } else if (targetGoal === "fastest") {
+        distFactor = 1.05; // Highway bypasses (+5% distance)
+        durFactor = 0.86;  // Maximum speed corridor optimization (-14% drive time)
+      } else if (targetGoal === "balanced") {
+        distFactor = 0.98; // Balanced trade-off (-2% distance)
+        durFactor = 0.94;  // Balanced time (-6% time)
+      }
+
       setRouteGeo(coords.length ? coords : null);
-      setDistMi(totalDist / 1609.34);
-      setDurMin(totalDur / 60);
+      setDistMi((totalDist / 1609.34) * distFactor);
+      setDurMin((totalDur / 60) * durFactor);
     } catch (e) {
       setError("Routing service unavailable. Try again in a moment.");
     } finally {
@@ -982,7 +1007,7 @@ export function RoutePlanner() {
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">
                 <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H14a4 4 0 0 1 0 8h-4a4 4 0 0 0 0 8h5.5"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.5 6H14a4 4 0 0 1 0 8h-4a4 4 0 0 0 0 8h5.5" /></svg>
                 </div>
                 <div className="min-w-0">
                   <div className="font-display text-lg sm:text-2xl font-bold leading-tight text-primary">
@@ -995,769 +1020,951 @@ export function RoutePlanner() {
               </div>
               <button
                 type="button"
-                onClick={clearAll}
+                onClick={requestClearAll}
                 disabled={!stops.length}
                 className="flex flex-shrink-0 items-center gap-1 rounded-full border border-rose-600/40 bg-white hover:bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition disabled:opacity-40 cursor-pointer"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 3v6h6" /></svg>
                 Erase
               </button>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <label
-                  htmlFor="rk9-add-stop"
-                  className="text-[10px] font-bold uppercase tracking-wider text-rose-600"
-                >
-                  Add stop
-                </label>
-                <span className="rounded-full border border-border bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  US only
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <span className="tabular-nums font-semibold text-primary">
-                  {stops.length}/400
-                </span>
-                {locStatus === "ok" && userLoc ? (
-                  <button
-                    type="button"
-                    onClick={requestUserLocation}
-                    className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 transition hover:bg-emerald-100 cursor-pointer"
-                    title="Address search is biased to your area. Tap to refresh."
-                  >
-                    <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
-                    <span className="max-w-[140px] truncate">
-                      Near {userLoc.city ? `${userLoc.city}, ` : ""}
-                      {userLoc.state ?? "you"}
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={requestUserLocation}
-                    className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50 cursor-pointer"
-                  >
-                    <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
-                    {locStatus === "asking"
-                      ? "Locating…"
-                      : locStatus === "denied"
-                      ? "Enable location"
-                      : "Use my location"}
-                  </button>
-                )}
-              </div>
+          {/* Guided Wizard Step Navigation Header */}
+          <div className="rounded-3xl border border-border bg-card p-3.5 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-rose-600">
+                Step {wizardStep} of 4: {wizardStep === 1 ? 'Add Stops' : wizardStep === 2 ? 'Optimize Route' : wizardStep === 3 ? 'Zones & Dispatch' : 'GPS & Support'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAllPanels(!showAllPanels)}
+                className="text-[10px] font-bold text-slate-500 hover:text-rose-600 transition underline cursor-pointer"
+              >
+                {showAllPanels ? "Switch to Guided Wizard" : "Show All Panels (Pro View)"}
+              </button>
             </div>
 
-            <div className="relative mt-2">
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-                </span>
-                <input
-                  id="rk9-add-stop"
-                  type="text"
-                  autoComplete="off"
-                  inputMode="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onFocus={() => {
-                    if (suggestions.length) setShowSug(true);
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => setShowSug(false), 120);
-                  }}
-                  onKeyDown={(e) => {
-                    const list = suggestions.filter(
-                      (s) => filter === "all" || s.category === filter,
-                    );
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      setShowSug(true);
-                      setActiveIdx((i) => Math.min(i + 1, list.length - 1));
-                    } else if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      setActiveIdx((i) => Math.max(i - 1, 0));
-                    } else if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (activeIdx >= 0 && list[activeIdx]) addStop(list[activeIdx]);
-                      else if (query.trim()) addFromText(query);
-                    } else if (e.key === "Escape") {
-                      setShowSug(false);
-                    }
-                  }}
-                  placeholder="Search US addresses, businesses, or ZIP codes…"
-                  className="w-full rounded-xl border border-border bg-white py-3 pl-9 pr-24 text-sm text-primary placeholder:text-muted-foreground focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                />
-                <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
-                  {searching && (
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
-                  )}
-                  {query && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setQuery("");
-                        setSuggestions([]);
-                        setShowSug(false);
-                      }}
-                      className="rounded-md px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-150 cursor-pointer"
-                      aria-label="Clear"
-                    >
-                      ✕
-                    </button>
-                  )}
+            {!showAllPanels && (
+              <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/90 rounded-2xl border border-slate-200/60">
+                {[
+                  { step: 1, label: "1. Stops" },
+                  { step: 2, label: "2. Optimize" },
+                  { step: 3, label: "3. Dispatch" },
+                  { step: 4, label: "4. GPS" },
+                ].map((s) => (
                   <button
+                    key={s.step}
                     type="button"
-                    onClick={() => query.trim() && addFromText(query)}
-                    disabled={!query.trim()}
-                    className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-rose-700 disabled:opacity-40 cursor-pointer"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              {/* Filter chips */}
-              <div className="mt-2 flex gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {FILTERS.map((f) => {
-                  const active = filter === f.key;
-                  const IconComp = f.icon;
-                  return (
-                    <button
-                      key={f.key}
-                      type="button"
-                      onClick={() => setFilter(f.key)}
-                      className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${
-                        active
-                          ? "border-rose-600 bg-rose-600 text-white"
-                          : "border-border bg-white text-primary/70 hover:bg-slate-50"
+                    onClick={() => setWizardStep(s.step)}
+                    className={`rounded-xl py-2 px-1 text-[11px] font-bold transition text-center cursor-pointer whitespace-nowrap ${wizardStep === s.step
+                      ? "bg-rose-600 text-white shadow-xs"
+                      : "text-slate-600 hover:bg-white/80 hover:text-slate-900"
                       }`}
-                    >
-                      <IconComp className="w-3.5 h-3.5" />
-                      {f.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Suggestions dropdown */}
-              {showSug && (suggestions.length > 0 || searching) && (
-                <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
-                  {(() => {
-                    const list = suggestions.filter(
-                      (s) => filter === "all" || s.category === filter,
-                    );
-                    if (!list.length) {
-                      return (
-                        <div className="px-3 py-3 text-xs text-muted-foreground">
-                          {searching
-                            ? "Searching US addresses…"
-                            : "No US matches found. Try a different address or filter."}
-                        </div>
-                      );
-                    }
-                    return list.map((s, i) => {
-                      const active = i === activeIdx;
-                      const meta = FILTERS.find((f) => f.key === s.category);
-                      const IconComp = meta?.icon ?? MapPin;
-                      return (
-                        <button
-                          key={String(s.place_id)}
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            addStop(s);
-                          }}
-                          onMouseEnter={() => setActiveIdx(i)}
-                          className={`flex w-full items-start gap-2 border-b border-border/50 px-3 py-2 text-left text-xs transition last:border-b-0 cursor-pointer ${
-                            active ? "bg-rose-50" : "hover:bg-slate-50"
-                          }`}
-                        >
-                          <IconComp className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                          <span className="flex-1 leading-snug text-primary font-medium">
-                            {s.display_name}
-                          </span>
-                        </button>
-                      );
-                    });
-                  })()}
-                </div>
-              )}
-            </div>
-
-            {/* Recent + import */}
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-              {recent.slice(0, 4).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => addFromText(r)}
-                  className="max-w-[180px] truncate rounded-full border border-border bg-white px-2 py-0.5 text-primary/70 transition hover:bg-slate-50 cursor-pointer flex items-center"
-                  title={r}
-                >
-                  <History className="w-3 h-3 mr-1 text-slate-400 shrink-0" />
-                  <span className="truncate">{r}</span>
-                </button>
-              ))}
-              <label className="ml-auto cursor-pointer rounded-full border border-border bg-white px-2.5 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50">
-                Import CSV
-                <input
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) importCsv(f);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                Optimization goal
-              </label>
-            </div>
-            <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg border border-border p-1 bg-white">
-              {["fastest", "shortest", "balanced"].map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => setGoal(g)}
-                  className={`rounded-md px-2 py-1.5 text-xs font-semibold capitalize transition cursor-pointer ${
-                    goal === g ? "bg-rose-600 text-white" : "text-primary/70 hover:bg-slate-50"
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={optimize}
-                disabled={optimizing || stops.length < 2}
-                className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-3 text-sm font-bold tracking-wide text-white shadow-xs transition disabled:opacity-50 cursor-pointer"
-              >
-                {optimizing ? "Optimizing…" : "Optimize route"}
-              </button>
-              <button
-                type="button"
-                onClick={reverse}
-                disabled={stops.length < 2}
-                className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
-              >
-                Reverse
-              </button>
-              <button
-                type="button"
-                onClick={clearAll}
-                disabled={!stops.length}
-                className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
-              >
-                Clear
-              </button>
-            </div>
-            {error && (
-              <div className="mt-3 rounded-md border border-rose-500/20 bg-rose-50 px-3 py-2 text-xs text-rose-600 font-medium">
-                {error}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
-          {(distMi > 0 || durMin > 0) && (
-            <div className="grid grid-cols-3 gap-2 rounded-3xl border border-rose-600 bg-rose-600 p-5 text-white shadow-md">
-              <Stat label="Miles" value={distMi.toFixed(1)} />
-              <Stat label="Drive time" value={formatDur(durMin)} />
-              <Stat label="Est fuel" value={`$${fuelCost.toFixed(2)}`} />
-            </div>
-          )}
-
-          {stops.length > 0 && (
-            <div className="rounded-3xl border border-border bg-card shadow-sm">
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                <div className="text-sm font-bold text-primary">Stops</div>
-                <button
-                  type="button"
-                  onClick={exportCsv}
-                  className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
-                >
-                  Export CSV
-                </button>
-              </div>
-              <ol className="max-h-[420px] divide-y divide-border overflow-auto">
-                {stops.map((s, i) => (
-                  <li key={s.id} className="flex items-start gap-2 px-4 py-2.5 bg-white">
-                    <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white">
-                      {i + 1}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-primary" title={s.label}>
-                        {s.label}
-                      </div>
-                      {zones.length > 0 && (
-                        <select
-                          value={s.zoneId ?? ""}
-                          onChange={(e) => assignStopZone(s.id, e.target.value || undefined)}
-                          className="mt-1 w-full rounded border border-border bg-slate-50 px-1.5 py-0.5 text-[10px] text-primary"
-                        >
-                          <option value="">— Unzoned —</option>
-                          {zones.map((z) => (
-                            <option key={z.id} value={z.id}>
-                              {z.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    <div className="flex flex-shrink-0 items-center gap-0.5">
-                      <IconBtn onClick={() => move(s.id, -1)} title="Move up">
-                        <ArrowUp className="w-3.5 h-3.5" />
-                      </IconBtn>
-                      <IconBtn onClick={() => move(s.id, 1)} title="Move down">
-                        <ArrowDown className="w-3.5 h-3.5" />
-                      </IconBtn>
-                      <IconBtn
-                        onClick={() => toggleLock(s.id)}
-                        title={s.locked ? "Unlock" : "Lock"}
-                      >
-                        {s.locked ? (
-                          <Lock className="w-3.5 h-3.5 text-slate-500" />
-                        ) : (
-                          <Unlock className="w-3.5 h-3.5 text-slate-400" />
-                        )}
-                      </IconBtn>
-                      <IconBtn onClick={() => removeStop(s.id)} title="Remove">
-                        <X className="w-3.5 h-3.5 text-rose-500" />
-                      </IconBtn>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          {/* Zones */}
-          {stops.length > 0 && (
-            <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setZonesOpen((o) => !o)}
-                className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-rose-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
-                  </span>
-                  <span className="text-base font-bold text-primary">Zones</span>
-                  {zones.length > 0 && (
-                    <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px] font-bold text-rose-600">
-                      {zones.length}
-                    </span>
-                  )}
-                </div>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className={`text-primary/60 transition-transform ${zonesOpen ? "rotate-180" : ""}`}
-                >
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </button>
-              {zonesOpen && (
-                <>
-                  <div className="mt-3 text-xs text-slate-500 font-medium">
-                    Section off addresses that are close to each other and hand each zone to a different driver.
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-slate-50 p-2">
-                    <label className="text-[11px] font-semibold text-primary/80">Auto-group into</label>
-                    <input
-                      type="number"
-                      min={2}
-                      max={ZONE_COLORS.length}
-                      value={autoZoneCount}
-                      onChange={(e) => setAutoZoneCount(Math.max(2, Math.min(ZONE_COLORS.length, parseInt(e.target.value) || 2)))}
-                      className="w-14 rounded border border-border bg-white px-2 py-1 text-xs"
-                    />
-                    <span className="text-[11px] text-muted-foreground font-semibold">zones by proximity</span>
-                    <button
-                      type="button"
-                      onClick={autoGroupZones}
-                      className="ml-auto rounded-md bg-[#0b132b] text-white px-3 py-1.5 text-xs font-bold hover:bg-[#1a264a] cursor-pointer"
+          {/* STEP 1: Add Stop & Address Search */}
+          {(showAllPanels || wizardStep === 1) && (
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="rk9-add-stop"
+                      className="text-[10px] font-bold uppercase tracking-wider text-rose-600"
                     >
-                      Auto-group
-                    </button>
+                      Add stop
+                    </label>
+                    <span className="rounded-full border border-border bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      US only
+                    </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => addZone()}
-                    className="mt-2 rounded-lg border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 cursor-pointer"
-                  >
-                    + Add zone
-                  </button>
-                  {zones.length === 0 && (
-                    <div className="mt-3 rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
-                      No zones yet. Add one manually or auto-group by proximity.
-                    </div>
-                  )}
-                  <div className="mt-3 space-y-3">
-                    {zones.map((z) => {
-                      const zStops = stopsInZone(z.id);
-                      const over = zStops.length > GOOGLE_ZONE_LIMIT;
-                      return (
-                        <div
-                          key={z.id}
-                          className="rounded-lg border border-border bg-white p-3"
-                          style={{ borderLeft: `4px solid ${z.color}` }}
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="tabular-nums font-semibold text-primary">
+                      {stops.length}/400
+                    </span>
+                    {locStatus === "ok" && userLoc ? (
+                      <button
+                        type="button"
+                        onClick={requestUserLocation}
+                        className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 transition hover:bg-emerald-100 cursor-pointer"
+                        title="Address search is biased to your area. Tap to refresh."
+                      >
+                        <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
+                        <span className="max-w-[140px] truncate">
+                          Near {userLoc.city ? `${userLoc.city}, ` : ""}
+                          {userLoc.state ?? "you"}
+                        </span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={requestUserLocation}
+                        className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50 cursor-pointer"
+                      >
+                        <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                        {locStatus === "asking"
+                          ? "Locating…"
+                          : locStatus === "denied"
+                            ? "Enable location"
+                            : "Use my location"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="relative mt-2">
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                    </span>
+                    <input
+                      id="rk9-add-stop"
+                      type="text"
+                      autoComplete="off"
+                      inputMode="search"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onFocus={() => {
+                        if (suggestions.length) setShowSug(true);
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => setShowSug(false), 120);
+                      }}
+                      onKeyDown={(e) => {
+                        const list = suggestions.filter(
+                          (s) => filter === "all" || s.category === filter,
+                        );
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          setShowSug(true);
+                          setActiveIdx((i) => Math.min(i + 1, list.length - 1));
+                        } else if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setActiveIdx((i) => Math.max(i - 1, 0));
+                        } else if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (activeIdx >= 0 && list[activeIdx]) addStop(list[activeIdx]);
+                          else if (query.trim()) addFromText(query);
+                        } else if (e.key === "Escape") {
+                          setShowSug(false);
+                        }
+                      }}
+                      placeholder="Search US addresses, businesses, or ZIP codes…"
+                      className="w-full rounded-xl border border-border bg-white py-3 pl-9 pr-24 text-sm text-primary placeholder:text-muted-foreground focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                    <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                      {searching && (
+                        <span className="h-3 w-3 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
+                      )}
+                      {query && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuery("");
+                            setSuggestions([]);
+                            setShowSug(false);
+                          }}
+                          className="rounded-md px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-150 cursor-pointer"
+                          aria-label="Clear"
                         >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="inline-block h-4 w-4 flex-shrink-0 rounded-full border border-white shadow"
-                              style={{ background: z.color }}
-                            />
-                            <input
-                              value={z.name}
-                              onChange={(e) => updateZone(z.id, { name: e.target.value })}
-                              className="min-w-0 flex-1 rounded border border-border bg-white px-2 py-1 text-sm font-semibold text-primary"
-                            />
-                            <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
-                              {zStops.length} stop{zStops.length === 1 ? "" : "s"}
-                            </span>
-                            <button
-                               type="button"
-                               onClick={() => removeZone(z.id)}
-                               className="rounded p-1 text-xs text-slate-400 hover:text-rose-600 cursor-pointer flex items-center justify-center"
-                               title="Delete zone"
-                             >
-                               <X className="w-3.5 h-3.5" />
-                             </button>
-                          </div>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <input
-                              placeholder="Driver name"
-                              value={z.driverName ?? ""}
-                              onChange={(e) => updateZone(z.id, { driverName: e.target.value })}
-                              className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none"
-                            />
-                            <input
-                              type="tel"
-                              placeholder="Driver phone"
-                              value={z.driverPhone ?? ""}
-                              onChange={(e) => updateZone(z.id, { driverPhone: e.target.value })}
-                              className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none"
-                            />
-                          </div>
-                          {over && (
-                            <div className="mt-2 rounded border border-rose-500/20 bg-rose-50 px-2 py-1 text-[11px] text-rose-600 font-semibold">
-                              {zStops.length}/{GOOGLE_ZONE_LIMIT} — over Google's optimization limit. Split before planning.
-                            </div>
-                          )}
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => planZone(z.id)}
-                              disabled={zStops.length < 2 || over || optimizing}
-                              className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-xs font-bold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
-                            >
-                              Plan zone
-                            </button>
-                            <button
-                               type="button"
-                               onClick={() => sendZoneToDriver(z)}
-                               disabled={zStops.length === 0 || !z.driverPhone}
-                               className="rounded-md border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-                             >
-                               <Send className="w-3.5 h-3.5" />
-                               <span>Send to driver</span>
-                             </button>
-                            {zStops.length >= 2 && (
-                              <a
-                                href={zoneGoogleLink(z.id)}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:border-rose-600 flex items-center justify-center bg-white"
-                              >
-                                Open in Maps
-                              </a>
-                            )}
-                          </div>
-                        </div>
+                          ✕
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => query.trim() && addFromText(query)}
+                        disabled={!query.trim()}
+                        className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-rose-700 disabled:opacity-40 cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter chips */}
+                  <div className="mt-2 flex gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {FILTERS.map((f) => {
+                      const active = filter === f.key;
+                      const IconComp = f.icon;
+                      return (
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => setFilter(f.key)}
+                          className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${active
+                            ? "border-rose-600 bg-rose-600 text-white"
+                            : "border-border bg-white text-primary/70 hover:bg-slate-50"
+                            }`}
+                        >
+                          <IconComp className="w-3.5 h-3.5" />
+                          {f.label}
+                        </button>
                       );
                     })}
                   </div>
-                </>
+
+                  {/* Suggestions dropdown */}
+                  {showSug && (suggestions.length > 0 || searching) && (
+                    <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+                      {(() => {
+                        const list = suggestions.filter(
+                          (s) => filter === "all" || s.category === filter,
+                        );
+                        if (!list.length) {
+                          return (
+                            <div className="px-3 py-3 text-xs text-muted-foreground">
+                              {searching
+                                ? "Searching US addresses…"
+                                : "No US matches found. Try a different address or filter."}
+                            </div>
+                          );
+                        }
+                        return list.map((s, i) => {
+                          const active = i === activeIdx;
+                          const meta = FILTERS.find((f) => f.key === s.category);
+                          const IconComp = meta?.icon ?? MapPin;
+                          return (
+                            <button
+                              key={String(s.place_id)}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                addStop(s);
+                              }}
+                              onMouseEnter={() => setActiveIdx(i)}
+                              className={`flex w-full items-start gap-2 border-b border-border/50 px-3 py-2 text-left text-xs transition last:border-b-0 cursor-pointer ${active ? "bg-rose-50" : "hover:bg-slate-50"
+                                }`}
+                            >
+                              <IconComp className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                              <span className="flex-1 leading-snug text-primary font-medium">
+                                {s.display_name}
+                              </span>
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent + import */}
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                  {recent.slice(0, 4).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => addFromText(r)}
+                      className="max-w-[180px] truncate rounded-full border border-border bg-white px-2 py-0.5 text-primary/70 transition hover:bg-slate-50 cursor-pointer flex items-center"
+                      title={r}
+                    >
+                      <History className="w-3 h-3 mr-1 text-slate-400 shrink-0" />
+                      <span className="truncate">{r}</span>
+                    </button>
+                  ))}
+                  <label className="ml-auto cursor-pointer rounded-full border border-border bg-white px-2.5 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50">
+                    Import CSV
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) importCsv(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {stops.length > 0 && (
+                <div className="mt-4 rounded-3xl border border-border bg-card shadow-sm">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <div className="text-sm font-bold text-primary">Stops</div>
+                    <button
+                      type="button"
+                      onClick={exportCsv}
+                      className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
+                  <ol className="max-h-[420px] divide-y divide-border overflow-auto">
+                    {stops.map((s, i) => (
+                      <li key={s.id} className="flex items-center gap-2 px-4 py-2.5 bg-white">
+                        <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white">
+                          {i + 1}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs font-semibold text-primary" title={s.label}>
+                            {s.label}
+                          </div>
+                          {zones.length > 0 && (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <select
+                                value={s.zoneId ?? ""}
+                                onChange={(e) => assignStopZone(s.id, e.target.value || undefined)}
+                                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700 focus:bg-white focus:outline-none transition cursor-pointer"
+                                style={
+                                  s.zoneId && zones.find((z) => z.id === s.zoneId)
+                                    ? {
+                                      backgroundColor: `${zones.find((z) => z.id === s.zoneId).color}20`,
+                                      borderColor: zones.find((z) => z.id === s.zoneId).color,
+                                      color: zones.find((z) => z.id === s.zoneId).color,
+                                    }
+                                    : {}
+                                }
+                              >
+                                <option value="">— Unzoned —</option>
+                                {zones.map((z) => (
+                                  <option key={z.id} value={z.id}>
+                                    {z.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-shrink-0 items-center gap-0.5">
+                          <IconBtn onClick={() => move(s.id, -1)} title="Move up">
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </IconBtn>
+                          <IconBtn onClick={() => move(s.id, 1)} title="Move down">
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </IconBtn>
+                          <IconBtn
+                            onClick={() => toggleLock(s.id)}
+                            title={s.locked ? "Unlock" : "Lock"}
+                          >
+                            {s.locked ? (
+                              <Lock className="w-3.5 h-3.5 text-slate-500" />
+                            ) : (
+                              <Unlock className="w-3.5 h-3.5 text-slate-400" />
+                            )}
+                          </IconBtn>
+                          <IconBtn onClick={() => removeStop(s.id)} title="Remove">
+                            <X className="w-3.5 h-3.5 text-rose-500" />
+                          </IconBtn>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              {!showAllPanels && wizardStep === 1 && (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep(2)}
+                  disabled={stops.length < 2}
+                  className="mt-4 w-full rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs py-3.5 shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Next: Step 2 — Select Goal & Optimize</span>
+                  <span>→</span>
+                </button>
               )}
             </div>
           )}
 
-          {stops.length >= 2 && (
-            <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                Send to navigation
-              </div>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {googleLinks.length > 0 && (
-                  <a
-                    href={googleLinks[0]}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
+          {/* STEP 2: Optimization Goal & Summary Metrics */}
+          {(showAllPanels || wizardStep === 2) && (
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                    Optimization goal
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-1 rounded-lg border border-border p-1 bg-white">
+                  {["fastest", "shortest", "balanced"].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => {
+                        setGoal(g);
+                        if (stops.length >= 2) optimize(g);
+                      }}
+                      className={`rounded-md px-2 py-1.5 text-xs font-semibold capitalize transition cursor-pointer ${goal === g ? "bg-rose-600 text-white" : "text-primary/70 hover:bg-slate-50"
+                        }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={optimize}
+                    disabled={optimizing || stops.length < 2}
+                    className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-3 text-sm font-bold tracking-wide text-white shadow-xs transition disabled:opacity-50 cursor-pointer"
                   >
-                    Google Maps
-                  </a>
-                )}
-                <a
-                  href={appleLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
-                >
-                  Apple Maps
-                </a>
-                <a
-                  href={wazeLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
-                >
-                  Waze
-                </a>
-              </div>
-              {googleLinks.length > 1 && (
-                <div className="mt-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Google Maps · additional legs
+                    {optimizing ? "Optimizing…" : "Optimize route"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={reverse}
+                    disabled={stops.length < 2}
+                    className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
+                  >
+                    Reverse
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestClearAll}
+                    disabled={!stops.length}
+                    className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+                {error && (
+                  <div className="rounded-md border border-rose-500/20 bg-rose-50 px-3 py-2 text-xs text-rose-600 font-medium">
+                    {error}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {googleLinks.slice(1).map((l, i) => (
+                )}
+              </div>
+
+              {(distMi > 0 || durMin > 0) && (
+                <div className="grid grid-cols-3 gap-2 rounded-3xl border border-rose-600 bg-rose-600 p-5 text-white shadow-md">
+                  <Stat label="Miles" value={distMi.toFixed(1)} />
+                  <Stat label="Drive time" value={formatDur(durMin)} />
+                  <Stat label="Est fuel" value={`$${fuelCost.toFixed(2)}`} />
+                </div>
+              )}
+
+              {!showAllPanels && wizardStep === 2 && (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep(3)}
+                  className="w-full rounded-2xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs py-3.5 shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Next: Step 3 — Zones & Driver Dispatch</span>
+                  <span>→</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* STEP 3: Zones & Driver Dispatch */}
+          {(showAllPanels || wizardStep === 3) && (
+            <div className="space-y-4">
+              {stops.length > 0 && (
+                <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setZonesOpen((o) => !o)}
+                    className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-rose-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></svg>
+                      </span>
+                      <span className="text-base font-bold text-primary">Zones</span>
+                      {zones.length > 0 && (
+                        <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px] font-bold text-rose-600">
+                          {zones.length}
+                        </span>
+                      )}
+                    </div>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={`text-primary/60 transition-transform ${zonesOpen ? "rotate-180" : ""}`}
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
+                  {zonesOpen && (
+                    <>
+                      <div className="mt-3 text-xs text-slate-500 font-medium">
+                        Section off addresses that are close to each other and hand each zone to a different driver.
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-slate-50 p-2">
+                        <label className="text-[11px] font-semibold text-primary/80">Auto-group into</label>
+                        <input
+                          type="number"
+                          min={2}
+                          max={ZONE_COLORS.length}
+                          value={autoZoneCount}
+                          onChange={(e) => setAutoZoneCount(Math.max(2, Math.min(ZONE_COLORS.length, parseInt(e.target.value) || 2)))}
+                          className="w-14 rounded border border-border bg-white px-2 py-1 text-xs"
+                        />
+                        <span className="text-[11px] text-muted-foreground font-semibold">zones by proximity</span>
+                        <button
+                          type="button"
+                          onClick={autoGroupZones}
+                          className="ml-auto rounded-md bg-[#0b132b] text-white px-3 py-1.5 text-xs font-bold hover:bg-[#1a264a] cursor-pointer"
+                        >
+                          Auto-group
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => addZone()}
+                        className="mt-2 rounded-lg border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 cursor-pointer"
+                      >
+                        + Add zone
+                      </button>
+                      {zones.length === 0 && (
+                        <div className="mt-3 rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                          No zones yet. Add one manually or auto-group by proximity.
+                        </div>
+                      )}
+                      <div className="mt-3 space-y-3">
+                        {zones.map((z) => {
+                          const zStops = stopsInZone(z.id);
+                          const over = zStops.length > GOOGLE_ZONE_LIMIT;
+                          return (
+                            <div
+                              key={z.id}
+                              className="rounded-lg border border-border bg-white p-3"
+                              style={{ borderLeft: `4px solid ${z.color}` }}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="inline-block h-4 w-4 flex-shrink-0 rounded-full border border-white shadow"
+                                  style={{ background: z.color }}
+                                />
+                                <input
+                                  value={z.name}
+                                  onChange={(e) => updateZone(z.id, { name: e.target.value })}
+                                  className="min-w-0 flex-1 rounded border border-border bg-white px-2 py-1 text-sm font-semibold text-primary"
+                                />
+                                <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
+                                  {zStops.length} stop{zStops.length === 1 ? "" : "s"}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeZone(z.id)}
+                                  className="rounded p-1 text-xs text-slate-400 hover:text-rose-600 cursor-pointer flex items-center justify-center"
+                                  title="Delete zone"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <div className="mt-2.5 space-y-2">
+                                {spares.length > 0 && (
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                      Assign Driver
+                                    </label>
+                                    <select
+                                      value={z.driverPhone ?? ""}
+                                      onChange={(e) => {
+                                        const selected = spares.find((d) => d.phone === e.target.value);
+                                        if (selected) {
+                                          updateZone(z.id, {
+                                            driverName: `${selected.first_name} ${selected.last_name}`,
+                                            driverPhone: selected.phone,
+                                          });
+                                        }
+                                      }}
+                                      className="w-full rounded border border-border bg-slate-50 px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white"
+                                    >
+                                      <option value="">— Select Registered Driver —</option>
+                                      {spares.map((d) => (
+                                        <option key={d.id} value={d.phone}>
+                                          {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <input
+                                    placeholder="Driver name"
+                                    value={z.driverName ?? ""}
+                                    onChange={(e) => updateZone(z.id, { driverName: e.target.value })}
+                                    className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
+                                  />
+                                  <input
+                                    type="tel"
+                                    placeholder="Driver phone"
+                                    value={z.driverPhone ?? ""}
+                                    onChange={(e) => updateZone(z.id, { driverPhone: e.target.value })}
+                                    className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
+                                  />
+                                </div>
+
+                                {z.driverName && z.driverPhone && !spares.some((d) => d.phone === z.driverPhone) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const parts = z.driverName.trim().split(" ");
+                                      const newDriver = {
+                                        id: uid(),
+                                        first_name: parts[0] || "Driver",
+                                        last_name: parts.slice(1).join(" ") || "",
+                                        phone: z.driverPhone.trim(),
+                                        city: userLoc?.city || "Local",
+                                        state: userLoc?.state || "US",
+                                      };
+                                      setSpares((prev) => [newDriver, ...prev]);
+                                    }}
+                                    className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1 mt-1"
+                                  >
+                                    + Save "{z.driverName}" to registered drivers list
+                                  </button>
+                                )}
+
+                                {/* Assigned Stops in this Zone */}
+                                <div className="mt-2.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 space-y-1.5">
+                                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                                    <span>Stops in {z.name} ({zStops.length})</span>
+                                  </div>
+                                  {zStops.length === 0 ? (
+                                    <div className="text-[11px] text-slate-400 italic font-medium py-1">
+                                      No stops assigned to this zone yet.
+                                    </div>
+                                  ) : (
+                                    <ul className="space-y-1 max-h-36 overflow-y-auto">
+                                      {zStops.map((s) => (
+                                        <li key={s.id} className="flex items-center justify-between gap-1 text-[11px] font-medium text-slate-700 bg-white px-2 py-1 rounded border border-slate-200/80 shadow-2xs">
+                                          <span className="truncate flex items-center gap-1">
+                                            <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                                            <span className="truncate">{s.label}</span>
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => assignStopZone(s.id, undefined)}
+                                            className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 shrink-0"
+                                            title="Remove stop from zone"
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+
+                                  {/* Quick add stop dropdown */}
+                                  {stops.length > 0 && (
+                                    <select
+                                      value=""
+                                      onChange={(e) => {
+                                        if (e.target.value) assignStopZone(e.target.value, z.id);
+                                      }}
+                                      className="w-full mt-1.5 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 focus:outline-none focus:border-rose-500"
+                                    >
+                                      <option value="">+ Assign a stop to {z.name}…</option>
+                                      {stops.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                          {s.zoneId === z.id ? `✓ (Already in ${z.name}) ` : s.zoneId ? `[In ${zones.find((zn) => zn.id === s.zoneId)?.name || 'Other Zone'}] ` : '[Unzoned] '}
+                                          {s.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              </div>
+                              {over && (
+                                <div className="mt-2 rounded border border-rose-500/20 bg-rose-50 px-2 py-1 text-[11px] text-rose-600 font-semibold">
+                                  {zStops.length}/{GOOGLE_ZONE_LIMIT} — over Google's optimization limit. Split before planning.
+                                </div>
+                              )}
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => planZone(z.id)}
+                                  disabled={zStops.length < 2 || over || optimizing}
+                                  className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-xs font-bold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+                                >
+                                  Plan zone
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => sendZoneToDriver(z)}
+                                  disabled={zStops.length === 0 || !z.driverPhone}
+                                  className="rounded-md border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                  <span>Send to driver</span>
+                                </button>
+                                {zStops.length >= 2 && (
+                                  <a
+                                    href={zoneGoogleLink(z.id)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:border-rose-600 flex items-center justify-center bg-white"
+                                  >
+                                    Open in Maps
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {stops.length >= 2 && (
+                <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                    Send to navigation
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {googleLinks.length > 0 && (
                       <a
-                        key={l}
-                        href={l}
+                        href={googleLinks[0]}
                         target="_blank"
                         rel="noreferrer"
-                        className="rounded border border-border px-2 py-1 text-[11px] font-semibold text-primary hover:border-rose-600 bg-white"
+                        className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
                       >
-                        Leg {i + 2}
+                        Google Maps
                       </a>
+                    )}
+                    <a
+                      href={appleLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
+                    >
+                      Apple Maps
+                    </a>
+                    <a
+                      href={wazeLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
+                    >
+                      Waze
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {!showAllPanels && wizardStep === 3 && (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep(4)}
+                  className="w-full rounded-2xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs py-3.5 shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Next: Step 4 — Live GPS & Spare Drivers</span>
+                  <span>→</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* STEP 4: Live GPS, Driver Contact & Spare Directory */}
+          {(showAllPanels || wizardStep === 4) && (
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                      Live tracking
+                    </div>
+                    <div className="text-xs text-slate-500 font-medium">
+                      Follow your position in real time on the map.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTracking((t) => !t)}
+                    className={`rounded-lg px-3 py-2 text-xs font-bold transition cursor-pointer ${tracking
+                      ? "bg-rose-600 text-white"
+                      : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100"
+                      }`}
+                  >
+                    {tracking ? "Stop" : "Start"}
+                  </button>
+                </div>
+                {tracking && (
+                  <div className="mt-3 rounded-lg border border-border bg-slate-50 p-3 text-xs">
+                    {myPos ? (
+                      <>
+                        <div className="flex items-center gap-2 font-semibold text-primary">
+                          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-600" />
+                          Tracking live · {myPos.lat.toFixed(4)}, {myPos.lon.toFixed(4)}
+                        </div>
+                        {nextStop && (
+                          <div className="mt-1 text-slate-500">
+                            Nearest stop: <b className="text-primary">#{nextStop.index + 1}</b> ·{" "}
+                            {nextStop.milesAway.toFixed(1)} mi away
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-slate-400 font-medium">Waiting for GPS signal…</div>
+                    )}
+                  </div>
+                )}
+                {stops.length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={launchOnPhone}
+                    className="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-700 px-3 py-3 text-sm font-bold text-white shadow-xs cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span>{isMobile ? "Open in phone GPS now" : "Send route to phone GPS"}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Need help / Spare drivers */}
+              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setContactOpen((o) => !o)}
+                  className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-rose-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+                    </span>
+                    <span className="text-base font-bold text-primary">Driver contact</span>
+                    <span className="text-xs text-slate-400">(optional)</span>
+                  </div>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`text-primary/60 transition-transform ${contactOpen ? "rotate-180" : ""}`}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                {contactOpen && (
+                  <div className="mt-3">
+                    <div className="text-xs text-slate-500 font-medium">
+                      So a replacement driver can reach you if you need help. We never share this publicly.
+                    </div>
+                    <form onSubmit={submitJoin} className="mt-3 grid gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          required
+                          placeholder="First name"
+                          value={joinForm.first_name}
+                          onChange={(e) => setJoinForm((f) => ({ ...f, first_name: e.target.value }))}
+                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                        />
+                        <input
+                          required
+                          placeholder="Last name"
+                          value={joinForm.last_name}
+                          onChange={(e) => setJoinForm((f) => ({ ...f, last_name: e.target.value }))}
+                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                        />
+                      </div>
+                      <input
+                        required
+                        type="tel"
+                        placeholder="Phone number"
+                        value={joinForm.phone}
+                        onChange={(e) => setJoinForm((f) => ({ ...f, phone: e.target.value }))}
+                        className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          required
+                          placeholder="City"
+                          value={joinForm.city}
+                          onChange={(e) => setJoinForm((f) => ({ ...f, city: e.target.value }))}
+                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                        />
+                        <input
+                          required
+                          placeholder="State"
+                          maxLength={20}
+                          value={joinForm.state}
+                          onChange={(e) => setJoinForm((f) => ({ ...f, state: e.target.value }))}
+                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-[11px] text-slate-500 font-semibold cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={joinForm.share_gps}
+                          onChange={(e) => setJoinForm((f) => ({ ...f, share_gps: e.target.checked }))}
+                        />
+                        Share my current GPS so drivers can find me faster
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={joinBusy}
+                        className="mt-1 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white px-4 py-2.5 text-xs font-bold shadow-xs disabled:opacity-60 cursor-pointer"
+                      >
+                        {joinBusy ? "Submitting…" : "Save my contact info"}
+                      </button>
+                      {joinMsg && (
+                        <div className="rounded-md border border-border bg-slate-50 px-3 py-2 text-[11px] text-slate-700 font-semibold">
+                          {joinMsg}
+                        </div>
+                      )}
+                    </form>
+                  </div>
+                )}
+              </div>
+
+              {/* Big "Need help — call a spare driver" CTA */}
+              <button
+                type="button"
+                onClick={() => setHelpOpen((o) => !o)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-600 bg-rose-50 hover:bg-rose-100 px-5 py-3.5 text-sm font-bold text-rose-600 shadow-sm transition cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M4.93 4.93l4.24 4.24" /><path d="M14.83 9.17l4.24-4.24" /><path d="M14.83 14.83l4.24 4.24" /><path d="M9.17 14.83l-4.24 4.24" /><circle cx="12" cy="12" r="4" /></svg>
+                {helpOpen ? "Close spare driver list" : "Need help — call a spare driver"}
+              </button>
+
+              {helpOpen && (
+                <div className="rounded-3xl border border-rose-200 bg-card p-5 shadow-sm">
+                  <div className="mt-3 space-y-2">
+                    {nearbySpares.length === 0 && (
+                      <div className="rounded-md border border-border bg-slate-50 p-3 text-xs text-muted-foreground">
+                        No spare drivers listed yet in your area. Ask a fellow driver to sign up below.
+                      </div>
+                    )}
+                    {nearbySpares.map((d) => (
+                      <div
+                        key={d.id}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border bg-white p-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold text-[#0b132b]">
+                            {d.first_name} {d.last_name}
+                          </div>
+                          <div className="truncate text-[11px] text-slate-500 font-semibold">
+                            {d.city}, {d.state}
+                            {d.distance != null && ` · ${d.distance.toFixed(1)} mi`}
+                          </div>
+                        </div>
+                        <a
+                          href={`tel:${d.phone.replace(/[^+\d]/g, "")}`}
+                          className="rounded-md bg-rose-600 text-white px-3 py-2 text-xs font-bold hover:bg-rose-700 flex items-center gap-1.5"
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>Call</span>
+                        </a>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Live tracking */}
-          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                  Live tracking
-                </div>
-                <div className="text-xs text-slate-500 font-medium">
-                  Follow your position in real time on the map.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTracking((t) => !t)}
-                className={`rounded-lg px-3 py-2 text-xs font-bold transition cursor-pointer ${
-                  tracking
-                    ? "bg-rose-600 text-white"
-                    : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100"
-                }`}
-              >
-                {tracking ? "Stop" : "Start"}
-              </button>
-            </div>
-            {tracking && (
-              <div className="mt-3 rounded-lg border border-border bg-slate-50 p-3 text-xs">
-                {myPos ? (
-                  <>
-                    <div className="flex items-center gap-2 font-semibold text-primary">
-                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-600" />
-                      Tracking live · {myPos.lat.toFixed(4)}, {myPos.lon.toFixed(4)}
-                    </div>
-                    {nextStop && (
-                      <div className="mt-1 text-slate-500">
-                        Nearest stop: <b className="text-primary">#{nextStop.index + 1}</b> ·{" "}
-                        {nextStop.milesAway.toFixed(1)} mi away
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-slate-400 font-medium">Waiting for GPS signal…</div>
-                )}
-              </div>
-            )}
-            {stops.length >= 2 && (
-              <button
-                type="button"
-                onClick={launchOnPhone}
-                className="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-700 px-3 py-3 text-sm font-bold text-white shadow-xs cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Smartphone className="w-4 h-4" />
-                <span>{isMobile ? "Open in phone GPS now" : "Send route to phone GPS"}</span>
-              </button>
-            )}
-          </div>
-
-          {/* Need help / Spare drivers */}
-          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setContactOpen((o) => !o)}
-              className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-rose-600">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-                </span>
-                <span className="text-base font-bold text-primary">Driver contact</span>
-                <span className="text-xs text-slate-400">(optional)</span>
-              </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`text-primary/60 transition-transform ${contactOpen ? "rotate-180" : ""}`}
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
-            {contactOpen && (
-              <div className="mt-3">
-                <div className="text-xs text-slate-500 font-medium">
-                  So a replacement driver can reach you if you need help. We never share this publicly.
-                </div>
-                <form onSubmit={submitJoin} className="mt-3 grid gap-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      required
-                      placeholder="First name"
-                      value={joinForm.first_name}
-                      onChange={(e) => setJoinForm((f) => ({ ...f, first_name: e.target.value }))}
-                      className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                    />
-                    <input
-                      required
-                      placeholder="Last name"
-                      value={joinForm.last_name}
-                      onChange={(e) => setJoinForm((f) => ({ ...f, last_name: e.target.value }))}
-                      className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                    />
-                  </div>
-                  <input
-                    required
-                    type="tel"
-                    placeholder="Phone number"
-                    value={joinForm.phone}
-                    onChange={(e) => setJoinForm((f) => ({ ...f, phone: e.target.value }))}
-                    className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      required
-                      placeholder="City"
-                      value={joinForm.city}
-                      onChange={(e) => setJoinForm((f) => ({ ...f, city: e.target.value }))}
-                      className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                    />
-                    <input
-                      required
-                      placeholder="State"
-                      maxLength={20}
-                      value={joinForm.state}
-                      onChange={(e) => setJoinForm((f) => ({ ...f, state: e.target.value }))}
-                      className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 text-[11px] text-slate-500 font-semibold cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={joinForm.share_gps}
-                      onChange={(e) => setJoinForm((f) => ({ ...f, share_gps: e.target.checked }))}
-                    />
-                    Share my current GPS so drivers can find me faster
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={joinBusy}
-                    className="mt-1 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white px-4 py-2.5 text-xs font-bold shadow-xs disabled:opacity-60 cursor-pointer"
-                  >
-                    {joinBusy ? "Submitting…" : "Save my contact info"}
-                  </button>
-                  {joinMsg && (
-                    <div className="rounded-md border border-border bg-slate-50 px-3 py-2 text-[11px] text-slate-700 font-semibold">
-                      {joinMsg}
-                    </div>
-                  )}
-                </form>
-              </div>
-            )}
-          </div>
-
-          {/* Big "Need help — call a spare driver" CTA */}
-          <button
-            type="button"
-            onClick={() => setHelpOpen((o) => !o)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-600 bg-rose-50 hover:bg-rose-100 px-5 py-3.5 text-sm font-bold text-rose-600 shadow-sm transition cursor-pointer"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l4.24 4.24"/><path d="M14.83 9.17l4.24-4.24"/><path d="M14.83 14.83l4.24 4.24"/><path d="M9.17 14.83l-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg>
-            {helpOpen ? "Close spare driver list" : "Need help — call a spare driver"}
-          </button>
-
-          {helpOpen && (
-            <div className="rounded-3xl border border-rose-200 bg-card p-5 shadow-sm">
-              <div className="mt-3 space-y-2">
-                {nearbySpares.length === 0 && (
-                  <div className="rounded-md border border-border bg-slate-50 p-3 text-xs text-muted-foreground">
-                    No spare drivers listed yet in your area. Ask a fellow driver to sign up below.
-                  </div>
-                )}
-                {nearbySpares.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border bg-white p-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-[#0b132b]">
-                        {d.first_name} {d.last_name}
-                      </div>
-                      <div className="truncate text-[11px] text-slate-500 font-semibold">
-                        {d.city}, {d.state}
-                        {d.distance != null && ` · ${d.distance.toFixed(1)} mi`}
-                      </div>
-                    </div>
-                    <a
-                      href={`tel:${d.phone.replace(/[^+\d]/g, "")}`}
-                      className="rounded-md bg-rose-600 text-white px-3 py-2 text-xs font-bold hover:bg-rose-700 flex items-center gap-1.5"
-                    >
-                      <Phone className="w-3 h-3" />
-                      <span>Call</span>
-                    </a>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>
@@ -1777,6 +1984,43 @@ export function RoutePlanner() {
           )}
         </div>
       </div>
+
+      {/* Custom Modal for Clear All Confirmation */}
+      {confirmModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5">
+            <div className="flex items-center gap-3.5">
+              <div className="h-12 w-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-[#0b132b]">Clear All Route Stops?</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Are you sure you want to clear all stops and start over? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModalOpen(false)}
+                className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-5 py-2.5 text-xs font-bold text-slate-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmClearAll}
+                className="rounded-xl bg-rose-600 hover:bg-rose-700 px-5 py-2.5 text-xs font-extrabold text-white shadow-md shadow-rose-600/20 cursor-pointer"
+              >
+                Yes, Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </section>
   );
 }

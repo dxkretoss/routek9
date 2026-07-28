@@ -73,47 +73,81 @@ const PATHS = [
   },
 ];
 
+import heroBgPattern from '../assets/hero_bg_pattern.png';
+import heroGrowthImg from '../assets/hero_business_growth.png';
+
 export default function GrowthPage({ currentUser, onLogout }) {
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
       <Navbar currentUser={currentUser} onLogout={onLogout} />
 
-      {/* Modern Asymmetric Light-Gradient Hero Banner */}
-      <section className="bg-gradient-to-br from-slate-50 via-[#faf9f6] to-rose-50/20 py-16 sm:py-24 border-b border-slate-200/60 relative overflow-hidden">
-        {/* Decorative elements */}
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+      {/* Full-Width Background Image Hero Section */}
+      <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden">
+        {/* Full-Screen Background Image */}
+        <img
+          src={heroGrowthImg}
+          alt="Logistics Business Expansion Background"
+          className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-1000 scale-105"
+        />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="max-w-3xl space-y-5">
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-rose-600 shadow-2xs">
-              <TrendingUp className="w-3.5 h-3.5 text-rose-600" />
-              <span>Business Growth Paths</span>
+        {/* Dark Translucent Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-slate-950/75 to-slate-950/90 backdrop-blur-[2px] pointer-events-none" />
+
+        {/* Platform Route Pattern Overlay */}
+        <div
+          className="absolute inset-0 opacity-10 mix-blend-overlay pointer-events-none bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${heroBgPattern})` }}
+        />
+
+        {/* Ambient Decorative Glows */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-rose-500/15 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Centered Content */}
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-6">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+            <TrendingUp className="w-4 h-4 text-rose-400" />
+            <span>Business Growth Paths</span>
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight font-serif-heading leading-tight max-w-3xl mx-auto">
+            Scale Your Courier Career <br /><span className="text-rose-500 italic font-serif-heading">Beyond the Driver Seat</span>
+          </h1>
+
+          <p className="text-slate-300 text-sm sm:text-base font-normal max-w-2xl mx-auto leading-relaxed">
+            Route K9 is not just a routing tool. It is a launching pad for drivers who want to step up to become fleet owners, operations consultants, dispatchers, or specialized field service providers. Pick the growth path that matches your ambition.
+          </p>
+
+          <div className="flex flex-wrap justify-center gap-3 pt-1">
+            <Link
+              to="/planner"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 px-6 py-3.5 text-xs font-bold text-white shadow-lg transition-all"
+            >
+              <span>Plan Your First Route</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link
+              to="/certification"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 backdrop-blur-md px-6 py-3.5 text-xs font-semibold text-white transition-all"
+            >
+              <span>Browse Certification Courses</span>
+            </Link>
+          </div>
+
+          {/* Centered Floating Metric Glass Cards */}
+          <div className="pt-4 grid grid-cols-3 gap-3 max-w-2xl mx-auto">
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">5</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Growth Paths</div>
             </div>
-            
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-[1.1]">
-              Scale Your Courier Career <br />
-              <span className="text-rose-600 italic font-serif-heading">Beyond the Driver Seat</span>
-            </h1>
 
-            <p className="text-slate-600 text-xs sm:text-base font-normal leading-relaxed max-w-2xl">
-              Route K9 is not just a routing tool. It is a launching pad for drivers who want to step up to become fleet owners, operations consultants, dispatchers, or specialized field service providers. Pick the growth path that matches your ambition.
-            </p>
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-rose-400 tracking-tight">$250K+</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Potential Pay</div>
+            </div>
 
-            <div className="flex flex-wrap gap-3 pt-2">
-              <Link
-                to="/planner"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 px-6 py-3.5 text-xs font-bold text-white shadow-xs transition-all"
-              >
-                <span>Plan Your First Route</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link
-                to="/certification"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-6 py-3.5 text-xs font-semibold text-slate-800 shadow-2xs transition-all"
-              >
-                <span>Browse Certification Courses</span>
-              </Link>
+            <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
+              <div className="text-2xl sm:text-3xl font-extrabold text-emerald-400 tracking-tight">100%</div>
+              <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Fleet Control</div>
             </div>
           </div>
         </div>

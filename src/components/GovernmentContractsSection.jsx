@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, ExternalLink, ShieldCheck, RefreshCw, AlertCircle, Clock, DollarSign, Calendar, MapPin } from 'lucide-react';
 
-const SAM_CACHE_KEY = 'sam_gov_naics_492110_cache_v3';
+const SAM_CACHE_KEY = 'sam_gov_naics_492110_cache_v4';
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour caching
 
 // Format date as MM/DD/YYYY required by SAM.gov API
@@ -25,7 +25,7 @@ const FALLBACK_SAM_CONTRACTS = [
     responseDeadline: "2026-08-15",
     placeOfPerformance: "Baltimore, MD 21201",
     estimatedValue: "$240,000 – $480,000 / yr",
-    url: "https://sam.gov/opp/36C24524Q0189/view"
+    url: "https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=36C24524Q0189"
   },
   {
     noticeId: "USPS-CDS-NV-8921",
@@ -39,7 +39,7 @@ const FALLBACK_SAM_CONTRACTS = [
     responseDeadline: "2026-08-20",
     placeOfPerformance: "Reno & Sparks, NV 89502",
     estimatedValue: "$185,000 / yr",
-    url: "https://sam.gov/opp/USPS-CDS-NV-8921/view"
+    url: "https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=USPS-CDS-NV-8921"
   },
   {
     noticeId: "140D0424Q0012",
@@ -53,7 +53,7 @@ const FALLBACK_SAM_CONTRACTS = [
     responseDeadline: "2026-08-10",
     placeOfPerformance: "College Station, TX 77843",
     estimatedValue: "$120,000 / yr",
-    url: "https://sam.gov/opp/140D0424Q0012/view"
+    url: "https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=140D0424Q0012"
   },
   {
     noticeId: "W911YN24R0045",
@@ -67,7 +67,7 @@ const FALLBACK_SAM_CONTRACTS = [
     responseDeadline: "2026-08-08",
     placeOfPerformance: "St. Augustine, FL 32095",
     estimatedValue: "$310,000 / yr",
-    url: "https://sam.gov/opp/W911YN24R0045/view"
+    url: "https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=W911YN24R0045"
   },
   {
     noticeId: "75D30124Q78901",
@@ -81,7 +81,7 @@ const FALLBACK_SAM_CONTRACTS = [
     responseDeadline: "2026-08-25",
     placeOfPerformance: "Atlanta, GA 30329",
     estimatedValue: "$520,000 / yr",
-    url: "https://sam.gov/opp/75D30124Q78901/view"
+    url: "https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=75D30124Q78901"
   }
 ];
 
@@ -163,6 +163,10 @@ export default function GovernmentContractsSection() {
             const stateCode = pop.state?.code || "";
             const locationStr = cityName ? `${cityName}, ${stateCode}` : (stateCode || "Nationwide");
 
+            const validUrl = r.uiLink && r.uiLink.startsWith("http")
+              ? r.uiLink
+              : `https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=${encodeURIComponent(noticeId)}`;
+
             return {
               noticeId,
               title: String(r.title || "Courier & Express Delivery Route"),
@@ -175,7 +179,7 @@ export default function GovernmentContractsSection() {
               responseDeadline: String(r.responseDeadLine || "Open Bidding"),
               placeOfPerformance: locationStr,
               estimatedValue: "$180,000 – $450,000 / yr",
-              url: noticeId ? `https://sam.gov/opp/${noticeId}/view` : `https://sam.gov/search/?index=opp&naics=492110`
+              url: validUrl
             };
           });
 
@@ -211,10 +215,11 @@ export default function GovernmentContractsSection() {
   };
 
   const getValidSamUrl = (item) => {
-    if (item.url && item.url.includes("https://sam.gov/")) {
+    if (item.url && item.url.startsWith("https://sam.gov/") && !item.url.endsWith("/view")) {
       return item.url;
     }
-    return `https://sam.gov/opp/${encodeURIComponent(item.noticeId || '492110')}/view`;
+    const keyword = item.noticeId || '492110';
+    return `https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=${encodeURIComponent(keyword)}`;
   };
 
   return (

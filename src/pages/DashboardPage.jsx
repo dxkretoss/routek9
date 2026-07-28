@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { COURSES_DATA } from '../data/coursesData';
-import { 
-  Award, 
-  BookOpen, 
-  Download, 
-  ShieldCheck, 
-  Truck, 
-  CheckCircle2, 
+import {
+  Award,
+  BookOpen,
+  Download,
+  ShieldCheck,
+  Truck,
+  Building2,
+  CheckCircle2,
   ArrowRight,
   Inbox,
   Lock,
@@ -68,6 +69,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   // Profile State
   const [fullName, setFullName] = useState(currentUser?.name || 'Jane A. Driver');
   const [email, setEmail] = useState(currentUser?.email || 'driver@routek9.com');
+  const [accountRole, setAccountRole] = useState(currentUser?.role || 'driver'); // 'driver' or 'company'
   const [vehicleClass, setVehicleClass] = useState(currentUser?.vehicle || 'Cargo Van');
   const [stateCode, setStateCode] = useState(currentUser?.stateCode || 'TX');
   const [cityName, setCityName] = useState(currentUser?.city || 'Houston');
@@ -104,6 +106,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       onUpdateProfile({
         name: fullName,
         email,
+        role: accountRole,
         vehicle: vehicleClass,
         stateCode,
         city: cityName
@@ -115,17 +118,17 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-      
+
       {/* Navbar Header */}
       <Navbar currentUser={currentUser} onLogout={onLogout} />
 
       {/* Hero Welcome Header */}
       <section className="bg-[#0b132b] text-white py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
-          
+
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold uppercase tracking-wider">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Driver Member Dashboard</span>
+            <span>{accountRole === 'company' ? 'Company Member Dashboard' : 'Driver Member Dashboard'}</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight font-serif-heading">
@@ -165,14 +168,13 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       {/* Navigation Tabs Bar */}
       <div className="sticky top-20 z-30 bg-white border-b border-slate-200 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-2 overflow-x-auto py-2">
-          
+
           <button
             onClick={() => setActiveTab('courses')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'courses'
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'courses'
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
+              }`}
           >
             <BookOpen className="w-4 h-4" />
             <span>Purchased Courses ({enrolledCourses.length})</span>
@@ -180,11 +182,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
           <button
             onClick={() => setActiveTab('inbox')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'inbox'
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'inbox'
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
+              }`}
           >
             <Inbox className="w-4 h-4" />
             <span>Inbox ({MOCK_INBOX_MESSAGES.length})</span>
@@ -193,11 +194,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
           <button
             onClick={() => setActiveTab('settings')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'settings'
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'settings'
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
+              }`}
           >
             <Lock className="w-4 h-4" />
             <span>Change Password & Settings</span>
@@ -205,14 +205,13 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
           <button
             onClick={() => setActiveTab('profile')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'profile'
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'profile'
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
+              }`}
           >
-            <User className="w-4 h-4" />
-            <span>Driver Profile</span>
+            {accountRole === 'company' ? <Building2 className="w-4 h-4" /> : <User className="w-4 h-4" />}
+            <span>{accountRole === 'company' ? 'Company Profile' : 'Driver Profile'}</span>
           </button>
 
         </div>
@@ -221,7 +220,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       {/* Main Tab Content */}
       <main className="flex-1 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
+
           {/* TAB 1: Purchased Courses */}
           {activeTab === 'courses' && (
             <div className="space-y-6">
@@ -332,9 +331,8 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                 {MOCK_INBOX_MESSAGES.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
-                      msg.unread ? 'bg-rose-50/20' : 'hover:bg-slate-50/50'
-                    }`}
+                    className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${msg.unread ? 'bg-rose-50/20' : 'hover:bg-slate-50/50'
+                      }`}
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -376,7 +374,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
               </div>
 
               <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/90 shadow-lg space-y-6">
-                
+
                 {passwordSuccess && (
                   <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-bold flex items-center gap-2 animate-fadeIn">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -446,7 +444,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                 {/* Notifications Toggles */}
                 <div className="pt-6 border-t border-slate-100 space-y-4">
                   <h4 className="text-sm font-bold text-[#0b132b]">Notification Preferences</h4>
-                  
+
                   <label className="flex items-center justify-between cursor-pointer">
                     <span className="text-xs text-slate-700 font-semibold">Email Contract Match Digest</span>
                     <input
@@ -477,28 +475,61 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             <div className="max-w-4xl mx-auto space-y-6">
               <div>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
-                  Driver & Authority Profile
+                  {accountRole === 'company' ? 'Company & Fleet Profile' : 'Driver & Authority Profile'}
                 </h2>
                 <p className="text-xs text-slate-500 font-medium mt-1">
-                  Manage your personal credentials, operating authority details, and vehicle classification.
+                  Manage your credentials, operating authority details, and account classification.
                 </p>
               </div>
 
               <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/90 shadow-lg space-y-8">
-                
+
                 {profileSuccess && (
                   <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-bold flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Driver profile updated successfully!</span>
+                    <span>{accountRole === 'company' ? 'Company profile updated successfully!' : 'Driver profile updated successfully!'}</span>
                   </div>
                 )}
 
                 <form onSubmit={handleProfileSubmit} className="space-y-6">
-                  
+
+                  {/* Account Member Type Selector */}
+                  {/* <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Account Member Type
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAccountRole('driver')}
+                        className={`py-3 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          accountRole === 'driver'
+                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Truck className="w-4 h-4" />
+                        <span>Driver Member</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAccountRole('company')}
+                        className={`py-3 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          accountRole === 'company'
+                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Building2 className="w-4 h-4" />
+                        <span>Company Member</span>
+                      </button>
+                    </div>
+                  </div> */}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                        Full Name (Certificate & Bids)
+                        {accountRole === 'company' ? 'Company / Business Name' : 'Full Name (Certificate & Bids)'}
                       </label>
                       <input
                         type="text"
@@ -539,6 +570,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                         <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
                         <option value="16ft Box Truck">16ft Box Truck</option>
                         <option value="26ft Box Truck">26ft Box Truck</option>
+                        <option value="Company Fleet">Company Fleet / Multi-Vehicle</option>
                       </select>
                     </div>
 
@@ -599,7 +631,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                     className="px-8 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-2 cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
-                    <span>Save Driver Profile</span>
+                    <span>{accountRole === 'company' ? 'Save Company Profile' : 'Save Driver Profile'}</span>
                   </button>
 
                 </form>

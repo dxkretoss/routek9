@@ -89,9 +89,11 @@ const ALL_STATES_ORDERED = [
 export default function MapSection({ selectedState, onSelectState, onFilterCategory }) {
   const [selectedOpportunity, setSelectedOpportunity] = useState("Courier driver");
   const [customCity, setCustomCity] = useState('');
+  const [showSearchSection, setShowSearchSection] = useState(false);
 
-  // Reset customCity to first city of selected state automatically
+  // Reset customCity and hide search section when selectedState changes
   useEffect(() => {
+    setShowSearchSection(false);
     if (selectedState && selectedState.topCities && selectedState.topCities.length > 0) {
       setCustomCity(selectedState.topCities[0]);
     } else {
@@ -256,11 +258,14 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                   {/* 3 Quick Action Links */}
                   <div className="space-y-2.5 pt-2">
                     <button
-                      onClick={() => onFilterCategory('open-routes', selectedState)}
+                      onClick={() => {
+                        setShowSearchSection((prev) => !prev);
+                        if (onFilterCategory) onFilterCategory('open-routes', selectedState);
+                      }}
                       className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer group text-left"
                     >
                       <span>Find routes in {selectedState.name}</span>
-                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      <ArrowRight className={`w-4 h-4 transition-transform ${showSearchSection ? 'rotate-90' : 'group-hover:translate-x-1'}`} />
                     </button>
 
                     <button
@@ -281,120 +286,122 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                   </div>
                 </div>
 
-                {/* Job Search Generator inside the same Panel */}
-                <div className="border-t border-slate-100 pt-6 space-y-4">
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-extrabold text-[#0b132b] font-serif-heading">
-                      Search contract routes in {selectedState.name}
-                    </h4>
-                    <p className="text-[11px] text-slate-400 leading-snug font-medium">
-                      Select route details below to compile live queries for external job boards.
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    {/* Opportunity Type Dropdown */}
+                {/* Job Search Generator inside the same Panel (Shown ONLY when Red Button is clicked) */}
+                {showSearchSection && (
+                  <div className="border-t border-slate-100 pt-6 space-y-4 animate-fadeIn">
                     <div className="space-y-1">
-                      <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Opportunity Type</label>
-                      <select
-                        value={selectedOpportunity}
-                        onChange={(e) => setSelectedOpportunity(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none"
-                      >
-                        {OPPORTUNITY_TYPES.map((type) => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
+                      <h4 className="text-sm font-extrabold text-[#0b132b] font-serif-heading">
+                        Search contract routes in {selectedState.name}
+                      </h4>
+                      <p className="text-[11px] text-slate-400 leading-snug font-medium">
+                        Select route details below to compile live queries for external job boards.
+                      </p>
                     </div>
 
-                    {/* City Select Dropdown */}
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">City (Select a City)</label>
-                      <select
-                        value={customCity}
-                        onChange={(e) => setCustomCity(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none"
-                      >
-                        {selectedState.topCities?.map((city) => (
-                          <option key={city} value={city}>{city}</option>
-                        ))}
-                      </select>
+                    <div className="space-y-3">
+                      {/* Opportunity Type Dropdown */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Opportunity Type</label>
+                        <select
+                          value={selectedOpportunity}
+                          onChange={(e) => setSelectedOpportunity(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none"
+                        >
+                          {OPPORTUNITY_TYPES.map((type) => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* City Select Dropdown */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">City (Select a City)</label>
+                        <select
+                          value={customCity}
+                          onChange={(e) => setCustomCity(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none"
+                        >
+                          {selectedState.topCities?.map((city) => (
+                            <option key={city} value={city}>{city}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 4 Search Links Cards Rendered in a 2x2 Grid */}
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+
+                      {/* Card 1: Google Jobs */}
+                      <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+                        <div className="space-y-0.5">
+                          <h5 className="font-bold text-xs text-[#0b132b]">Google Jobs</h5>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search matching "{selectedOpportunity.toLowerCase()}" gigs in {activeCity}.</p>
+                        </div>
+                        <a
+                          href={getGoogleJobsUrl()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
+                        >
+                          <span>Search Google</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      {/* Card 2: Indeed */}
+                      <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+                        <div className="space-y-0.5">
+                          <h5 className="font-bold text-xs text-[#0b132b]">Indeed</h5>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search "{selectedOpportunity.toLowerCase()}" listings in {activeCity}.</p>
+                        </div>
+                        <a
+                          href={getIndeedUrl()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
+                        >
+                          <span>Search Indeed</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      {/* Card 3: CourierGigs */}
+                      <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+                        <div className="space-y-0.5">
+                          <h5 className="font-bold text-xs text-[#0b132b]">CourierGigs</h5>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search active courier gigs in {activeStateName}.</p>
+                        </div>
+                        <a
+                          href={getCourierGigsUrl()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
+                        >
+                          <span>Search Gigs</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      {/* Card 4: CBDriver */}
+                      <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+                        <div className="space-y-0.5">
+                          <h5 className="font-bold text-xs text-[#0b132b]">CBDriver</h5>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search CBDriver contract jobs in {activeStateName}.</p>
+                        </div>
+                        <a
+                          href={getCBDriverUrl()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
+                        >
+                          <span>Search CBDriver</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
                     </div>
                   </div>
-
-                  {/* 4 Search Links Cards Rendered in a 2x2 Grid */}
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-
-                    {/* Card 1: Google Jobs */}
-                    <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
-                      <div className="space-y-0.5">
-                        <h5 className="font-bold text-xs text-[#0b132b]">Google Jobs</h5>
-                        <p className="text-[10px] text-slate-400 leading-tight font-medium">Search matching "{selectedOpportunity.toLowerCase()}" gigs in {activeCity}.</p>
-                      </div>
-                      <a
-                        href={getGoogleJobsUrl()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
-                      >
-                        <span>Search Google</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    {/* Card 2: Indeed */}
-                    <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
-                      <div className="space-y-0.5">
-                        <h5 className="font-bold text-xs text-[#0b132b]">Indeed</h5>
-                        <p className="text-[10px] text-slate-400 leading-tight font-medium">Search "{selectedOpportunity.toLowerCase()}" listings in {activeCity}.</p>
-                      </div>
-                      <a
-                        href={getIndeedUrl()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
-                      >
-                        <span>Search Indeed</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    {/* Card 3: CourierGigs */}
-                    <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
-                      <div className="space-y-0.5">
-                        <h5 className="font-bold text-xs text-[#0b132b]">CourierGigs</h5>
-                        <p className="text-[10px] text-slate-400 leading-tight font-medium">Search active courier gigs in {activeStateName}.</p>
-                      </div>
-                      <a
-                        href={getCourierGigsUrl()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
-                      >
-                        <span>Search Gigs</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    {/* Card 4: CBDriver */}
-                    <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
-                      <div className="space-y-0.5">
-                        <h5 className="font-bold text-xs text-[#0b132b]">CBDriver</h5>
-                        <p className="text-[10px] text-slate-400 leading-tight font-medium">Search CBDriver contract jobs in {activeStateName}.</p>
-                      </div>
-                      <a
-                        href={getCBDriverUrl()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5 transition-colors cursor-pointer"
-                      >
-                        <span>Search CBDriver</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                  </div>
-                </div>
+                )}
 
               </div>
             )}
