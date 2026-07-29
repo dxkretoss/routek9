@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, ExternalLink, ShieldCheck, RefreshCw, AlertCircle, Clock, DollarSign, Calendar, MapPin } from 'lucide-react';
+import { Building2, ExternalLink, ShieldCheck, RefreshCw, AlertCircle, Clock, DollarSign, Calendar, MapPin, Lock, Crown, Sparkles } from 'lucide-react';
 
 const SAM_CACHE_KEY = 'sam_gov_naics_492110_cache_v4';
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour caching
@@ -85,7 +85,7 @@ const FALLBACK_SAM_CONTRACTS = [
   }
 ];
 
-export default function GovernmentContractsSection() {
+export default function GovernmentContractsSection({ currentUser, onOpenPricing, onTriggerGateModal }) {
   const [contracts, setContracts] = useState(FALLBACK_SAM_CONTRACTS);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -347,15 +347,35 @@ export default function GovernmentContractsSection() {
 
                     {/* Action Link (100% SINGLE LINE BUTTON) */}
                     <td className="py-4 px-4 text-right whitespace-nowrap">
-                      <a
-                        href={getValidSamUrl(item)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0b132b] hover:bg-rose-600 text-white font-extrabold text-xs shadow-xs transition-all duration-150 cursor-pointer"
-                      >
-                        <span>Bid on SAM.gov</span>
-                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                      </a>
+                      {currentUser?.isPro ? (
+                        <a
+                          href={getValidSamUrl(item)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0b132b] hover:bg-rose-600 text-white font-extrabold text-xs shadow-xs transition-all duration-150 cursor-pointer"
+                        >
+                          <span>Bid on SAM.gov</span>
+                          <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onTriggerGateModal) {
+                              onTriggerGateModal({
+                                title: "Government Procurement Contacts Locked",
+                                message: "Accessing direct procurement officer phone numbers, emails, and SAM.gov bid links requires a Route K9 PRO membership."
+                              });
+                            } else if (onOpenPricing) {
+                              onOpenPricing();
+                            }
+                          }}
+                          className="whitespace-nowrap inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-300/80 text-amber-800 font-extrabold text-xs shadow-2xs transition-all cursor-pointer"
+                        >
+                          <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Unlock Contact (PRO)</span>
+                        </button>
+                      )}
                     </td>
 
                   </tr>

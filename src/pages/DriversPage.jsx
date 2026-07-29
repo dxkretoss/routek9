@@ -24,7 +24,7 @@ import {
 import heroBgPattern from '../assets/hero_bg_pattern.png';
 import heroDriverImg from '../assets/hero_driver_route.png';
 
-export default function DriversPage({ currentUser, onLogout }) {
+export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) {
   const navigate = useNavigate();
 
   // 2. States for Filters and Search
@@ -45,10 +45,23 @@ export default function DriversPage({ currentUser, onLogout }) {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Open Contact Modal (Requires Login)
+  // Open Contact Modal (Requires Login & PRO Membership)
   const handleOpenContactModal = (driver) => {
     if (!currentUser) {
       navigate('/login?redirect=/drivers');
+      return;
+    }
+    if (!currentUser.isPro) {
+      if (onTriggerGateModal) {
+        onTriggerGateModal({
+          title: "Driver Direct Messaging Locked",
+          message: "Sending direct route contract proposals and inquiries to registered drivers requires a Route K9 PRO membership."
+        });
+      } else if (onOpenPricing) {
+        onOpenPricing();
+      } else {
+        showToast("PRO Membership required to send direct driver proposals.");
+      }
       return;
     }
     setSelectedDriver(driver);
@@ -106,7 +119,7 @@ export default function DriversPage({ currentUser, onLogout }) {
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
       {/* Navbar */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
+      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
 
       {/* Full-Width Background Image Hero Section */}
       <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden">

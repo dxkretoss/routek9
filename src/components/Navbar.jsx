@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { MapPin, Menu, X, LogOut, LayoutDashboard, GraduationCap, Bell, Users } from 'lucide-react';
+import { MapPin, Menu, X, LogOut, LayoutDashboard, GraduationCap, Bell, Users, Crown, Sparkles } from 'lucide-react';
 
-export default function Navbar({ currentUser, onLogout }) {
+export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { pathname, hash } = useLocation();
@@ -86,7 +86,7 @@ export default function Navbar({ currentUser, onLogout }) {
               {showBuyRoute && renderLink('Buy a Route', '/', '#buy-a-route-section', true)}
               {renderLink('Drivers', '/drivers')}
               {renderLink('Companies', '/companies')}
-              {renderLink('Growth', '/growth')}
+              {/* {renderLink('Growth', '/growth')} */}
               {renderLink('Training', '/training')}
               {renderLink('Certification', '/certification')}
               {showWhosHiring && renderLink("Who's Hiring", '/', '#whos-hiring-section', true)}
@@ -99,6 +99,26 @@ export default function Navbar({ currentUser, onLogout }) {
 
             {currentUser ? (
               <div className="flex items-center gap-2">
+
+                {/* Subscription Plan Status / Upgrade Button */}
+                {currentUser?.isPro ? (
+                  <button
+                    onClick={onOpenPricing}
+                    title="You are a PRO Member. Click to manage plan."
+                    className="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700 font-extrabold text-xs flex items-center gap-1.5 hover:bg-amber-500/20 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <Crown className="w-3.5 h-3.5 text-amber-500" />
+                    <span>PRO Member</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={onOpenPricing}
+                    className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-extrabold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer animate-pulse"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                    <span>Upgrade to Pro</span>
+                  </button>
+                )}
 
                 {/* Notification Bell Button */}
                 <Link
@@ -223,12 +243,25 @@ export default function Navbar({ currentUser, onLogout }) {
           <Link to="/companies" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
             Companies Directory
           </Link>
-          <Link to="/growth" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+          {/* <Link to="/growth" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
             Growth Paths
-          </Link>
+          </Link> */}
           <Link to="/certification" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
             Get Certified
           </Link>
+          <button
+            onClick={() => { setMobileMenuOpen(false); onOpenPricing(); }}
+            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 text-white font-extrabold text-xs flex items-center justify-between shadow-xs my-1 cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5">
+              <Crown className="w-4 h-4 text-amber-200" />
+              <span>{currentUser?.isPro ? 'PRO Member (Manage Plan)' : 'Upgrade to PRO'}</span>
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-bold uppercase">
+              {currentUser?.isPro ? 'PRO ACTIVE' : '$29/MO'}
+            </span>
+          </button>
+
           <Link to="/training" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-rose-600 font-extrabold">Training Library</Link>
 
           {showWhosHiring && (

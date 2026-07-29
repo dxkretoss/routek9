@@ -5,14 +5,14 @@ import { RoutePlanner } from "../components/RoutePlanner";
 import { Rocket, MapPin, FileSpreadsheet, MessageSquare, DollarSign } from "lucide-react";
 import heroBgPattern from "../assets/hero_bg_pattern.png";
 
-export default function PlannerPage({ currentUser, onLogout }) {
+export default function PlannerPage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) {
   return (
     <div className="flex min-h-screen flex-col bg-background font-sans">
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
+      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
 
       <main className="patriot flex-1 bg-white">
         <PlannerHero />
-        <RoutePlanner />
+        <RoutePlanner currentUser={currentUser} onOpenPricing={onOpenPricing} onTriggerGateModal={onTriggerGateModal} />
       </main>
 
       <Footer />

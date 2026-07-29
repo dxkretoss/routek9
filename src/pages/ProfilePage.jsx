@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { User, Mail, Truck, ShieldCheck, MapPin, Building2, Save, FileText } from 'lucide-react';
+import { User, Mail, Truck, ShieldCheck, MapPin, Building2, Save, FileText, Crown, Sparkles, Zap } from 'lucide-react';
 
-export default function ProfilePage({ currentUser, onLogout, onUpdateProfile }) {
+export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, onOpenPricing }) {
   const [fullName, setFullName] = useState(currentUser?.name || 'Jane A. Driver');
   const [email, setEmail] = useState(currentUser?.email || 'driver@routek9.com');
   const [accountRole, setAccountRole] = useState(currentUser?.role || 'driver');
@@ -35,7 +35,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile }) 
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
 
       {/* Navbar Header */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
+      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
 
       {/* Header */}
       <section className="bg-[#0b132b] text-white py-12 sm:py-16">
@@ -59,7 +59,67 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile }) 
 
       {/* Main Body */}
       <main className="flex-1 py-12 sm:py-16">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+
+          {/* Subscription Plan Card */}
+          <div className="bg-gradient-to-r from-slate-900 to-[#0b132b] text-white p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-xl space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-extrabold uppercase tracking-widest text-slate-400">Current Subscription</span>
+                  {currentUser?.isPro ? (
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-extrabold flex items-center gap-1">
+                      <Crown className="w-3 h-3 text-amber-400" />
+                      <span>PRO MEMBER ACTIVE</span>
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-extrabold">
+                      FREE STARTER
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-xl font-bold font-serif-heading text-white">
+                  {currentUser?.isPro ? 'Route K9 PRO Membership' : 'Free Starter Plan'}
+                </h3>
+                <p className="text-xs text-slate-300 font-medium max-w-lg">
+                  {currentUser?.isPro
+                    ? 'You have full unlimited 400-stop route optimization, government procurement contact details, and direct driver recruitment enabled.'
+                    : 'Upgrade to PRO to unlock 400-stop optimization, government contracts procurement contacts, and direct driver recruitment.'}
+                </p>
+              </div>
+
+              <button
+                onClick={onOpenPricing}
+                className={`px-5 py-3 rounded-xl font-extrabold text-xs shadow-md transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                  currentUser?.isPro
+                    ? 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                    : 'bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-amber-200" />
+                <span>{currentUser?.isPro ? 'Manage Membership' : 'Upgrade to PRO ($29/mo)'}</span>
+              </button>
+            </div>
+
+            {/* Active Subscription Details Metadata Grid */}
+            {currentUser?.isPro && (
+              <div className="pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="bg-white/5 p-3 rounded-2xl border border-white/10 space-y-0.5">
+                  <div className="text-slate-400 font-medium text-[10px] uppercase">Subscription Status</div>
+                  <div className="font-extrabold text-emerald-400">Active & Verified</div>
+                </div>
+                <div className="bg-white/5 p-3 rounded-2xl border border-white/10 space-y-0.5">
+                  <div className="text-slate-400 font-medium text-[10px] uppercase">Subscribed On</div>
+                  <div className="font-bold text-white">{currentUser.subscribedAt || 'July 29, 2026'}</div>
+                </div>
+                <div className="bg-white/5 p-3 rounded-2xl border border-white/10 space-y-0.5">
+                  <div className="text-slate-400 font-medium text-[10px] uppercase">Next Renewal Date</div>
+                  <div className="font-bold text-amber-400">{currentUser.nextRenewal || 'August 29, 2026'}</div>
+                </div>
+              </div>
+            )}
+
+          </div>
 
           <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/90 shadow-lg space-y-8">
 

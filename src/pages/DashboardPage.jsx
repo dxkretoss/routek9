@@ -22,7 +22,8 @@ import {
   KeyRound,
   FileText,
   Clock,
-  Sparkles
+  Sparkles,
+  Crown
 } from 'lucide-react';
 
 const MOCK_INBOX_MESSAGES = [
@@ -55,7 +56,7 @@ const MOCK_INBOX_MESSAGES = [
   }
 ];
 
-export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], onUpdateProfile }) {
+export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], onUpdateProfile, onOpenPricing }) {
   const [activeTab, setActiveTab] = useState('courses'); // 'courses', 'inbox', 'settings', 'profile'
 
   // Settings State
@@ -120,7 +121,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
 
       {/* Navbar Header */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
+      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
 
       {/* Hero Welcome Header */}
       <section className="bg-[#0b132b] text-white py-12 sm:py-16">
@@ -156,11 +157,41 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
               <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Active Routes Access</div>
             </div>
 
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
-              <div className="text-2xl font-extrabold text-amber-400">Verified</div>
-              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Member Status</div>
-            </div>
+            <button
+              onClick={onOpenPricing}
+              className="bg-white/10 hover:bg-white/15 border border-white/20 p-3.5 rounded-2xl text-center transition-all cursor-pointer group text-left sm:text-center"
+            >
+              <div className="text-xl font-extrabold text-amber-400 flex items-center justify-center gap-1">
+                <Crown className="w-4 h-4 text-amber-400" />
+                <span>{currentUser?.isPro ? 'PRO Member' : 'Free Member'}</span>
+              </div>
+              <div className="text-[10px] text-slate-300 font-semibold uppercase mt-0.5 underline group-hover:text-amber-300">
+                {currentUser?.isPro ? 'Manage Plan →' : 'Upgrade to PRO ($29) →'}
+              </div>
+            </button>
           </div>
+
+          {/* Active PRO Membership Summary Strip */}
+          {currentUser?.isPro && (
+            <div className="pt-2">
+              <div className="bg-amber-400/10 border border-amber-400/30 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-extrabold text-amber-300">Route K9 PRO Active: </span>
+                    <span className="text-slate-300">Subscribed on {currentUser.subscribedAt || 'July 29, 2026'} • Next Renewal: {currentUser.nextRenewal || 'August 29, 2026'}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={onOpenPricing}
+                  className="px-3 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 font-extrabold text-[11px] border border-amber-400/40 transition-colors shrink-0 cursor-pointer"
+                >
+                  Subscription Details →
+                </button>
+              </div>
+            </div>
+          )}
 
         </div>
       </section>

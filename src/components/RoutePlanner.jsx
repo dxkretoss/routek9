@@ -183,7 +183,7 @@ function optimizeOrder(stops, goal) {
   return order;
 }
 
-export function RoutePlanner() {
+export function RoutePlanner({ currentUser, onOpenPricing, onTriggerGateModal }) {
   const [stops, setStops] = useState([]);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -552,6 +552,19 @@ export function RoutePlanner() {
   }, [query]);
 
   function addStop(s) {
+    if (!currentUser?.isPro && stops.length >= 5) {
+      if (onTriggerGateModal) {
+        onTriggerGateModal({
+          title: "Free Starter Limit Reached (5/5 Stops)",
+          message: "Free Starter members can optimize up to 5 stops per route. Upgrade to Route K9 PRO to unlock 400-stop optimization, zone dispatching, and CSV exports!"
+        });
+      } else if (onOpenPricing) {
+        onOpenPricing();
+      } else {
+        setError("Free Starter Limit: Max 5 stops per route. Upgrade to Route K9 PRO for up to 400 stops!");
+      }
+      return;
+    }
     if (stops.length >= 400) {
       setError("Maximum 400 stops per route.");
       return;
