@@ -1,42 +1,73 @@
-import React, { useState } from 'react';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
-import { User, Mail, Truck, ShieldCheck, MapPin, Building2, Save, FileText, Crown, Sparkles, Zap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, Mail, Truck, ShieldCheck, MapPin, Building2, Save, FileText, Crown, Sparkles, Zap, Phone } from 'lucide-react';
+import Toast from '../components/Toast';
+import PhoneInputPkg from 'react-phone-input-2';
+import 'react-phone-input-2/lib/style.css';
+
+const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
 export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, onOpenPricing }) {
-  const [fullName, setFullName] = useState(currentUser?.name || 'Jane A. Driver');
-  const [email, setEmail] = useState(currentUser?.email || 'driver@routek9.com');
+  const [fullName, setFullName] = useState(currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : ''));
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
   const [accountRole, setAccountRole] = useState(currentUser?.role || 'driver');
   const [vehicleClass, setVehicleClass] = useState(currentUser?.vehicle || 'Cargo Van');
-  const [stateCode, setStateCode] = useState(currentUser?.stateCode || 'TX');
-  const [cityName, setCityName] = useState(currentUser?.city || 'Houston');
-  const [dotNumber, setDotNumber] = useState('3849120');
-  const [insurancePolicy, setInsurancePolicy] = useState('Commercial Auto ($1,000,000 Liability)');
+  const [stateCode, setStateCode] = useState(currentUser?.stateCode || '');
+  const [cityName, setCityName] = useState(currentUser?.city || '');
+  const [dotNumber, setDotNumber] = useState(currentUser?.dotNumber || '');
+  const [insurancePolicy, setInsurancePolicy] = useState(currentUser?.insurancePolicy || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    if (currentUser) {
+      setFullName(currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : ''));
+      setEmail(currentUser.email || '');
+      setPhone(currentUser.phone || '');
+      setAccountRole(currentUser.role || 'driver');
+      setVehicleClass(currentUser.vehicle || 'Cargo Van');
+      setStateCode(currentUser.stateCode || '');
+      setCityName(currentUser.city || '');
+      setDotNumber(currentUser.dotNumber || '');
+      setInsurancePolicy(currentUser.insurancePolicy || '');
+    }
+  }, [currentUser]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSavedSuccess(false);
+
     if (onUpdateProfile) {
-      onUpdateProfile({
+      const res = await onUpdateProfile({
         name: fullName,
         email,
+        phone,
         role: accountRole,
         vehicle: vehicleClass,
         stateCode,
-        city: cityName
+        city: cityName,
+        dotNumber,
+        insurancePolicy
       });
-    }
 
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+      if (res && res.success === false) {
+        setError(res.error || "Failed to update profile. Please try again.");
+      } else {
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 4000);
+      }
+    } else {
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 4000);
+    }
+    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-
-      {/* Navbar Header */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
-
+    <>
       {/* Header */}
       <section className="bg-[#0b132b] text-white py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-3">
@@ -133,10 +164,22 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
                 </p>
               </div>
 
+              {error && (
+                <Toast
+                  message={error}
+                  type="error"
+                  duration={5000}
+                  onClose={() => setError(null)}
+                />
+              )}
+
               {savedSuccess && (
-                <div className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-                  ✓ Profile saved successfully!
-                </div>
+                <Toast
+                  message="Profile saved successfully!"
+                  type="success"
+                  duration={4000}
+                  onClose={() => setSavedSuccess(false)}
+                />
               )}
             </div>
 
@@ -210,24 +253,41 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
                 </div>
               </div>
 
-              {/* Primary Vehicle Class & DOT/MC Number */}
+              {/* Phone Number & USDOT / MC Number */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Primary Vehicle Class
+                    Phone Number
                   </label>
-                  <select
-                    value={vehicleClass}
-                    onChange={(e) => setVehicleClass(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                  >
-                    <option value="Sedan / Hatchback">Sedan / Hatchback</option>
-                    <option value="Minivan / SUV">Minivan / SUV</option>
-                    <option value="Cargo Van">Cargo Van</option>
-                    <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
-                    <option value="16ft Box Truck">16ft Box Truck</option>
-                    <option value="26ft Box Truck">26ft Box Truck</option>
-                  </select>
+                  <div className="relative">
+                    <PhoneInput
+                      country={'us'}
+                      value={phone}
+                      onChange={(val) => setPhone(val)}
+                      inputStyle={{
+                        width: '100%',
+                        height: '46px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        backgroundColor: '#f8fafc',
+                        borderColor: '#e2e8f0',
+                        borderRadius: '0.75rem',
+                        paddingLeft: '48px',
+                        color: '#1e293b'
+                      }}
+                      buttonStyle={{
+                        backgroundColor: '#f8fafc',
+                        borderColor: '#e2e8f0',
+                        borderTopLeftRadius: '0.75rem',
+                        borderBottomLeftRadius: '0.75rem',
+                        paddingLeft: '4px'
+                      }}
+                      dropdownStyle={{
+                        borderRadius: '0.75rem',
+                        zIndex: 1000
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -247,8 +307,26 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
                 </div>
               </div>
 
-              {/* State & City Location */}
+              {/* Primary Vehicle Class & Home State */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                    Primary Vehicle Class
+                  </label>
+                  <select
+                    value={vehicleClass}
+                    onChange={(e) => setVehicleClass(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  >
+                    <option value="Sedan / Hatchback">Sedan / Hatchback</option>
+                    <option value="Minivan / SUV">Minivan / SUV</option>
+                    <option value="Cargo Van">Cargo Van</option>
+                    <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
+                    <option value="16ft Box Truck">16ft Box Truck</option>
+                    <option value="26ft Box Truck">26ft Box Truck</option>
+                  </select>
+                </div>
+
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                     Home State
@@ -309,10 +387,6 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
 
         </div>
       </main>
-
-      {/* Footer */}
-      <Footer />
-
-    </div>
+    </>
   );
 }

@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { jsPDF } from "jspdf";
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
 import {
   Award,
   CheckCircle2,
@@ -347,8 +345,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
   }, [stage, generating, buildCertificatePdf, setCertificatePreview]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
+    <>
 
       {/* Main Certification Header */}
       <main className="flex-1 mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 space-y-10">
@@ -805,8 +802,6 @@ export default function CertificationPage({ currentUser, onLogout }) {
           </div>
         </section>
       </main>
-
-      <Footer />
-    </div>
+    </>
   );
 }

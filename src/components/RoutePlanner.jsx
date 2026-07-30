@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mockDrivers } from "../data/mockDrivers";
+import PhoneInputPkg from "react-phone-input-2";
+import "react-phone-input-2/lib/style.css";
+
+const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import {
   MapPin,
   Store,
@@ -1884,13 +1888,32 @@ export function RoutePlanner({ currentUser, onOpenPricing, onTriggerGateModal })
                           className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
                         />
                       </div>
-                      <input
-                        required
-                        type="tel"
-                        placeholder="Phone number"
+                      <PhoneInput
+                        country={'us'}
                         value={joinForm.phone}
-                        onChange={(e) => setJoinForm((f) => ({ ...f, phone: e.target.value }))}
-                        className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                        onChange={(val) => setJoinForm((f) => ({ ...f, phone: val }))}
+                        inputStyle={{
+                          width: '100%',
+                          height: '38px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          backgroundColor: '#f8fafc',
+                          borderColor: '#e2e8f0',
+                          borderRadius: '0.75rem',
+                          paddingLeft: '44px',
+                          color: '#1e293b'
+                        }}
+                        buttonStyle={{
+                          backgroundColor: '#f8fafc',
+                          borderColor: '#e2e8f0',
+                          borderTopLeftRadius: '0.75rem',
+                          borderBottomLeftRadius: '0.75rem',
+                          paddingLeft: '2px'
+                        }}
+                        dropdownStyle={{
+                          borderRadius: '0.75rem',
+                          zIndex: 1000
+                        }}
                       />
                       <div className="grid grid-cols-2 gap-2">
                         <input

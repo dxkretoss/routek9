@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
+import Layout from './components/Layout';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import MapSection from './components/MapSection';
@@ -30,12 +31,15 @@ import PlannerPage from './pages/PlannerPage';
 import CompaniesPage from './pages/CompaniesPage';
 // import GrowthPage from './pages/GrowthPage';
 import CertificationPage from './pages/CertificationPage';
+import AdminLayout from './pages/admin/AdminLayout';
 import PricingPage from './pages/PricingPage';
 import ProCheckoutPage from './pages/ProCheckoutPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 import { US_STATES } from './data/statesData';
 import { mockRoutes as initialRoutes } from './data/mockRoutes';
 import { Truck, ShieldCheck, MapPin, DollarSign } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
 // Cookie Helpers
 const SESSION_COOKIE_NAME = 'routek9_user_session';
@@ -86,7 +90,7 @@ function HomePage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) 
 
   const handleFilterCategory = (categoryType, stateObj) => {
     setActiveCategory(categoryType);
-    
+
     let resolvedState = stateObj;
     if (stateObj && stateObj.code && US_STATES[stateObj.code]) {
       resolvedState = US_STATES[stateObj.code];
@@ -109,12 +113,15 @@ function HomePage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) 
     }
   };
 
-  const handleSearchSubmit = () => {
-    if (searchQuery) {
+  const handleSearchSubmit = (queryOverride) => {
+    const term = typeof queryOverride === 'string' ? queryOverride : searchQuery;
+    if (term) {
+      const q = term.trim().toLowerCase();
       const matchingState = Object.values(US_STATES).find(
         (st) =>
-          st.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          st.code.toLowerCase() === searchQuery.toLowerCase()
+          st.code.toLowerCase() === q ||
+          st.name.toLowerCase().includes(q) ||
+          (st.topCities && st.topCities.some((c) => c.toLowerCase().includes(q)))
       );
       if (matchingState) {
         setSelectedState(matchingState);
@@ -135,11 +142,7 @@ function HomePage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) 
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-rose-600 selection:text-white">
-
-      {/* Clean Navbar Header */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
-
+    <>
       {/* Main App Body */}
       <main className="flex-1">
 
@@ -186,9 +189,6 @@ function HomePage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) 
 
       </main>
 
-      {/* Footer */}
-      <Footer onSelectState={handleSelectState} />
-
       {/* Modals */}
       {activeRouteModal && (
         <RouteDetailModal
@@ -204,7 +204,7 @@ function HomePage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) 
         />
       )}
 
-    </div>
+    </>
   );
 }
 
@@ -221,6 +221,90 @@ export default function App() {
     title: '',
     message: ''
   });
+
+  // Supabase Auth Session Listener & Profile Sync
+  useEffect(() => {
+    // 1. Check current session on load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        syncSupabaseProfile(session.user);
+      }
+    });
+
+    // 2. Subscribe to auth state changes (Google OAuth login, Email confirmation, Sign in, Sign out)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        syncSupabaseProfile(session.user);
+        // If returning from email verification or auth redirect on auth pages, navigate to dashboard!
+        if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+          const currentPath = window.location.pathname;
+          if (currentPath === '/login' || currentPath === '/signup') {
+            navigate('/dashboard');
+          }
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        deleteCookie(SESSION_COOKIE_NAME);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const syncSupabaseProfile = async (supabaseUser) => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', supabaseUser.id)
+        .single();
+
+      const userRole = profile?.role || supabaseUser.user_metadata?.role || 'driver';
+      let userName = profile?.full_name || supabaseUser.user_metadata?.full_name || (supabaseUser.email ? supabaseUser.email.split('@')[0] : 'User');
+      if (userName === 'Jane A. Driver' && supabaseUser.email && supabaseUser.email !== 'driver@routek9.com') {
+        userName = supabaseUser.user_metadata?.full_name || supabaseUser.email.split('@')[0];
+      }
+
+      // Create profile row if it doesn't exist yet (e.g. Google OAuth)
+      if (!profile) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: supabaseUser.id,
+            email: supabaseUser.email,
+            full_name: userName,
+            role: userRole,
+            updated_at: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn("RLS notice: profile insert skipped, using user metadata instead.", e);
+        }
+      }
+
+      setCurrentUser((prev) => {
+        const updated = {
+          ...(prev || {}),
+          id: supabaseUser.id,
+          name: userName,
+          email: supabaseUser.email,
+          role: userRole,
+          vehicle: prev?.vehicle || profile?.vehicle || (userRole === 'driver' ? 'Cargo Van' : 'Company Fleet'),
+          stateCode: prev?.stateCode || profile?.state_code || '',
+          city: prev?.city || profile?.city || '',
+          phone: prev?.phone || profile?.phone || '',
+          dotNumber: prev?.dotNumber || profile?.dot_number || '',
+          insurancePolicy: prev?.insurancePolicy || profile?.insurance_policy || '',
+          isPro: prev?.isPro || false,
+          subscriptionPlan: prev?.subscriptionPlan || 'free'
+        };
+        setCookie(SESSION_COOKIE_NAME, updated, 30);
+        return updated;
+      });
+    } catch (err) {
+      console.error("Error syncing Supabase user profile:", err);
+    }
+  };
 
   const handleTriggerGateModal = ({ title, message }) => {
     setGateModalState({
@@ -244,7 +328,12 @@ export default function App() {
     setCookie(SESSION_COOKIE_NAME, session, 30);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn("Supabase signout warning:", e);
+    }
     setCurrentUser(null);
     deleteCookie(SESSION_COOKIE_NAME);
     navigate('/');
@@ -296,32 +385,82 @@ export default function App() {
     }
   };
 
-  const handleUpdateProfile = (updatedProfile) => {
+  const handleUpdateProfile = async (updatedProfile) => {
     const updatedUser = { ...currentUser, ...updatedProfile };
     setCurrentUser(updatedUser);
     setCookie(SESSION_COOKIE_NAME, updatedUser, 30);
+
+    if (currentUser?.id) {
+      try {
+        const { error } = await supabase.from('profiles').upsert({
+          id: currentUser.id,
+          email: updatedUser.email,
+          full_name: updatedUser.name,
+          phone: updatedUser.phone,
+          role: updatedUser.role,
+          vehicle: updatedUser.vehicle,
+          state_code: updatedUser.stateCode,
+          city: updatedUser.city,
+          dot_number: updatedUser.dotNumber,
+          insurance_policy: updatedUser.insurancePolicy,
+          updated_at: new Date().toISOString()
+        });
+
+        // Fallback to core schema columns if custom columns haven't been added to Supabase DB yet
+        if (error) {
+          if (error.code === 'PGRST204' || error.message?.includes('schema cache')) {
+            const { error: fallbackError } = await supabase.from('profiles').upsert({
+              id: currentUser.id,
+              email: updatedUser.email,
+              full_name: updatedUser.name,
+              role: updatedUser.role,
+              updated_at: new Date().toISOString()
+            });
+            if (fallbackError) {
+              return { success: false, error: fallbackError.message };
+            }
+            return { success: true };
+          }
+          return { success: false, error: error.message };
+        }
+        return { success: true };
+      } catch (err) {
+        console.warn("Supabase profile save notice:", err);
+        return { success: false, error: err.message || "Failed to update profile" };
+      }
+    }
+    return { success: true };
   };
 
   return (
     <>
       <ScrollToTop />
       <Routes>
-        <Route path="/" element={<HomePage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
+        {/* Auth pages — no shared layout (own full-screen designs) */}
         <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
         <Route path="/signup" element={<SignupPage onSignup={handleLogin} />} />
-        <Route path="/pricing" element={<PricingPage currentUser={currentUser} onLogout={handleLogout} />} />
-        <Route path="/pro-checkout" element={<ProCheckoutPage currentUser={currentUser} onLogout={handleLogout} onUpgradePro={handleUpgradePro} />} />
-        <Route path="/training" element={<TrainingListPage currentUser={currentUser} onLogout={handleLogout} />} />
-        <Route path="/training/:courseId" element={<CourseDetailPage currentUser={currentUser} onLogout={handleLogout} />} />
-        <Route path="/checkout/:courseId" element={<CheckoutPage currentUser={currentUser} onLogout={handleLogout} onCompletePurchase={handleCompletePurchase} />} />
-        <Route path="/dashboard" element={<DashboardPage currentUser={currentUser} onLogout={handleLogout} purchasedCourses={purchasedCourses} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
-        <Route path="/profile" element={<ProfilePage currentUser={currentUser} onLogout={handleLogout} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
-        <Route path="/notifications" element={<NotificationsPage currentUser={currentUser} onLogout={handleLogout} />} />
-        <Route path="/drivers" element={<DriversPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
-        <Route path="/companies" element={<CompaniesPage currentUser={currentUser} onLogout={handleLogout} />} />
-        <Route path="/planner" element={<PlannerPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
-        {/* <Route path="/growth" element={<GrowthPage currentUser={currentUser} onLogout={handleLogout} />} /> */}
-        <Route path="/certification" element={<CertificationPage currentUser={currentUser} onLogout={handleLogout} />} />
+
+        {/* Admin — has its own AdminLayout */}
+        <Route path="/admin" element={<AdminLayout currentUser={currentUser} onLogout={handleLogout} />} />
+
+        {/* All other pages — wrapped in shared Layout (Navbar + Footer) */}
+        <Route element={<Layout currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} />}>
+          <Route path="/" element={<HomePage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
+          <Route path="/pricing" element={<PricingPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/pro-checkout" element={<ProCheckoutPage currentUser={currentUser} onLogout={handleLogout} onUpgradePro={handleUpgradePro} />} />
+          <Route path="/training" element={<TrainingListPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/training/:courseId" element={<CourseDetailPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/checkout/:courseId" element={<CheckoutPage currentUser={currentUser} onLogout={handleLogout} onCompletePurchase={handleCompletePurchase} />} />
+          <Route path="/dashboard" element={<DashboardPage currentUser={currentUser} onLogout={handleLogout} purchasedCourses={purchasedCourses} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
+          <Route path="/profile" element={<ProfilePage currentUser={currentUser} onLogout={handleLogout} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
+          <Route path="/notifications" element={<NotificationsPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/drivers" element={<DriversPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
+          <Route path="/companies" element={<CompaniesPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
+          <Route path="/planner" element={<PlannerPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
+          {/* <Route path="/growth" element={<GrowthPage currentUser={currentUser} onLogout={handleLogout} />} /> */}
+          <Route path="/certification" element={<CertificationPage currentUser={currentUser} onLogout={handleLogout} />} />
+        </Route>
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
 
       {/* PRO Feature Gate Lock Modal Popup */}

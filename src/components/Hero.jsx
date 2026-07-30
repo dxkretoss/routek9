@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, MapPin, Truck, ArrowRight, TrendingUp, Building2, ShieldCheck, UserCheck } from 'lucide-react';
 import { vehicleTypes } from '../data/mockRoutes';
+import { US_STATES } from '../data/statesData';
 
 // Local hero images
 
@@ -54,6 +55,8 @@ export default function Hero({
   onSearch
 }) {
   const [activeSlide, setActiveSlide] = useState(0);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = useRef(null);
 
   // Auto-rotate every 5 seconds
   useEffect(() => {
@@ -63,12 +66,62 @@ export default function Hero({
     return () => clearInterval(timer);
   }, []);
 
+  // Click outside listener to close suggestions
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const goToSlide = useCallback((index) => {
     setActiveSlide(index);
   }, []);
 
+  // Filter states and cities based on search input (e.g. typing "ny", "tex", "hou", "cal")
+  const suggestions = useMemo(() => {
+    if (!searchQuery || searchQuery.trim().length === 0) return [];
+    const q = searchQuery.trim().toLowerCase();
+    const list = [];
+
+    Object.values(US_STATES).forEach((st) => {
+      const isCodeMatch = st.code.toLowerCase().startsWith(q) || st.code.toLowerCase() === q;
+      const isNameMatch = st.name.toLowerCase().includes(q);
+      const matchingCity = st.topCities ? st.topCities.find((c) => c.toLowerCase().includes(q)) : null;
+
+      if (isCodeMatch || isNameMatch || matchingCity) {
+        list.push({
+          code: st.code,
+          name: st.name,
+          city: matchingCity,
+          openRoutes: st.openRoutes || 0,
+          label: matchingCity ? `${matchingCity}, ${st.code} (${st.name})` : `${st.name} (${st.code})`,
+          stateObj: st
+        });
+      }
+    });
+
+    return list.slice(0, 6); // Display top 6 suggestions
+  }, [searchQuery]);
+
+  const handleFormSubmit = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setShowSuggestions(false);
+    if (onSearch) {
+      onSearch();
+    }
+  };
+
+  const handleSelectSuggestion = (item) => {
+    setSearchQuery(item.name);
+    setShowSuggestions(false);
+  };
+
   return (
-    <section id='hero' className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-rose-50/30 to-slate-50 pt-10 pb-12 lg:pt-14 lg:pb-20 border-b border-slate-200/60">
+    <section id='hero' className="relative bg-gradient-to-b from-slate-50 via-rose-50/30 to-slate-50 pt-10 pb-12 lg:pt-14 lg:pb-20 border-b border-slate-200/60 z-20">
 
       {/* Background Decorative Pattern */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-40 pointer-events-none" />
@@ -99,18 +152,51 @@ export default function Hero({
               Explore courier routes, calculate real profit, and connect with logistics companies across all 50 states.
             </p>
 
-            {/* Search Bar */}
-            <div className="bg-white p-3 sm:p-4 rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 flex flex-col sm:flex-row gap-3 max-w-xl">
+            {/* Search Bar Form */}
+            <form onSubmit={handleFormSubmit} className="bg-white p-3 sm:p-4 rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 flex flex-col sm:flex-row gap-3 max-w-xl relative z-30">
 
-              <div className="flex-1 relative flex items-center">
-                <Search className="w-5 h-5 text-slate-400 absolute left-3.5" />
+              <div className="flex-1 relative flex items-center" ref={searchContainerRef}>
+                <Search className="w-5 h-5 text-slate-400 absolute left-3.5 z-10 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="City, state, or keyword..."
+                  placeholder="City or state (e.g. NY, Texas, Houston)..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
                   className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white transition-all font-medium"
                 />
+
+                {/* Floating Autocomplete Suggestions Dropdown */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-[115%] left-0 w-full sm:w-[380px] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-[999] animate-fadeIn">
+                    <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                      {suggestions.map((item) => (
+                        <li
+                          key={`${item.code}-${item.city || 'state'}`}
+                          onClick={() => handleSelectSuggestion(item)}
+                          className="px-4 py-3 hover:bg-rose-50/80 cursor-pointer transition-colors flex items-center justify-between group gap-2"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-slate-100 group-hover:bg-rose-100 group-hover:text-rose-600 text-slate-500 flex items-center justify-center font-bold text-xs shrink-0 transition-colors">
+                              <MapPin className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-bold text-slate-900 group-hover:text-rose-600 transition-colors truncate">
+                                {item.label}
+                              </div>
+                              <div className="text-xs text-slate-400 font-medium truncate">
+                                {item.openRoutes} Active Routes Available
+                              </div>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               <div className="w-full sm:w-44 relative flex items-center">
@@ -127,13 +213,13 @@ export default function Hero({
               </div>
 
               <button
-                onClick={onSearch}
+                type="submit"
                 className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md shadow-rose-600/25 transition-all flex items-center justify-center gap-2 transform active:scale-95 cursor-pointer"
               >
                 <span>Search</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
-            </div>
+            </form>
 
             {/* Mini Stats Row with Animated Counters */}
             <div className="flex flex-wrap gap-6 pt-2 text-xs font-semibold text-slate-500">

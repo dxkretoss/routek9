@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
 import { mockDrivers } from '../data/mockDrivers';
 import { vehicleTypes } from '../data/mockRoutes';
 import {
@@ -117,10 +115,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
   const avgExp = Math.round(mockDrivers.reduce((acc, curr) => acc + curr.years_experience, 0) / totalDrivers);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-      {/* Navbar */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
-
+    <>
       {/* Full-Width Background Image Hero Section */}
       <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden">
         {/* Full-Screen Background Image */}
@@ -342,9 +337,6 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
         </div>
       </main>
 
-      {/* Footer */}
-      <Footer />
-
       {/* Contact Driver Modal */}
       {selectedDriver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b132b]/60 backdrop-blur-xs p-4 animate-fadeIn">
@@ -436,6 +428,6 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
           <span>{toastMessage}</span>
         </div>
       )}
-    </div>
+    </>
   );
 }

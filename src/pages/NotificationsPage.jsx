@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
 import { INITIAL_NOTIFICATIONS } from '../data/mockNotifications';
 import {
   Bell,
@@ -93,10 +91,7 @@ export default function NotificationsPage({ currentUser, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-      {/* Navbar */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
-
+    <>
       {/* Header Banner */}
       <section className="bg-[#0b132b] text-white py-12 sm:py-16 relative overflow-hidden">
         {/* Background decorative glow */}
@@ -325,9 +320,6 @@ export default function NotificationsPage({ currentUser, onLogout }) {
         </div>
       </main>
 
-      {/* Footer */}
-      <Footer />
-
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-[#0b132b] text-white shadow-2xl border border-slate-700 flex items-center gap-3 text-xs font-bold animate-slideUp">
@@ -335,6 +327,6 @@ export default function NotificationsPage({ currentUser, onLogout }) {
           <span>{toastMessage}</span>
         </div>
       )}
-    </div>
+    </>
   );
 }

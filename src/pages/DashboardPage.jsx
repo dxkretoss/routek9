@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import React, { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import Toast from '../components/Toast';
+import PhoneInputPkg from 'react-phone-input-2';
+import 'react-phone-input-2/lib/style.css';
+
+const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import { COURSES_DATA } from '../data/coursesData';
+import { supabase } from '../lib/supabase';
 import {
   Award,
   BookOpen,
@@ -23,7 +27,11 @@ import {
   FileText,
   Clock,
   Sparkles,
-  Crown
+  Crown,
+  Eye,
+  EyeOff,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 const MOCK_INBOX_MESSAGES = [
@@ -57,28 +65,85 @@ const MOCK_INBOX_MESSAGES = [
 ];
 
 export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], onUpdateProfile, onOpenPricing }) {
-  const [activeTab, setActiveTab] = useState('courses'); // 'courses', 'inbox', 'settings', 'profile'
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Helper to determine initial active tab from URL query params
+  const getInitialTab = () => {
+    const tabParam = searchParams.get('tab');
+    if (searchParams.has('changepass') || tabParam === 'changepass' || tabParam === 'settings') {
+      return 'settings';
+    }
+    if (tabParam === 'inbox') return 'inbox';
+    if (tabParam === 'profile') return 'profile';
+    return 'courses';
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  // Sync activeTab if URL searchParams change
+  useEffect(() => {
+    if (searchParams.has('changepass') || searchParams.get('tab') === 'changepass' || searchParams.get('tab') === 'settings') {
+      setActiveTab('settings');
+    } else if (searchParams.get('tab') === 'inbox') {
+      setActiveTab('inbox');
+    } else if (searchParams.get('tab') === 'profile') {
+      setActiveTab('profile');
+    } else if (searchParams.get('tab') === 'courses') {
+      setActiveTab('courses');
+    }
+  }, [searchParams]);
+
+  // Handler to switch tabs and update URL parameters
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (tab === 'settings') {
+      setSearchParams({ tab: 'changepass' }, { replace: true });
+    } else if (tab === 'courses') {
+      setSearchParams({}, { replace: true });
+    } else {
+      setSearchParams({ tab: tab }, { replace: true });
+    }
+  };
 
   // Settings State
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [emailAlerts, setEmailAlerts] = useState(true);
   const [smsAlerts, setSmsAlerts] = useState(true);
 
   // Profile State
-  const [fullName, setFullName] = useState(currentUser?.name || 'Jane A. Driver');
-  const [email, setEmail] = useState(currentUser?.email || 'driver@routek9.com');
+  const [fullName, setFullName] = useState(currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : ''));
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
   const [accountRole, setAccountRole] = useState(currentUser?.role || 'driver'); // 'driver' or 'company'
   const [vehicleClass, setVehicleClass] = useState(currentUser?.vehicle || 'Cargo Van');
-  const [stateCode, setStateCode] = useState(currentUser?.stateCode || 'TX');
-  const [cityName, setCityName] = useState(currentUser?.city || 'Houston');
-  const [dotNumber, setDotNumber] = useState('3849120');
-  const [insurancePolicy, setInsurancePolicy] = useState('Commercial Auto ($1,000,000 Liability)');
+  const [stateCode, setStateCode] = useState(currentUser?.stateCode || '');
+  const [cityName, setCityName] = useState(currentUser?.city || '');
+  const [dotNumber, setDotNumber] = useState(currentUser?.dotNumber || '');
+  const [insurancePolicy, setInsurancePolicy] = useState(currentUser?.insurancePolicy || '');
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState(null);
   const [downloadToast, setDownloadToast] = useState(null);
+
+  useEffect(() => {
+    if (currentUser) {
+      setFullName(currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : ''));
+      setEmail(currentUser.email || '');
+      setPhone(currentUser.phone || '');
+      setAccountRole(currentUser.role || 'driver');
+      setVehicleClass(currentUser.vehicle || 'Cargo Van');
+      setStateCode(currentUser.stateCode || '');
+      setCityName(currentUser.city || '');
+      setDotNumber(currentUser.dotNumber || '');
+      setInsurancePolicy(currentUser.insurancePolicy || '');
+    }
+  }, [currentUser]);
 
   const enrolledCourses = COURSES_DATA.filter((c) => purchasedCourses.includes(c.id));
 
@@ -87,41 +152,150 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     setTimeout(() => setDownloadToast(null), 4000);
   };
 
-  const handlePasswordChangeSubmit = (e) => {
+  const handlePasswordChangeSubmit = async (e) => {
     e.preventDefault();
     setPasswordError(null);
-    if (newPassword !== confirmPassword) {
-      setPasswordError("New passwords do not match!");
+    setPasswordSuccess(false);
+
+    // 1. Validation: Field presence check
+    if (!currentPassword || !currentPassword.trim()) {
+      setPasswordError("Please enter your current password.");
       return;
     }
-    setPasswordSuccess(true);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setTimeout(() => setPasswordSuccess(false), 3000);
+    if (!newPassword || !newPassword.trim()) {
+      setPasswordError("Please enter a new password.");
+      return;
+    }
+    if (!confirmPassword || !confirmPassword.trim()) {
+      setPasswordError("Please confirm your new password.");
+      return;
+    }
+
+    // 2. Validation: Length check
+    if (newPassword.length < 6) {
+      setPasswordError("New password must be at least 6 characters long.");
+      return;
+    }
+
+    // 3. Validation: Match check
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New password and confirm password do not match!");
+      return;
+    }
+
+    // 4. Validation: Same as current check
+    if (currentPassword === newPassword) {
+      setPasswordError("New password must be different from your current password.");
+      return;
+    }
+
+    try {
+      setPasswordLoading(true);
+
+      // 5. Verify current password via Supabase Auth re-authentication
+      const { data: { user } } = await supabase.auth.getUser();
+      const targetEmail = user?.email || currentUser?.email;
+
+      if (targetEmail) {
+        const { error: verifyErr } = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: currentPassword
+        });
+
+        if (verifyErr) {
+          setPasswordError("Current password is incorrect. Please verify your password.");
+          setPasswordLoading(false);
+          return;
+        }
+      }
+
+      // 6. Update password in Supabase Auth
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateErr) {
+        throw updateErr;
+      }
+
+      // 7. Reset form & display success message
+      setPasswordSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSuccess(false), 5000);
+    } catch (err) {
+      console.error("Password update error:", err);
+      setPasswordError(err.message || "Failed to update password. Please try again.");
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
-  const handleProfileSubmit = (e) => {
+  const handleProfileSubmit = async (e) => {
     e.preventDefault();
+    setProfileSuccess(false);
+
     if (onUpdateProfile) {
-      onUpdateProfile({
+      const res = await onUpdateProfile({
         name: fullName,
         email,
+        phone,
         role: accountRole,
         vehicle: vehicleClass,
         stateCode,
-        city: cityName
+        city: cityName,
+        dotNumber,
+        insurancePolicy
       });
+
+      if (res && res.success === false) {
+        setPasswordError(res.error || "Failed to update profile.");
+      } else {
+        setProfileSuccess(true);
+        setTimeout(() => setProfileSuccess(false), 4000);
+      }
+    } else {
+      setProfileSuccess(true);
+      setTimeout(() => setProfileSuccess(false), 4000);
     }
-    setProfileSuccess(true);
-    setTimeout(() => setProfileSuccess(false), 3000);
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-
-      {/* Navbar Header */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={onOpenPricing} />
+    <>
+      {/* Floating Toast Notifications */}
+      {downloadToast && (
+        <Toast
+          message={downloadToast}
+          type="info"
+          duration={4000}
+          onClose={() => setDownloadToast(null)}
+        />
+      )}
+      {passwordError && (
+        <Toast
+          message={passwordError}
+          type="error"
+          duration={5000}
+          onClose={() => setPasswordError(null)}
+        />
+      )}
+      {passwordSuccess && (
+        <Toast
+          message="Password updated successfully!"
+          type="success"
+          duration={4000}
+          onClose={() => setPasswordSuccess(false)}
+        />
+      )}
+      {profileSuccess && (
+        <Toast
+          message="Dashboard profile saved successfully!"
+          type="success"
+          duration={4000}
+          onClose={() => setProfileSuccess(false)}
+        />
+      )}
 
       {/* Hero Welcome Header */}
       <section className="bg-[#0b132b] text-white py-12 sm:py-16">
@@ -201,10 +375,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-2 overflow-x-auto py-2">
 
           <button
-            onClick={() => setActiveTab('courses')}
+            onClick={() => handleTabChange('courses')}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'courses'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
           >
             <BookOpen className="w-4 h-4" />
@@ -212,10 +386,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
           </button>
 
           <button
-            onClick={() => setActiveTab('inbox')}
+            onClick={() => handleTabChange('inbox')}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'inbox'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
           >
             <Inbox className="w-4 h-4" />
@@ -224,10 +398,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
           </button>
 
           <button
-            onClick={() => setActiveTab('settings')}
+            onClick={() => handleTabChange('settings')}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'settings'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
           >
             <Lock className="w-4 h-4" />
@@ -235,10 +409,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
           </button>
 
           <button
-            onClick={() => setActiveTab('profile')}
+            onClick={() => handleTabChange('profile')}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'profile'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
           >
             {accountRole === 'company' ? <Building2 className="w-4 h-4" /> : <User className="w-4 h-4" />}
@@ -408,72 +582,122 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
                 {passwordSuccess && (
                   <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-bold flex items-center gap-2 animate-fadeIn">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Password updated successfully!</span>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Password updated successfully in Supabase!</span>
                   </div>
                 )}
 
                 {passwordError && (
                   <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-bold flex items-center gap-2 animate-fadeIn">
-                    <span className="w-2 h-2 rounded-full bg-rose-600" />
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                     <span>{passwordError}</span>
                   </div>
                 )}
 
-                <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+                <form onSubmit={handlePasswordChangeSubmit} className="space-y-4" autoComplete="off">
+                  {/* Dummy inputs to prevent browser aggressive autofill */}
+                  <input type="text" name="prevent_autofill_email" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="off" />
+                  <input type="password" name="prevent_autofill_password" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="new-password" />
+
+                  {/* Current Password Field */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                       Current Password
                     </label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showCurrentPw ? "text" : "password"}
+                        name="settings_current_pw_nofill"
+                        required
+                        autoComplete="new-password"
+                        placeholder="••••••••"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPw(!showCurrentPw)}
+                        className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                      >
+                        {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
 
+                  {/* New Password Field */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                       New Password
                     </label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="Enter new password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showNewPw ? "text" : "password"}
+                        name="settings_new_pw_nofill"
+                        required
+                        autoComplete="new-password"
+                        placeholder="Enter new password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPw(!showNewPw)}
+                        className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                      >
+                        {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
 
+                  {/* Confirm New Password Field */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                       Confirm New Password
                     </label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="Confirm new password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPw ? "text" : "password"}
+                        name="settings_confirm_pw_nofill"
+                        required
+                        autoComplete="new-password"
+                        placeholder="Confirm new password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPw(!showConfirmPw)}
+                        className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                      >
+                        {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                    disabled={passwordLoading}
+                    className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-75 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
                   >
-                    <KeyRound className="w-4 h-4" />
-                    <span>Update Password</span>
+                    {passwordLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Updating Password...</span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound className="w-4 h-4" />
+                        <span>Update Password</span>
+                      </>
+                    )}
                   </button>
                 </form>
 
                 {/* Notifications Toggles */}
-                <div className="pt-6 border-t border-slate-100 space-y-4">
+                {/* <div className="pt-6 border-t border-slate-100 space-y-4">
                   <h4 className="text-sm font-bold text-[#0b132b]">Notification Preferences</h4>
 
                   <label className="flex items-center justify-between cursor-pointer">
@@ -482,7 +706,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                       type="checkbox"
                       checked={emailAlerts}
                       onChange={(e) => setEmailAlerts(e.target.checked)}
-                      className="w-4 h-4 accent-rose-600 rounded"
+                      className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
                     />
                   </label>
 
@@ -492,10 +716,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                       type="checkbox"
                       checked={smsAlerts}
                       onChange={(e) => setSmsAlerts(e.target.checked)}
-                      className="w-4 h-4 accent-rose-600 rounded"
+                      className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
                     />
                   </label>
-                </div>
+                </div> */}
 
               </div>
             </div>
@@ -585,6 +809,61 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                     </div>
                   </div>
 
+                  {/* Phone Number & USDOT / MC Number */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Phone Number
+                      </label>
+                      <div className="relative">
+                        <PhoneInput
+                          country={'us'}
+                          value={phone}
+                          onChange={(val) => setPhone(val)}
+                          inputStyle={{
+                            width: '100%',
+                            height: '46px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            backgroundColor: '#f8fafc',
+                            borderColor: '#e2e8f0',
+                            borderRadius: '0.75rem',
+                            paddingLeft: '48px',
+                            color: '#1e293b'
+                          }}
+                          buttonStyle={{
+                            backgroundColor: '#f8fafc',
+                            borderColor: '#e2e8f0',
+                            borderTopLeftRadius: '0.75rem',
+                            borderBottomLeftRadius: '0.75rem',
+                            paddingLeft: '4px'
+                          }}
+                          dropdownStyle={{
+                            borderRadius: '0.75rem',
+                            zIndex: 1000
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        USDOT / MC Number (Optional)
+                      </label>
+                      <div className="relative">
+                        {/* <Truck className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" /> */}
+                        <input
+                          type="text"
+                          value={dotNumber}
+                          onChange={(e) => setDotNumber(e.target.value)}
+                          placeholder="e.g. 3849120"
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Primary Vehicle Class & Home State */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
@@ -605,21 +884,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                       </select>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                        USDOT / MC Number (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={dotNumber}
-                        onChange={(e) => setDotNumber(e.target.value)}
-                        placeholder="e.g. 3849120"
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                         Home State
@@ -674,9 +938,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
         </div>
       </main>
 
-      {/* Footer */}
-      <Footer />
-
       {/* Download Toast Notification */}
       {downloadToast && (
         <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-[#0b132b] text-white shadow-2xl border border-slate-700 flex items-center gap-3 text-xs font-bold animate-slideUp">
@@ -684,7 +945,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
           <span>{downloadToast}</span>
         </div>
       )}
-
-    </div>
+    </>
   );
 }

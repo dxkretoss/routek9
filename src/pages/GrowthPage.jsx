@@ -1,7 +1,5 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
 import { 
   TrendingUp, 
   DollarSign, 
@@ -78,8 +76,7 @@ import heroGrowthImg from '../assets/hero_business_growth.png';
 
 export default function GrowthPage({ currentUser, onLogout }) {
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
+    <>
 
       {/* Full-Width Background Image Hero Section */}
       <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden">
@@ -318,8 +315,6 @@ export default function GrowthPage({ currentUser, onLogout }) {
           </div>
         </div>
       </section>
-
-      <Footer />
-    </div>
+    </>
   );
 }

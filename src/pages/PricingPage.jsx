@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
-import { 
-  Check, 
-  Zap, 
-  ShieldCheck, 
-  Sparkles, 
-  Crown, 
-  Building, 
-  Users, 
+import PaymentTestModeBanner from '../components/PaymentTestModeBanner';
+import {
+  Check,
+  Zap,
+  ShieldCheck,
+  Sparkles,
+  Crown,
+  Building,
+  Users,
   FileText,
   Lock,
   ArrowRight,
@@ -32,17 +31,16 @@ export default function PricingPage({ currentUser, onLogout }) {
   const isPro = !!currentUser?.isPro;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-      
-      {/* Header Navbar */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={() => {}} />
+    <>
+      {/* Payment Test Mode Banner */}
+      {/* <PaymentTestModeBanner /> */}
 
       {/* Premium Redesigned Hero Section */}
       <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden text-center">
         {/* Full-Screen High Resolution Fleet Background Image */}
-        <img 
-          src={heroFleetImg} 
-          alt="Route K9 Pro Fleet Background" 
+        <img
+          src={heroFleetImg}
+          alt="Route K9 Pro Fleet Background"
           className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-1000 scale-105 opacity-40"
         />
 
@@ -50,7 +48,7 @@ export default function PricingPage({ currentUser, onLogout }) {
         <div className="absolute inset-0 bg-gradient-to-b from-slate-950/95 via-slate-950/85 to-slate-950/95 backdrop-blur-[2px] pointer-events-none" />
 
         {/* Vector Route Pattern Overlay */}
-        <div 
+        <div
           className="absolute inset-0 opacity-15 mix-blend-overlay pointer-events-none bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: `url(${heroBgPattern})` }}
         />
@@ -59,7 +57,7 @@ export default function PricingPage({ currentUser, onLogout }) {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[350px] bg-gradient-to-r from-rose-500/20 via-amber-500/15 to-rose-500/20 rounded-full blur-3xl pointer-events-none" />
 
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 relative z-10">
-          
+
           {/* Glowing Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-extrabold uppercase tracking-wider backdrop-blur-md shadow-md animate-pulse">
             <Crown className="w-4 h-4 text-amber-400" />
@@ -110,11 +108,10 @@ export default function PricingPage({ currentUser, onLogout }) {
               <button
                 type="button"
                 onClick={() => setBillingCycle('monthly')}
-                className={`px-6 py-2.5 rounded-full text-xs font-extrabold transition-all cursor-pointer ${
-                  billingCycle === 'monthly'
+                className={`px-6 py-2.5 rounded-full text-xs font-extrabold transition-all cursor-pointer ${billingCycle === 'monthly'
                     ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
                     : 'text-slate-300 hover:text-white'
-                }`}
+                  }`}
               >
                 Monthly Billing
               </button>
@@ -122,11 +119,10 @@ export default function PricingPage({ currentUser, onLogout }) {
               <button
                 type="button"
                 onClick={() => setBillingCycle('yearly')}
-                className={`px-6 py-2.5 rounded-full text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
-                  billingCycle === 'yearly'
+                className={`px-6 py-2.5 rounded-full text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${billingCycle === 'yearly'
                     ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
                     : 'text-slate-300 hover:text-white'
-                }`}
+                  }`}
               >
                 <span>Yearly Billing</span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase shadow-xs">
@@ -142,10 +138,10 @@ export default function PricingPage({ currentUser, onLogout }) {
       {/* Main Plans Section */}
       <main className="flex-1 py-16 lg:py-24">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
-          
+
           {/* Pricing Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
-            
+
             {/* FREE STARTER PLAN CARD */}
             <div className={`bg-white rounded-3xl p-8 border ${!isPro ? 'border-slate-300 shadow-lg' : 'border-slate-200'} flex flex-col justify-between space-y-8 relative`}>
               {!isPro && (
@@ -201,7 +197,7 @@ export default function PricingPage({ currentUser, onLogout }) {
 
             {/* ROUTE K9 PRO PLAN CARD */}
             <div className={`bg-gradient-to-b from-slate-900 via-slate-900 to-[#0b132b] text-white rounded-3xl p-8 border ${isPro ? 'border-amber-400 ring-2 ring-amber-400/40' : 'border-rose-600'} shadow-2xl flex flex-col justify-between space-y-8 relative`}>
-              
+
               <div className="absolute -top-4 right-8 px-4 py-1.5 rounded-full bg-gradient-to-r from-rose-600 to-amber-500 text-white text-xs font-extrabold uppercase tracking-wider shadow-lg flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-amber-200" />
                 <span>Recommended Tier</span>
@@ -287,10 +283,6 @@ export default function PricingPage({ currentUser, onLogout }) {
 
         </div>
       </main>
-
-      {/* Footer */}
-      <Footer />
-
-    </div>
+    </>
   );
 }

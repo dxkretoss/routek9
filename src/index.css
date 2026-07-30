@@ -116,3 +116,16 @@ body {
   filter: blur(40px);
   pointer-events: none;
 }
+
+@keyframes toast-shrink {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+.animate-toast-progress {
+  animation: toast-shrink linear forwards;
+}

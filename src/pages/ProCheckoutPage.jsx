@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
+import StripeEmbeddedCheckout from '../components/StripeEmbeddedCheckout';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
-import { 
-  ArrowLeft, 
-  CreditCard, 
-  Lock, 
-  ShieldCheck, 
-  CheckCircle2, 
-  Crown, 
+import PaymentTestModeBanner from '../components/PaymentTestModeBanner';
+import {
+  ArrowLeft,
+  CreditCard,
+  Lock,
+  ShieldCheck,
+  CheckCircle2,
+  Crown,
   ArrowRight,
   Sparkles,
   Zap,
@@ -16,6 +15,7 @@ import {
   Users,
   FileText
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro }) {
   const [searchParams] = useSearchParams();
@@ -37,13 +37,24 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [subscriptionReceipt, setSubscriptionReceipt] = useState(null);
 
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.email) setEmail(currentUser.email);
+      if (currentUser.name && (currentUser.name !== 'Jane A. Driver' || currentUser.email === 'driver@routek9.com')) {
+        setCardholderName(currentUser.name);
+      } else if (currentUser.email && currentUser.email !== 'driver@routek9.com') {
+        setCardholderName(currentUser.email.split('@')[0]);
+      }
+    }
+  }, [currentUser]);
+
   const handlePay = (e) => {
     e.preventDefault();
     setIsProcessing(true);
 
     const now = new Date();
     const subscribedAt = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    
+
     // Calculate renewal date (+1 month or +1 year)
     const renewalDate = new Date(now);
     if (billingCycle === 'yearly') {
@@ -77,20 +88,14 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white relative">
-      
-      {/* Header */}
-      <Navbar currentUser={currentUser} onLogout={onLogout} onOpenPricing={() => navigate('/pricing')} />
-
-      {/* Top Test Mode Banner */}
-      <div className="bg-amber-500/15 border-b border-amber-300/40 py-2.5 px-4 text-center text-xs font-bold text-amber-900">
-        All payments in test mode. Use test card <span className="font-mono underline">4242 4242 4242 4242</span>.
-      </div>
+    <>
+      {/* Payment Test Mode Banner */}
+      {/* <PaymentTestModeBanner /> */}
 
       {/* Hero Sub-Header */}
       <div className="bg-[#0b132b] text-white py-10 border-b border-slate-800">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-3">
-          
+
           <Link
             to="/pricing"
             className="text-xs font-bold text-slate-400 hover:text-rose-400 inline-flex items-center gap-1.5 transition-colors uppercase tracking-wider bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/10"
@@ -120,14 +125,14 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
       {/* Main Payment Checkout Box */}
       <main className="flex-1 py-12">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            
-            {/* Left Column: Order Summary Card */}
-            <div className="lg:col-span-5 space-y-6">
-              
+
+            {/* Left Column: Order Summary Card (Sticky) */}
+            <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-8">
+
               <div className="bg-gradient-to-b from-slate-900 to-[#0b132b] text-white p-7 rounded-3xl border border-slate-800 shadow-xl space-y-6">
-                
+
                 <div className="space-y-1">
                   <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
                     ORDER SUMMARY
@@ -150,7 +155,7 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
                 {/* Benefits Checklist */}
                 <div className="space-y-3 pt-1">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Included Benefits:</div>
-                  
+
                   <div className="flex items-start gap-2 text-xs text-slate-200 font-medium">
                     <Zap className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                     <span>400-Stop Route Optimizer & 2-Opt Algorithm</span>
@@ -177,137 +182,14 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
 
             </div>
 
-            {/* Right Column: Card Payment Form */}
-            <div className="lg:col-span-7 space-y-6">
-              
-              {/* Currency Selector */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-700">Choose display currency:</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCurrency('USD')}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                      currency === 'USD'
-                        ? 'border-emerald-600 bg-white text-emerald-800 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    🇺🇸 ${price}.00 USD
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCurrency('INR')}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                      currency === 'INR'
-                        ? 'border-emerald-600 bg-white text-emerald-800 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    🇮🇳 ₹{(price * 99.8).toFixed(2)} INR
-                  </button>
-                </div>
-              </div>
-
-              {/* Main Payment Form Container */}
-              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-xl space-y-6">
-                
-                <form onSubmit={handlePay} className="space-y-4">
-                  
-                  {/* Account Email */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-700">Account Email</label>
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="email@example.com"
-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Payment Method Card Box */}
-                  <div className="space-y-2 pt-2">
-                    <label className="block text-xs font-bold text-slate-700">Payment Details</label>
-                    
-                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800 border-b border-slate-200 pb-2">
-                        <CreditCard className="w-4 h-4 text-emerald-600" />
-                        <span>Credit / Debit Card (Test Mode)</span>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase">Card Number</label>
-                          <input
-                            type="text"
-                            required
-                            value={cardNumber}
-                            onChange={(e) => setCardNumber(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase">MM / YY</label>
-                            <input
-                              type="text"
-                              required
-                              value={expDate}
-                              onChange={(e) => setExpDate(e.target.value)}
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase">CVC</label>
-                            <input
-                              type="text"
-                              required
-                              value={cvc}
-                              onChange={(e) => setCvc(e.target.value)}
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase">Cardholder Name</label>
-                          <input
-                            type="text"
-                            required
-                            value={cardholderName}
-                            onChange={(e) => setCardholderName(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* Pay & Activate Button */}
-                  <button
-                    type="submit"
-                    disabled={isProcessing}
-                    className="w-full py-4 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-extrabold text-sm shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-4"
-                  >
-                    <Lock className="w-4 h-4 text-amber-200" />
-                    <span>{isProcessing ? 'Processing Payment...' : `Pay $${price}.00 & Activate PRO (Test Mode)`}</span>
-                  </button>
-
-                </form>
-
-                <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 font-medium">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>256-Bit SSL Encrypted Payment Gateway</span>
-                </div>
-
-              </div>
-
+            {/* Right Column: Stripe Embedded Checkout Component matching reference code */}
+            <div className="lg:col-span-7">
+              <StripeEmbeddedCheckout
+                priceId={`pro_${billingCycle}`}
+                fullName={cardholderName}
+                returnUrl={window.location.href}
+                onSuccess={() => handlePay({ preventDefault: () => { } })}
+              />
             </div>
 
           </div>
@@ -315,15 +197,12 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
         </div>
       </main>
 
-      {/* Footer */}
-      <Footer />
-
       {/* Modern Subscription Thank You Success Modal Overlay */}
       {showSuccessModal && subscriptionReceipt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
-          
+
           <div className="bg-white max-w-md w-full rounded-3xl p-8 border border-slate-200 shadow-2xl space-y-6 text-center relative overflow-hidden animate-scaleUp">
-            
+
             {/* Background Festive Ambient Glows */}
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -390,7 +269,6 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
 
         </div>
       )}
-
-    </div>
+    </>
   );
 }

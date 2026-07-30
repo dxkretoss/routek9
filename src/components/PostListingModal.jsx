@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { X, PlusCircle, CheckCircle2, Truck, Building2 } from 'lucide-react';
 import { US_STATES } from '../data/statesData';
+import PhoneInputPkg from 'react-phone-input-2';
+import 'react-phone-input-2/lib/style.css';
+
+const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
 export default function PostListingModal({ onClose, onAddRoute }) {
   const [title, setTitle] = useState('');
@@ -11,6 +15,7 @@ export default function PostListingModal({ onClose, onAddRoute }) {
   const [pay, setPay] = useState('$350');
   const [vehicleRequired, setVehicleRequired] = useState('Cargo Van');
   const [company, setCompany] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [description, setDescription] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
@@ -38,7 +43,7 @@ export default function PostListingModal({ onClose, onAddRoute }) {
       description: description || 'New contract route listing posted on RouteK9 marketplace.',
       requirements: ['Clean Driving Record', 'Active Cargo Insurance'],
       contactEmail: 'contact@dispatchnetwork.com',
-      contactPhone: '(555) 019-2831'
+      contactPhone: contactPhone || '(555) 019-2831'
     };
 
     onAddRoute(newRoute);
@@ -200,6 +205,39 @@ export default function PostListingModal({ onClose, onAddRoute }) {
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Contact Phone Number (With Country Code)
+                </label>
+                <PhoneInput
+                  country={'us'}
+                  value={contactPhone}
+                  onChange={(val) => setContactPhone(val)}
+                  inputStyle={{
+                    width: '100%',
+                    height: '40px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    backgroundColor: '#f8fafc',
+                    borderColor: '#e2e8f0',
+                    borderRadius: '0.75rem',
+                    paddingLeft: '44px',
+                    color: '#1e293b'
+                  }}
+                  buttonStyle={{
+                    backgroundColor: '#f8fafc',
+                    borderColor: '#e2e8f0',
+                    borderTopLeftRadius: '0.75rem',
+                    borderBottomLeftRadius: '0.75rem',
+                    paddingLeft: '2px'
+                  }}
+                  dropdownStyle={{
+                    borderRadius: '0.75rem',
+                    zIndex: 1000
+                  }}
+                />
               </div>
 
               <div>

@@ -1,43 +1,92 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ShieldCheck, ArrowRight, Lock, Mail, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Lock, Mail, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import Toast from '../components/Toast';
 
 export default function LoginPage({ onLogin }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/dashboard';
+  const confirmedSent = searchParams.get('confirmed_sent') === 'true';
+  const confirmedSuccess = searchParams.get('confirmed') === 'true';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [resetMessage, setResetMessage] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const userName = email ? email.split('@')[0] : 'Jane A. Driver';
-    if (onLogin) {
-      onLogin({
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 1. Supabase Auth Login
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password
+      });
+
+      if (authError) throw authError;
+
+      const userId = data.user?.id;
+      let profileData = null;
+
+      if (userId) {
+        // 2. Fetch User Profile from Supabase profiles table
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
+        profileData = profile;
+      }
+
+      const userName = profileData?.full_name || (email ? email.split('@')[0] : 'Jane A. Driver');
+      const userRole = profileData?.role || 'driver';
+
+      const loggedInUser = {
+        id: userId,
         name: userName,
-        email: email || 'driver@routek9.com',
-        vehicle: 'Cargo Van',
+        email: email,
+        role: userRole,
+        vehicle: userRole === 'driver' ? 'Cargo Van' : 'Company Fleet',
         stateCode: 'TX',
         city: 'Houston'
-      });
+      };
+
+      if (onLogin) {
+        onLogin(loggedInUser);
+      }
+      navigate(redirectPath);
+    } catch (err) {
+      console.error("Login error:", err);
+      setError(err.message || "Invalid login credentials. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    navigate(redirectPath);
   };
 
-  const handleGoogleLogin = () => {
-    if (onLogin) {
-      onLogin({
-        name: 'Google User',
-        email: 'googleuser@gmail.com',
-        vehicle: 'Cargo Van',
-        stateCode: 'TX',
-        city: 'Houston'
+  const handleGoogleLogin = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const { error: googleError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}${redirectPath}`
+        }
       });
+      if (googleError) {
+        if (googleError.message?.includes('OAuth secret') || googleError.message?.includes('provider') || googleError.status === 400) {
+          throw new Error("Google Login is not enabled in your Supabase Dashboard yet. Please configure Google OAuth in Supabase or log in with Email & Password below.");
+        }
+        throw googleError;
+      }
+    } catch (err) {
+      console.error("Google Auth error:", err);
+      setError(err.message || "Could not connect to Google Login.");
+      setLoading(false);
     }
-    navigate(redirectPath);
   };
 
   const handleForgotPassword = (e) => {
@@ -182,15 +231,46 @@ export default function LoginPage({ onLogin }) {
             </div>
           </div>
 
-          {resetMessage && (
-            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Password reset link sent to your email!</span>
-            </div>
+          {/* Floating Toast Notifications */}
+          {error && (
+            <Toast
+              message={error}
+              type="error"
+              duration={5000}
+              onClose={() => setError(null)}
+            />
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            
+          {resetMessage && (
+            <Toast
+              message="Password reset link sent to your email!"
+              type="success"
+              duration={4000}
+              onClose={() => setResetMessage(false)}
+            />
+          )}
+
+          {confirmedSent && (
+            <Toast
+              message="Confirmation email sent! Please check your inbox and click the link to verify."
+              type="info"
+              duration={6000}
+            />
+          )}
+
+          {confirmedSuccess && (
+            <Toast
+              message="Email verified successfully! You can now log in below."
+              type="success"
+              duration={5000}
+            />
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+            {/* Hidden dummy inputs to capture browser aggressive password autofill */}
+            <input type="text" name="prevent_autofill_email" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="off" />
+            <input type="password" name="prevent_autofill_password" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="new-password" />
+
             {/* Email Field */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
@@ -200,7 +280,9 @@ export default function LoginPage({ onLogin }) {
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 <input
                   type="email"
+                  name="login_email_no_fill"
                   required
+                  autoComplete="new-password"
                   placeholder="driver@routek9.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -227,7 +309,9 @@ export default function LoginPage({ onLogin }) {
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 <input
                   type={showPassword ? "text" : "password"}
+                  name="login_password_no_fill"
                   required
+                  autoComplete="new-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -246,10 +330,20 @@ export default function LoginPage({ onLogin }) {
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full py-3.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+              disabled={loading}
+              className="w-full py-3.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] disabled:opacity-75 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
             >
-              <span>Log in to RouteK9</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Logging in...</span>
+                </>
+              ) : (
+                <>
+                  <span>Log in to RouteK9</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
 
           </form>

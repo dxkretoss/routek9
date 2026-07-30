@@ -1,6 +1,4 @@
 import React, { useState } from 'react';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
 import { MOCK_COMPANIES } from '../data/mockCompanies';
 import { 
   Building2, 
@@ -14,6 +12,10 @@ import {
   CheckCircle2,
   Building
 } from 'lucide-react';
+import PhoneInputPkg from 'react-phone-input-2';
+import 'react-phone-input-2/lib/style.css';
+
+const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
 import heroBgPattern from '../assets/hero_bg_pattern.png';
 import heroFleetImg from '../assets/hero_fleet_trucks.png';
@@ -80,8 +82,7 @@ export default function CompaniesPage({ currentUser, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans selection:bg-rose-600 selection:text-white">
-      <Navbar currentUser={currentUser} onLogout={onLogout} />
+    <>
 
       {/* Full-Width Background Image Hero Section */}
       <section className="relative bg-slate-950 text-white py-20 sm:py-28 border-b border-slate-800 overflow-hidden">
@@ -309,9 +310,6 @@ export default function CompaniesPage({ currentUser, onLogout }) {
         </div>
       </main>
 
-      {/* Footer */}
-      <Footer />
-
       {/* Premium Contact Dialog Modal */}
       {selectedCompany && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
@@ -370,13 +368,32 @@ export default function CompaniesPage({ currentUser, onLogout }) {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phone Number</label>
-                      <input
-                        required
-                        type="tel"
+                      <PhoneInput
+                        country={'us'}
                         value={contactForm.phone}
-                        onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-                        placeholder="(555) 555-5555"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        onChange={(val) => setContactForm({ ...contactForm, phone: val })}
+                        inputStyle={{
+                          width: '100%',
+                          height: '38px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          backgroundColor: '#f8fafc',
+                          borderColor: '#e2e8f0',
+                          borderRadius: '0.75rem',
+                          paddingLeft: '44px',
+                          color: '#1e293b'
+                        }}
+                        buttonStyle={{
+                          backgroundColor: '#f8fafc',
+                          borderColor: '#e2e8f0',
+                          borderTopLeftRadius: '0.75rem',
+                          borderBottomLeftRadius: '0.75rem',
+                          paddingLeft: '2px'
+                        }}
+                        dropdownStyle={{
+                          borderRadius: '0.75rem',
+                          zIndex: 1000
+                        }}
                       />
                     </div>
                   </div>
@@ -420,6 +437,6 @@ export default function CompaniesPage({ currentUser, onLogout }) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
