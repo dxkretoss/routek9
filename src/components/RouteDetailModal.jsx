@@ -1,17 +1,33 @@
 import React, { useState } from 'react';
-import { X, Truck, MapPin, DollarSign, Calendar, ShieldCheck, Phone, Mail, CheckCircle2, FileText, Send, Building2 } from 'lucide-react';
+import { X, Truck, MapPin, DollarSign, Calendar, ShieldCheck, Phone, Mail, CheckCircle2, FileText, Send, Building2, Loader2 } from 'lucide-react';
+import { submitRouteBid } from '../lib/supabase';
 
 export default function RouteDetailModal({ route, onClose }) {
   const [applicantName, setApplicantName] = useState('');
   const [applicantPhone, setApplicantPhone] = useState('');
   const [applicantEmail, setApplicantEmail] = useState('');
   const [applicantVehicle, setApplicantVehicle] = useState('Cargo Van');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   if (!route) return null;
 
-  const handleSubmitApplication = (e) => {
+  const handleSubmitApplication = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    
+    await submitRouteBid({
+      driverId: 'drv_' + Date.now(),
+      driverName: applicantName,
+      driverEmail: applicantEmail,
+      routeId: route.id,
+      routeTitle: route.title,
+      stateCode: route.stateCode || 'TX',
+      bidAmount: parseInt(String(route.pay).replace(/[^0-9]/g, ''), 10) || 250,
+      notes: `Vehicle: ${applicantVehicle} | Phone: ${applicantPhone}`
+    });
+
+    setIsSubmitting(false);
     setSubmitted(true);
   };
 

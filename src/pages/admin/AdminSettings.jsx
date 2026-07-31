@@ -85,8 +85,8 @@ export default function AdminSettings({ currentUser }) {
         <button
           onClick={() => setActiveTab('profile')}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'profile'
-              ? 'bg-[#0b132b] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            ? 'bg-[#0b132b] text-white shadow-md'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
         >
           <UserCircle className="w-4 h-4 text-rose-400" />
@@ -96,8 +96,8 @@ export default function AdminSettings({ currentUser }) {
         <button
           onClick={() => setActiveTab('security')}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'security'
-              ? 'bg-[#0b132b] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            ? 'bg-[#0b132b] text-white shadow-md'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
         >
           <KeyRound className="w-4 h-4 text-rose-400" />
@@ -141,10 +141,10 @@ export default function AdminSettings({ currentUser }) {
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
                   type="email"
-                  required
+                  disabled
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 cursor-not-allowed"
                 />
               </div>
             </div>

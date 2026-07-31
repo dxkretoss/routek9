@@ -182,11 +182,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
 
           {/* Advanced Filter panel */}
-          <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#0b132b] border-b border-slate-100 pb-3">
-              <SlidersHorizontal className="w-4 h-4 text-rose-600" />
-              <span>Filter Candidates Directory</span>
-            </div>
+          <div className="border-b pb-5 border-slate-200/90  space-y-4">
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Search input */}

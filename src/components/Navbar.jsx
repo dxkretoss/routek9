@@ -143,7 +143,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
                   {/* Hover Dropdown Menu */}
                   <div className="absolute right-0 top-full pt-2 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xl p-2 space-y-1">
-                      
+
                       {/* User Info Header */}
                       <div className="px-3 py-2.5 border-b border-slate-100 space-y-0.5">
                         <p className="text-xs font-extrabold text-[#0b132b] truncate">

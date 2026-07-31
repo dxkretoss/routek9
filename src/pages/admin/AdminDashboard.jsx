@@ -11,6 +11,8 @@ import {
 import { getCourses } from '../../lib/courses';
 import {
   StatCard,
+  StatCardSkeleton,
+  TableSkeleton,
   UserTable,
   CourseCard
 } from './components/AdminComponents';
@@ -43,38 +45,49 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
     <div className="space-y-8 animate-fadeIn">
       {/* Top Key Performance Indicators (KPI Grid) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Drivers"
-          value={totalDrivers}
-          subtext="Registered contract couriers"
-          icon={Truck}
-          color="blue"
-          onClick={() => onNavigate('drivers')}
-        />
-        <StatCard
-          label="Total Companies"
-          value={totalCompanies}
-          subtext="Hiring logistics partners"
-          icon={Building2}
-          color="emerald"
-          onClick={() => onNavigate('companies')}
-        />
-        <StatCard
-          label="Total Courses"
-          value={totalCourses}
-          subtext="Active training modules"
-          icon={BookOpen}
-          color="amber"
-          onClick={() => onNavigate('courses')}
-        />
-        <StatCard
-          label="Total Revenue"
-          value="$18,450 USD"
-          subtext="Course & subscription sales"
-          icon={DollarSign}
-          color="rose"
-          onClick={() => onNavigate('revenue')}
-        />
+        {loading ? (
+          <>
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </>
+        ) : (
+          <>
+            <StatCard
+              label="Total Drivers"
+              value={totalDrivers}
+              subtext="Registered contract couriers"
+              icon={Truck}
+              color="blue"
+              onClick={() => onNavigate('drivers')}
+            />
+            <StatCard
+              label="Total Companies"
+              value={totalCompanies}
+              subtext="Hiring logistics partners"
+              icon={Building2}
+              color="emerald"
+              onClick={() => onNavigate('companies')}
+            />
+            <StatCard
+              label="Total Courses"
+              value={totalCourses}
+              subtext="Active training modules"
+              icon={BookOpen}
+              color="amber"
+              onClick={() => onNavigate('courses')}
+            />
+            <StatCard
+              label="Total Revenue"
+              value="$18,450 USD"
+              subtext="Course & subscription sales"
+              icon={DollarSign}
+              color="rose"
+              onClick={() => onNavigate('revenue')}
+            />
+          </>
+        )}
       </div>
 
       {/* Main Grid: Available Courses + Recent Registrations */}
@@ -97,9 +110,10 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
           </div>
 
           {loadingCourses ? (
-            <div className="flex items-center justify-center py-12 gap-2 text-slate-400">
-              <Loader2 className="w-5 h-5 animate-spin text-rose-600" />
-              <span className="text-xs font-bold">Loading dashboard courses...</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 animate-pulse">
+              <div className="h-36 bg-slate-100 rounded-2xl" />
+              <div className="h-36 bg-slate-100 rounded-2xl" />
+              <div className="h-36 bg-slate-100 rounded-2xl" />
             </div>
           ) : displayedCourses.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-400 font-medium">
@@ -127,10 +141,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
           </div>
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="flex items-center justify-center py-16 gap-2 text-slate-400">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-xs font-bold">Loading registrations...</span>
-              </div>
+              <TableSkeleton rows={4} />
             ) : error ? (
               <div className="p-8 text-center text-xs text-rose-600 font-bold">{error}</div>
             ) : recentRegistrations.length === 0 ? (
@@ -147,4 +158,3 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
     </div>
   );
 }
-

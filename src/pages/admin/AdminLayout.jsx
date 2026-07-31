@@ -36,16 +36,42 @@ const SIDEBAR_ITEMS = [
 ];
 
 const ADMIN_SESSION_KEY = 'routek9_admin_auth';
+const ADMIN_TOKEN_KEY = 'routek9_admin_token';
+const ADMIN_EXP_KEY = 'routek9_admin_exp';
+
+function validateAdminToken() {
+  const isAuth = sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true';
+  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+  const exp = sessionStorage.getItem(ADMIN_EXP_KEY);
+
+  if (!isAuth || !token || !exp) return false;
+  if (!token.startsWith('rk9_adm_tok_')) return false;
+  if (Date.now() > parseInt(exp, 10)) {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    sessionStorage.removeItem(ADMIN_EXP_KEY);
+    return false;
+  }
+  return true;
+}
 
 // ─── MAIN ADMIN LAYOUT ────────────────────────────────────────
 export default function AdminLayout({ currentUser, onLogout }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ── Admin Auth State ─────────
-  const [isAdminAuth, setIsAdminAuth] = useState(() => {
-    return sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true';
-  });
+  // ── Admin Auth & Token Validation State ─────────
+  const [isAdminAuth, setIsAdminAuth] = useState(() => validateAdminToken());
+
+  // Periodically validate token expiration
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!validateAdminToken()) {
+        setIsAdminAuth(false);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ── Section/Sidebar State ────
   const getInitialSection = () => searchParams.get('section') || 'dashboard';
@@ -72,6 +98,10 @@ export default function AdminLayout({ currentUser, onLogout }) {
   }, [searchParams]);
 
   const handleSectionChange = (key) => {
+    if (!validateAdminToken()) {
+      setIsAdminAuth(false);
+      return;
+    }
     setActiveSection(key);
     setSearchParams({ section: key }, { replace: true });
     setMobileSidebarOpen(false);
@@ -79,13 +109,24 @@ export default function AdminLayout({ currentUser, onLogout }) {
 
   // ── Admin Login Handler ──────
   const handleAdminLogin = () => {
+    const token = 'rk9_adm_tok_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+    const exp = String(Date.now() + 8 * 3600 * 1000);
     sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
+    sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+    sessionStorage.setItem(ADMIN_EXP_KEY, exp);
     setIsAdminAuth(true);
   };
 
   const handleAdminLogout = () => {
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
-    setIsAdminAuth(false);
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    sessionStorage.removeItem(ADMIN_EXP_KEY);
+    if (onLogout) {
+      onLogout();
+    } else {
+      setIsAdminAuth(false);
+      navigate('/');
+    }
   };
 
   // ── Fetch dynamic data from Supabase ─
@@ -198,7 +239,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
     <div className="flex flex-col h-full">
       {/* Brand */}
       <div className="p-5 border-b border-white/10">
-        <Link to="/" className="flex items-center gap-3">
+        <Link to="/admin?section=dashboard" className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-rose-600/20 border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-xs shrink-0">
             <span className="text-[6px] font-bold uppercase tracking-tighter text-slate-300">ROUTE</span>
             <span className="text-[10px] font-extrabold tracking-tight text-rose-500 leading-none">K9</span>
@@ -221,11 +262,10 @@ export default function AdminLayout({ currentUser, onLogout }) {
             <button
               key={item.key}
               onClick={() => handleSectionChange(item.key)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer group ${
-                isActive
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer group ${isActive
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                }`}
               title={sidebarCollapsed ? item.label : undefined}
             >
               <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-rose-400'}`} />
@@ -333,9 +373,8 @@ export default function AdminLayout({ currentUser, onLogout }) {
 
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden lg:flex flex-col bg-[#0b132b] border-r border-white/5 transition-all duration-300 shrink-0 sticky top-0 h-screen ${
-          sidebarCollapsed ? 'w-[72px]' : 'w-64'
-        }`}
+        className={`hidden lg:flex flex-col bg-[#0b132b] border-r border-white/5 transition-all duration-300 shrink-0 sticky top-0 h-screen ${sidebarCollapsed ? 'w-[72px]' : 'w-64'
+          }`}
       >
         <SidebarContent />
         {/* Collapse Toggle */}
