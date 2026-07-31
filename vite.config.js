@@ -10,5 +10,17 @@ export default defineConfig({
   ],
   optimizeDeps: {
     include: ['react-simple-maps', 'prop-types', 'topojson-client', 'd3-scale']
+  },
+  server: {
+    proxy: {
+      '/api/stripe': {
+        target: 'https://connector-gateway.lovable.dev/stripe',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/stripe/, ''),
+        headers: {
+          'X-Connection-Api-Key': 'acct_1TtzfQIKKpSWYo2f',
+        }
+      }
+    }
   }
 })

@@ -16,6 +16,7 @@ export default function SignupPage({ onSignup }) {
   const [vehicleType, setVehicleType] = useState('Cargo Van');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
   const [resending, setResending] = useState(false);
@@ -40,8 +41,8 @@ export default function SignupPage({ onSignup }) {
       if (resendErr) throw resendErr;
       setResendSuccess(true);
     } catch (err) {
-      console.error("Resend error:", err);
-      setResendError(err.message || "Failed to resend confirmation email. Please wait a moment and try again.");
+      console.error("Resend confirmation error:", err);
+      setResendError(err.message || "Failed to resend confirmation email.");
     } finally {
       setResending(false);
     }
@@ -52,11 +53,11 @@ export default function SignupPage({ onSignup }) {
     setLoading(true);
     setError(null);
 
-    const nameToSave = fullName || (signupRole === 'driver' ? 'Jane A. Driver' : 'Acme Logistics');
+    const nameToSave = fullName.trim() || email.split('@')[0] || 'User';
 
     // Password Validation for Non-Technical Users
-    if (!password || password.length < 8) {
-      setError("Your password must be at least 8 characters long.");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
       setLoading(false);
       return;
     }
@@ -109,22 +110,32 @@ export default function SignupPage({ onSignup }) {
 
       const userId = data.user?.id;
       if (userId) {
-        // 2. Save Driver or Company Profile into Supabase profiles table
-        const { error: profileError } = await supabase.from('profiles').upsert({
+        // Create user profile record in public profiles table
+        await supabase.from('profiles').upsert({
           id: userId,
-          email: email,
           full_name: nameToSave,
           role: signupRole,
-          updated_at: new Date().toISOString()
+          created_at: new Date().toISOString()
         });
 
-        if (profileError) {
-          console.warn("Profile table insert warning:", profileError.message);
+        if (signupRole === 'driver') {
+          await supabase.from('driver_profiles').upsert({
+            id: userId,
+            full_name: nameToSave,
+            vehicle_type: vehicleType,
+            created_at: new Date().toISOString()
+          });
+        } else {
+          await supabase.from('company_profiles').upsert({
+            id: userId,
+            company_name: nameToSave,
+            created_at: new Date().toISOString()
+          });
         }
       }
 
-      // If session is null (email confirmation enabled in Supabase), show Email Confirmation Sent screen!
-      if (!data.session) {
+      // Check if Supabase sent email verification or auto-confirmed
+      if (data.user && !data.session) {
         setConfirmationSent(true);
         return;
       }
@@ -157,8 +168,15 @@ export default function SignupPage({ onSignup }) {
 
   const handleGoogleSignup = async () => {
     try {
-      setLoading(true);
+      setGoogleLoading(true);
       setError(null);
+
+      const resetOnFocus = () => {
+        setTimeout(() => setGoogleLoading(false), 2000);
+        window.removeEventListener('focus', resetOnFocus);
+      };
+      window.addEventListener('focus', resetOnFocus);
+
       const { error: googleError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -166,6 +184,7 @@ export default function SignupPage({ onSignup }) {
         }
       });
       if (googleError) {
+        window.removeEventListener('focus', resetOnFocus);
         if (googleError.message?.includes('OAuth secret') || googleError.message?.includes('provider') || googleError.status === 400) {
           throw new Error("Google Login is not enabled in your Supabase Dashboard yet. Please configure Google OAuth in Supabase or sign up with Email & Password below.");
         }
@@ -174,7 +193,7 @@ export default function SignupPage({ onSignup }) {
     } catch (err) {
       console.error("Google Signup error:", err);
       setError(err.message || "Could not connect to Google Login.");
-      setLoading(false);
+      setGoogleLoading(false);
     }
   };
 
@@ -366,27 +385,37 @@ export default function SignupPage({ onSignup }) {
               <button
                 type="button"
                 onClick={handleGoogleSignup}
-                className="w-full py-3 px-4 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer"
+                disabled={googleLoading || loading}
+                className="w-full py-3 px-4 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer disabled:opacity-60"
               >
-                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" width="24" height="24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-                <span>Continue with Google</span>
+                {googleLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin text-slate-600" />
+                    <span>Connecting to Google...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" width="24" height="24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                    <span>Continue with Google</span>
+                  </>
+                )}
               </button>
 
               {/* Divider */}
