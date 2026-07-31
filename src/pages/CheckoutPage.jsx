@@ -12,15 +12,28 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
+
+import { getCourses } from '../lib/courses';
 
 export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase }) {
   const { courseId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
 
-  const course = COURSES_DATA.find((c) => c.id === courseId) || COURSES_DATA[0];
+  const [course, setCourse] = useState(null);
+
+  useEffect(() => {
+    async function load() {
+      const allCourses = await getCourses();
+      const match = allCourses.find((c) => c.id === courseId) || allCourses[0] || COURSES_DATA[0];
+      setCourse(match);
+    }
+    load();
+  }, [courseId]);
+
+  const activeCourse = course || COURSES_DATA.find((c) => c.id === courseId) || COURSES_DATA[0];
   const certName = location.state?.fullName || currentUser?.name || 'Driver Professional';
 
   const [currency, setCurrency] = useState('USD');
@@ -37,7 +50,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
     setIsProcessing(true);
 
     setTimeout(() => {
-      onCompletePurchase(course.id, certName);
+      onCompletePurchase(activeCourse.id, certName);
       setIsProcessing(false);
       setShowSuccessModal(true);
     }, 1000);
@@ -58,7 +71,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-3">
 
           <Link
-            to={`/training/${course.id}`}
+            to={`/training/${activeCourse.id}`}
             className="text-xs font-bold text-slate-500 hover:text-rose-600 inline-flex items-center gap-1 transition-colors uppercase tracking-wider"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -73,19 +86,19 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
           </div>
 
           <h1 className="text-3xl sm:text-4xl font-extrabold text-[#0b132b] font-serif-heading">
-            {course.title}
+            {activeCourse.title}
           </h1>
 
           <p className="text-rose-600 text-xs sm:text-sm font-bold">
-            {course.subtitle}
+            {activeCourse.subtitle}
           </p>
 
           <div className="flex items-center gap-3 pt-1">
             <span className="px-3 py-1 rounded-full bg-rose-100/80 text-rose-700 font-extrabold text-xs">
-              {course.projectedPay}
+              {activeCourse.projectedPay}
             </span>
-            <span className="text-xl font-extrabold text-[#0b132b]">${course.price}</span>
-            <span className="text-xs text-slate-500 font-medium">{course.access}</span>
+            <span className="text-xl font-extrabold text-[#0b132b]">${activeCourse.price}</span>
+            <span className="text-xs text-slate-500 font-medium">{activeCourse.access}</span>
           </div>
 
         </div>
@@ -95,7 +108,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
       <main className="flex-1 py-10">
         <div className="max-w-lg mx-auto px-4 sm:px-6">
           <StripeEmbeddedCheckout
-            priceId={`course_${course.id}`}
+            priceId={`course_${activeCourse.id}`}
             fullName={certName}
             returnUrl={window.location.href}
             onSuccess={() => handlePay({ preventDefault: () => { } })}

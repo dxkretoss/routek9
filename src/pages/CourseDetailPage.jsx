@@ -52,7 +52,7 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
     }
 
     // Proceed to stripe embedded checkout page
-    navigate(`/checkout?course=${course?.id || courseId}`);
+    navigate(`/checkout/${course?.id || courseId}`);
   };
 
   if (loading || !course) {
