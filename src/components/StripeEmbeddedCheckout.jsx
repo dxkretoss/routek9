@@ -2,22 +2,19 @@ import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe
 import { useState, useEffect } from "react";
 import { getStripe, getStripeEnvironment } from "../lib/stripe";
 import { createCertificationCheckout } from "../lib/payments.functions";
-import { CreditCard, Lock, ShieldCheck, Sparkles, Loader2 } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 
 export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, onSuccess }) {
   const [clientSecret, setClientSecret] = useState(null);
-  const [useTestUI, setUseTestUI] = useState(false);
-
-  // States for Test Mode UI
-  const [cardNumber, setCardNumber] = useState("4242  4242  4242  4242");
-  const [expDate, setExpDate] = useState("12/28");
-  const [cvc, setCvc] = useState("123");
-  const [cardName, setCardName] = useState(fullName || "Jane A. Driver");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
-    async function loadSession() {
+
+    async function initCheckout() {
+      setLoading(true);
+      setError(null);
       try {
         const result = await createCertificationCheckout({
           data: { priceId, fullName, returnUrl, environment: getStripeEnvironment() },
@@ -25,140 +22,70 @@ export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, onSuccess
 
         if (!isMounted) return;
 
-        if (result && result.clientSecret && !result.clientSecret.includes("sample_session")) {
+        if (result && result.clientSecret) {
           setClientSecret(result.clientSecret);
+        } else if (result && result.error) {
+          setError(result.error);
         } else {
-          setUseTestUI(true);
+          setError("Failed to generate Stripe checkout session");
         }
-      } catch (e) {
+      } catch (err) {
         if (!isMounted) return;
-        setUseTestUI(true);
+        setError(err.message || "Failed to initialize Stripe checkout");
+      } finally {
+        if (isMounted) setLoading(false);
       }
     }
-    loadSession();
-    return () => { isMounted = false; };
+
+    initCheckout();
+    return () => {
+      isMounted = false;
+    };
   }, [priceId, fullName, returnUrl]);
 
-  const handleTestPay = (e) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      if (onSuccess) onSuccess();
-    }, 1000);
-  };
-
-  // 1. Live Official Stripe Embedded Checkout (Active when live Stripe API secret is present)
-  if (clientSecret) {
+  if (loading) {
     return (
-      <div id="checkout" className="w-full min-h-[400px]">
-        <EmbeddedCheckoutProvider stripe={getStripe()} options={{ clientSecret }}>
-          <EmbeddedCheckout />
-        </EmbeddedCheckoutProvider>
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-12 text-center space-y-4 animate-fadeIn">
+        <Loader2 className="w-10 h-10 animate-spin text-rose-600 mx-auto" />
+        <div>
+          <h4 className="text-sm font-extrabold text-[#0b132b]">Connecting to Stripe Secure Gateway...</h4>
+          <p className="text-xs text-slate-400 font-medium mt-1">Initializing official 256-bit encrypted checkout session</p>
+        </div>
       </div>
     );
   }
 
-  // 2. Interactive Stripe Test Mode UI (Used when running locally without direct Stripe dashboard secrets)
-  return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 sm:p-8 space-y-6 animate-fadeIn">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shadow-2xs">
-            <CreditCard className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-sm font-extrabold text-[#0b132b]">Stripe Payment Checkout</div>
-            <div className="text-[11px] text-slate-400 font-medium">256-Bit SSL Encrypted</div>
-          </div>
+  if (error) {
+    return (
+      <div className="bg-white rounded-3xl border border-rose-200 shadow-xl p-8 text-center space-y-4 animate-fadeIn">
+        <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-rose-600">
+          <AlertCircle className="w-6 h-6" />
         </div>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-extrabold uppercase tracking-wider">
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span>Stripe Test Mode</span>
-        </span>
-      </div>
-
-      <form onSubmit={handleTestPay} className="space-y-4">
-        <div className="space-y-1.5">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-            Cardholder Name
-          </label>
-          <input
-            type="text"
-            required
-            value={cardName}
-            onChange={(e) => setCardName(e.target.value)}
-            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-          />
+        <div className="space-y-1">
+          <h4 className="text-base font-extrabold text-[#0b132b]">Stripe Session Error</h4>
+          <p className="text-xs text-rose-600 font-bold">{error}</p>
+          <p className="text-[11px] text-slate-400 font-medium mt-2">
+            Please check your Stripe API keys or retry loading the checkout.
+          </p>
         </div>
-
-        <div className="space-y-1.5">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-            Card Number (Stripe Test Card)
-          </label>
-          <div className="relative">
-            <CreditCard className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-            <input
-              type="text"
-              required
-              value={cardNumber}
-              onChange={(e) => setCardNumber(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-              Expires
-            </label>
-            <input
-              type="text"
-              required
-              value={expDate}
-              onChange={(e) => setExpDate(e.target.value)}
-              className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-semibold text-slate-800 text-center focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-              CVC
-            </label>
-            <input
-              type="text"
-              required
-              value={cvc}
-              onChange={(e) => setCvc(e.target.value)}
-              className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-semibold text-slate-800 text-center focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-            />
-          </div>
-        </div>
-
         <button
-          type="submit"
-          disabled={isProcessing}
-          className="w-full py-4 mt-2 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] disabled:opacity-75 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+          onClick={() => window.location.reload()}
+          className="px-5 py-2.5 bg-[#0b132b] hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-2 cursor-pointer shadow-2xs"
         >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Processing Payment via Stripe...</span>
-            </>
-          ) : (
-            <>
-              <Lock className="w-4 h-4 text-emerald-400" />
-              <span>Pay & Complete Order</span>
-            </>
-          )}
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Reload Checkout</span>
         </button>
-      </form>
-
-      <div className="flex items-center justify-center gap-2 pt-2 text-[11px] font-medium text-slate-400 border-t border-slate-100">
-        <ShieldCheck className="w-4 h-4 text-emerald-500" />
-        <span>Guaranteed Safe & Secure Stripe Test Mode Payment</span>
       </div>
+    );
+  }
+
+  return (
+    <div id="checkout" className="w-full min-h-[450px] bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden p-4">
+      {clientSecret && (
+        <EmbeddedCheckoutProvider stripe={getStripe()} options={{ clientSecret }}>
+          <EmbeddedCheckout />
+        </EmbeddedCheckoutProvider>
+      )}
     </div>
   );
 }

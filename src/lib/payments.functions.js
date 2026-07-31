@@ -33,10 +33,17 @@ export async function createCertificationCheckout({ data }) {
     const amount = priceId.includes("yearly") ? "29900" : priceId.includes("pro") ? "2900" : "4900";
     const productName = priceId.includes("pro") ? "Route K9 PRO Membership" : "Route K9 Certification Course";
 
+    // Stripe Embedded Checkout requires a return_url containing {CHECKOUT_SESSION_ID} and without hash anchors
+    let cleanReturnUrl = returnUrl || window.location.origin + window.location.pathname;
+    cleanReturnUrl = cleanReturnUrl.split("#")[0];
+    if (!cleanReturnUrl.includes("{CHECKOUT_SESSION_ID}")) {
+      cleanReturnUrl += (cleanReturnUrl.includes("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
+    }
+
     const params = new URLSearchParams({
       ui_mode: "embedded",
       mode: isSubscription ? "subscription" : "payment",
-      return_url: returnUrl || window.location.href,
+      return_url: cleanReturnUrl,
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][product_data][name]": productName,
       "line_items[0][price_data][unit_amount]": amount,
@@ -49,20 +56,38 @@ export async function createCertificationCheckout({ data }) {
 
     // 1. Direct Stripe REST API Call if full sk_test_ Secret Key is provided
     if (stripeSecretKey && (stripeSecretKey.startsWith("sk_test_") || stripeSecretKey.startsWith("sk_live_")) && stripeSecretKey.length > 20) {
-      const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      let response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${stripeSecretKey}`,
+          Authorization: `Bearer ${stripeSecretKey.trim()}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: params.toString(),
       });
 
-      const session = await response.json();
+      let session = await response.json();
+
+      // If Stripe API returns ui_mode error, retry with ui_mode=embedded_page
+      if (session.error && session.error.param === "ui_mode") {
+        params.set("ui_mode", "embedded_page");
+        response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${stripeSecretKey.trim()}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: params.toString(),
+        });
+        session = await response.json();
+      }
+
       if (session.error) {
+        console.warn("Stripe API returned error:", session.error);
         throw new Error(session.error.message || "Stripe API Error");
       }
-      return { clientSecret: session.client_secret };
+      if (session.client_secret) {
+        return { clientSecret: session.client_secret };
+      }
     }
 
     // 2. Local Vite Proxy to Lovable Gateway (Bypasses browser CORS & uses acct_1TtzfQIKKpSWYo2f)
