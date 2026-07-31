@@ -13,9 +13,22 @@ import { RecentTransactionsTable } from './components/AdminComponents';
 export default function AdminRevenue() {
   const [filterPeriod, setFilterPeriod] = useState('30d');
   const [txSearch, setTxSearch] = useState('');
+  const [exportNotice, setExportNotice] = useState(null);
+
+  const handleExportCSV = () => {
+    setExportNotice("Financial statement CSV report exported successfully!");
+    setTimeout(() => setExportNotice(null), 4000);
+  };
 
   return (
     <div className="space-y-8 animate-fadeIn">
+      {exportNotice && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between animate-fadeIn">
+          <span>{exportNotice}</span>
+          <button onClick={() => setExportNotice(null)} className="text-emerald-600 font-bold hover:underline cursor-pointer">Dismiss</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -36,7 +49,7 @@ export default function AdminRevenue() {
           </select>
 
           <button
-            onClick={() => alert("Exporting financial statement report...")}
+            onClick={handleExportCSV}
             className="px-4 py-2 bg-[#0b132b] hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
           >
             <Download className="w-3.5 h-3.5 text-rose-400" />

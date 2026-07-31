@@ -1,16 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, ShieldCheck, MapPin, Search, CheckCircle2, XCircle, Loader2, DollarSign, FileText } from 'lucide-react';
-import { supabase, updateDriverVerification, fetchAllRouteBids, updateBidStatus } from '../../lib/supabase';
+import {
+  Truck,
+  ShieldCheck,
+  MapPin,
+  Search,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  DollarSign,
+  FileText,
+  Eye,
+  ChevronDown,
+  User,
+  Mail,
+  Phone,
+  X,
+  Award,
+  AlertTriangle,
+  Calendar,
+  Sparkles
+} from 'lucide-react';
+import { supabase, updateDriverVerification, fetchAllRouteBids, updateBidStatus, fetchDriverCertifications } from '../../lib/supabase';
 
 export default function AdminDriverList({ searchQuery, setSearchQuery }) {
   const [drivers, setDrivers] = useState([]);
   const [bids, setBids] = useState([]);
+  const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
-  const [activeTab, setActiveTab] = useState('drivers'); // 'drivers' or 'bids'
+  const [activeTab, setActiveTab] = useState('drivers'); // 'drivers', 'routes', or 'bids'
   const [vehicleFilter, setVehicleFilter] = useState('all');
+  const [selectedRouteModal, setSelectedRouteModal] = useState(null);
+  const [selectedDriverModal, setSelectedDriverModal] = useState(null);
+  const [driverCerts, setDriverCerts] = useState([]);
+  const [certsLoading, setCertsLoading] = useState(false);
 
-  // Load Driver Profiles and Bids from Supabase
+  // Load Driver Profiles, Bids, and Saved Routes from Supabase & localStorage
   const loadData = async () => {
     setLoading(true);
     try {
@@ -27,23 +52,66 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
         .select('*');
 
       const metaMap = (driverMeta || []).reduce((acc, curr) => {
-        acc[curr.id] = curr;
+        const key = curr.id || curr.user_id || curr.driver_id;
+        if (key) acc[key] = curr;
         return acc;
       }, {});
 
-      const combinedDrivers = (profilesData || []).map((p) => ({
-        ...p,
-        vehicle: metaMap[p.id]?.vehicle_type || 'Cargo Van',
-        city: metaMap[p.id]?.city || 'Houston',
-        state_code: metaMap[p.id]?.state_code || 'TX',
-        verified: metaMap[p.id]?.verified || false
-      }));
+      // Read deactivated list from localStorage for sync
+      const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]');
+
+      const combinedDrivers = (profilesData || []).map((p) => {
+        const isDeactivated = p.status === 'INACTIVE' ||
+          metaMap[p.id]?.status === 'INACTIVE' ||
+          deactivatedList.includes(p.email?.toLowerCase()) ||
+          deactivatedList.includes(p.id);
+
+        const vehicleVal = p.vehicle || metaMap[p.id]?.vehicle_type || p.vehicle_type || 'Cargo Van';
+        const cityVal = p.city || metaMap[p.id]?.city || 'Houston';
+        const stateVal = p.state_code || metaMap[p.id]?.state_code || 'TX';
+
+        return {
+          ...p,
+          vehicle: vehicleVal,
+          city: cityVal,
+          state_code: stateVal,
+          phone: metaMap[p.id]?.phone || p.phone || p.phone_number || '',
+          verified: metaMap[p.id]?.verified || p.verified || false,
+          status: isDeactivated ? 'INACTIVE' : 'ACTIVE'
+        };
+      });
 
       setDrivers(combinedDrivers);
 
       // 3. Fetch Route Bids from Supabase
       const bidsData = await fetchAllRouteBids();
-      setBids(bidsData);
+      setBids(bidsData || []);
+
+      // 4. Fetch Saved Routes from Supabase DB
+      try {
+        const { data: routesData } = await supabase
+          .from('routes')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (routesData) {
+          setRoutes(routesData.map(r => ({
+            id: r.id,
+            title: r.title || 'Saved Courier Route',
+            driverName: r.driver_name || 'Solo Driver',
+            vehicle: 'Cargo Van',
+            stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
+            distanceMiles: r.distance_miles || 0,
+            durationMinutes: r.duration_minutes || 0,
+            status: r.status || 'ACTIVE',
+            stops: r.stops_data || [],
+            createdAt: r.created_at
+          })));
+        }
+      } catch (rErr) {
+        console.warn("Could not load Supabase routes for admin:", rErr);
+      }
+
     } catch (err) {
       console.warn("Admin data load warning:", err);
     } finally {
@@ -55,6 +123,73 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
     loadData();
   }, []);
 
+  // Fetch Certifications dynamically from Supabase database when modal opens
+  useEffect(() => {
+    if (selectedDriverModal?.id) {
+      setCertsLoading(true);
+      fetchDriverCertifications(selectedDriverModal.id)
+        .then(certs => setDriverCerts(certs || []))
+        .catch(err => {
+          console.warn("Fetch certs notice:", err);
+          setDriverCerts([]);
+        })
+        .finally(() => setCertsLoading(false));
+    } else {
+      setDriverCerts([]);
+    }
+  }, [selectedDriverModal?.id]);
+
+  // Account Access Status Change Handler (ACTIVE vs INACTIVE)
+  const handleAccountStatusChange = async (driverId, driverEmail, newStatus) => {
+    setUpdatingId(driverId);
+    try {
+      // 1. Update State
+      setDrivers(prev => prev.map(d => d.id === driverId ? { ...d, status: newStatus } : d));
+      if (selectedDriverModal && selectedDriverModal.id === driverId) {
+        setSelectedDriverModal(prev => ({ ...prev, status: newStatus }));
+      }
+
+      // 2. Update Supabase profiles table
+      try {
+        const isActiveBool = newStatus === 'ACTIVE';
+        await supabase.from('profiles').update({
+          status: newStatus,
+          is_active: isActiveBool
+        }).eq('id', driverId);
+      } catch (sbErr) {
+        console.warn("Supabase profiles update warning:", sbErr);
+      }
+
+      // 3. Also update driver_profiles table
+      try {
+        await supabase.from('driver_profiles').upsert({
+          id: driverId,
+          status: newStatus
+        });
+      } catch (sbErr2) {
+        console.warn("Supabase driver_profiles update warning:", sbErr2);
+      }
+
+      // 3. Sync to localStorage for instant auth blocking
+      try {
+        const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]');
+        let updated = [];
+        const cleanEmail = driverEmail ? driverEmail.toLowerCase() : '';
+
+        if (newStatus === 'INACTIVE') {
+          updated = Array.from(new Set([...deactivatedList, cleanEmail, driverId]));
+        } else {
+          updated = deactivatedList.filter(item => item !== cleanEmail && item !== driverId);
+        }
+        localStorage.setItem('rk9_deactivated_drivers', JSON.stringify(updated));
+      } catch (e) {
+        console.warn("LocalStorage status sync error:", e);
+      }
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   // 1-Click Verification Toggle Handler
   const handleToggleVerification = async (driverId, currentVerified) => {
     setUpdatingId(driverId);
@@ -64,6 +199,9 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
       setDrivers((prev) =>
         prev.map((d) => (d.id === driverId ? { ...d, verified: newStatus } : d))
       );
+      if (selectedDriverModal && selectedDriverModal.id === driverId) {
+        setSelectedDriverModal(prev => ({ ...prev, verified: newStatus }));
+      }
     }
     setUpdatingId(null);
   };
@@ -80,68 +218,61 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
     setUpdatingId(null);
   };
 
+  // Filter Drivers
   const filteredDrivers = drivers.filter((d) => {
-    const q = (searchQuery || '').toLowerCase();
-    const matchSearch =
-      (d.full_name || '').toLowerCase().includes(q) ||
-      (d.email || '').toLowerCase().includes(q) ||
-      (d.city || '').toLowerCase().includes(q) ||
-      (d.state_code || '').toLowerCase().includes(q);
+    const matchesSearch = searchQuery
+      ? d.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.city?.toLowerCase().includes(searchQuery.toLowerCase())
+      : true;
 
-    const matchVehicle =
-      vehicleFilter === 'all' ||
-      (d.vehicle || '').toLowerCase().includes(vehicleFilter.toLowerCase());
-
-    return matchSearch && matchVehicle;
+    const matchesVehicle = vehicleFilter === 'all' || d.vehicle?.toLowerCase().includes(vehicleFilter.toLowerCase());
+    return matchesSearch && matchesVehicle;
   });
 
   return (
     <div className="space-y-6">
-      
-      {/* Tab Switcher & Filter Controls */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-        
-        <div className="flex items-center gap-2">
+      {/* Search & Sub-Nav Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+        {/* Tab Buttons */}
+        <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
           <button
             onClick={() => setActiveTab('drivers')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'drivers'
-                ? 'bg-rose-600 text-white shadow-md'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              activeTab === 'drivers' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Registered Drivers ({drivers.length})
+            Driver Directory ({drivers.length})
           </button>
-
+          <button
+            onClick={() => setActiveTab('routes')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              activeTab === 'routes' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Saved Routes ({routes.length})
+          </button>
           <button
             onClick={() => setActiveTab('bids')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'bids'
-                ? 'bg-rose-600 text-white shadow-md'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              activeTab === 'bids' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Route Applications & Bids ({bids.length})
+            Route Bids ({bids.length})
           </button>
         </div>
 
-        {/* Filters */}
-        {activeTab === 'drivers' && (
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <select
-              value={vehicleFilter}
-              onChange={(e) => setVehicleFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
-            >
-              <option value="all">All Vehicles</option>
-              <option value="Cargo Van">Cargo Van</option>
-              <option value="Sprinter">Sprinter Van</option>
-              <option value="Box Truck">Box Truck</option>
-              <option value="SUV">SUV / Sedan</option>
-            </select>
-          </div>
-        )}
-
+        {/* Search */}
+        <div className="relative w-full sm:w-72">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search drivers or location..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500"
+          />
+        </div>
       </div>
 
       {/* Main Tab Content */}
@@ -157,10 +288,10 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
           <div className="p-6 border-b border-slate-100 flex justify-between items-center">
             <div>
               <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Driver Directory</h3>
-              <p className="text-xs text-slate-400 font-medium">Verify driver profiles & monitor fleet compliance</p>
+              <p className="text-xs text-slate-400 font-medium">Verify driver profiles, manage access status, & monitor fleet compliance</p>
             </div>
             <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
-              {filteredDrivers.length} Active Drivers
+              {filteredDrivers.length} Drivers Listed
             </span>
           </div>
 
@@ -171,76 +302,163 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                   <th className="px-6 py-4">Driver Name</th>
                   <th className="px-6 py-4">Vehicle Type</th>
                   <th className="px-6 py-4">Location</th>
-                  <th className="px-6 py-4">Verification Status</th>
-                  <th className="px-6 py-4 text-right">Admin Action</th>
+                  <th className="px-6 py-4 text-center">Account Access</th>
+                  <th className="px-6 py-4 text-right">Admin Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredDrivers.map((driver) => (
-                  <tr key={driver.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-slate-900 text-white font-extrabold flex items-center justify-center text-xs shadow-xs">
-                          {(driver.full_name || driver.email || 'D').charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
-                            <span>{driver.full_name || 'Driver'}</span>
-                            {driver.verified && (
-                              <ShieldCheck className="w-4 h-4 text-emerald-500" title="Verified Driver" />
-                            )}
+                {filteredDrivers.map((driver) => {
+                  const isInactive = driver.status === 'INACTIVE';
+                  return (
+                    <tr key={driver.id} className={`hover:bg-slate-50/60 transition-colors ${isInactive ? 'bg-rose-50/20' : ''}`}>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-full font-extrabold flex items-center justify-center text-xs shadow-xs ${
+                            isInactive ? 'bg-rose-600 text-white' : 'bg-slate-900 text-white'
+                          }`}>
+                            {(driver.full_name || driver.email || 'D').charAt(0).toUpperCase()}
                           </div>
-                          <div className="text-[11px] text-slate-400 font-medium">{driver.email}</div>
+                          <div>
+                            <div className="font-extrabold text-slate-900">
+                              {driver.full_name || 'Driver'}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-medium">{driver.email}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 font-bold text-slate-700">
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px]">
-                        <Truck className="w-3.5 h-3.5 text-rose-600" />
-                        <span>{driver.vehicle}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 font-medium text-slate-600">
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{driver.city}, {driver.state_code}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {driver.verified ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Verified Badge
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-extrabold uppercase border border-amber-200">
-                          Unverified
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleToggleVerification(driver.id, driver.verified)}
-                        disabled={updatingId === driver.id}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          driver.verified
-                            ? 'bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200'
-                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'
-                        }`}
-                      >
-                        {updatingId === driver.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
-                        ) : driver.verified ? (
-                          'Revoke Badge'
-                        ) : (
-                          'Grant Verified Badge'
-                        )}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+
+                      <td className="px-6 py-4 font-bold text-slate-700">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px]">
+                          <Truck className="w-3.5 h-3.5 text-rose-600" />
+                          <span>{driver.vehicle || 'Cargo Van'}</span>
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 font-medium text-slate-600">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                          <span>
+                            {(driver.city || driver.state_code)
+                              ? `${driver.city || ''}${driver.city && driver.state_code ? ', ' : ''}${driver.state_code || ''}`
+                              : 'Houston, TX'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Account Access Status Select Dropdown (Active vs Inactive) */}
+                      <td className="px-6 py-4 text-center">
+                        <div className="relative inline-block">
+                          <select
+                            value={driver.status || 'ACTIVE'}
+                            onChange={(e) => handleAccountStatusChange(driver.id, driver.email, e.target.value)}
+                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
+                              isInactive
+                                ? 'bg-rose-50 text-rose-700 border-rose-300 font-black'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            }`}
+                          >
+                            <option value="ACTIVE">ACTIVE</option>
+                            <option value="INACTIVE">DEACTIVATED</option>
+                          </select>
+                          <ChevronDown className="w-2.5 h-2.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-current" />
+                        </div>
+                      </td>
+
+                      {/* Admin Actions */}
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* View Details Button */}
+                          <button
+                            onClick={() => setSelectedDriverModal(driver)}
+                            className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-500" />
+                            <span>View Details</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+        </div>
+
+      ) : activeTab === 'routes' ? (
+
+        /* Saved Driver Routes View */
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Saved Driver Routes</h3>
+              <p className="text-xs text-slate-400 font-medium">Live driver routes optimized and stored in Supabase database</p>
+            </div>
+            <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
+              {routes.length} Saved Routes
+            </span>
+          </div>
+
+          {routes.length === 0 ? (
+            <div className="p-16 text-center text-xs text-slate-400 font-medium">
+              No saved driver routes found in database.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="px-6 py-4">Route ID</th>
+                    <th className="px-6 py-4">Driver Name</th>
+                    <th className="px-6 py-4">Stops</th>
+                    <th className="px-6 py-4">Distance</th>
+                    <th className="px-6 py-4">Drive Time</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Created Date</th>
+                    <th className="px-6 py-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {routes.map((route) => (
+                    <tr key={route.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-6 py-4 font-mono font-bold text-rose-600">
+                        {route.id}
+                      </td>
+                      <td className="px-6 py-4 font-bold text-slate-900">
+                        {route.driverName}
+                      </td>
+                      <td className="px-6 py-4 font-bold text-slate-700">
+                        {route.stopsCount} stops
+                      </td>
+                      <td className="px-6 py-4 font-bold text-slate-800">
+                        {route.distanceMiles} mi
+                      </td>
+                      <td className="px-6 py-4 font-bold text-slate-800">
+                        {route.durationMinutes} min
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
+                          {route.status || 'ACTIVE'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-400">
+                        {new Date(route.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRouteModal(route)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer shadow-xs"
+                        >
+                          View Stops Detail →
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
       ) : (
@@ -277,13 +495,12 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                       ${bid.bid_amount || 250}/day
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
-                        bid.status === 'approved'
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${bid.status === 'approved'
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           : bid.status === 'rejected'
-                          ? 'bg-rose-50 text-rose-700 border-rose-200'
-                          : 'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
                         {bid.status || 'Pending'}
                       </span>
                     </td>
@@ -310,6 +527,209 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
           </div>
         </div>
 
+      )}
+
+      {/* Selected Route Detail Modal */}
+      {selectedRouteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Route Details</span>
+                <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading flex items-center gap-2">
+                  <span>{selectedRouteModal.title}</span>
+                  <span className="font-mono text-xs text-rose-600 font-bold">({selectedRouteModal.id})</span>
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedRouteModal(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold flex items-center justify-center cursor-pointer transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Driver</span>
+                <span className="font-extrabold text-[#0b132b] truncate block">{selectedRouteModal.driverName}</span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Distance</span>
+                <span className="font-extrabold text-[#0b132b]">{selectedRouteModal.distanceMiles} mi</span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Drive Time</span>
+                <span className="font-extrabold text-[#0b132b]">{selectedRouteModal.durationMinutes} min</span>
+              </div>
+            </div>
+
+            {selectedRouteModal.stops && selectedRouteModal.stops.length > 0 && (
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stop Addresses ({selectedRouteModal.stops.length} stops):</span>
+                <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {selectedRouteModal.stops.map((s, idx) => (
+                    <li key={idx} className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
+                      <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
+                      <span className="truncate">{s.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedRouteModal(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-colors cursor-pointer"
+              >
+                Close Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DRIVER DETAILS MODAL ── */}
+      {selectedDriverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl font-extrabold flex items-center justify-center text-base shadow-sm ${
+                  selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600 text-white' : 'bg-[#0b132b] text-white'
+                }`}>
+                  {(selectedDriverModal.full_name || selectedDriverModal.email || 'D').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-extrabold text-[#0b132b]">{selectedDriverModal.full_name || 'Driver Profile'}</h3>
+                    {selectedDriverModal.verified && (
+                      <ShieldCheck className="w-5 h-5 text-emerald-500" title="Verified Driver" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-slate-400 font-semibold">{selectedDriverModal.email}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                      selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {selectedDriverModal.status || 'ACTIVE'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedDriverModal(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Status Control Panel */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold text-[#0b132b] block">Driver Account Status</span>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {selectedDriverModal.status === 'INACTIVE'
+                    ? 'Account is DEACTIVATED. Driver cannot log in.'
+                    : 'Account is ACTIVE. Driver can log into portal.'}
+                </span>
+              </div>
+
+              <select
+                value={selectedDriverModal.status || 'ACTIVE'}
+                onChange={(e) => handleAccountStatusChange(selectedDriverModal.id, selectedDriverModal.email, e.target.value)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold uppercase border cursor-pointer focus:outline-none ${
+                  selectedDriverModal.status === 'INACTIVE'
+                    ? 'bg-rose-600 text-white border-rose-700'
+                    : 'bg-emerald-600 text-white border-emerald-700'
+                }`}
+              >
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="INACTIVE">DEACTIVATED</option>
+              </select>
+            </div>
+
+            {/* Contact & Location Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phone Number</span>
+                <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{selectedDriverModal.phone ? selectedDriverModal.phone : 'Not Provided'}</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Location / Market</span>
+                <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                  <span>
+                    {(selectedDriverModal.city || selectedDriverModal.state_code)
+                      ? `${selectedDriverModal.city || ''}${selectedDriverModal.city && selectedDriverModal.state_code ? ', ' : ''}${selectedDriverModal.state_code || ''}`
+                      : 'Not Provided'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Vehicle Type</span>
+                <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                  <Truck className="w-3.5 h-3.5 text-rose-600" />
+                  <span>{selectedDriverModal.vehicle ? selectedDriverModal.vehicle : 'Not Specified'}</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Member Since</span>
+                <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{selectedDriverModal.created_at ? new Date(selectedDriverModal.created_at).toLocaleDateString() : 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Compliance Credentials & Badges (100% Dynamic from Supabase) */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Compliance Credentials & Badges</span>
+              {certsLoading ? (
+                <div className="flex items-center gap-2 text-xs text-slate-400 font-bold py-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                  <span>Fetching certifications from database...</span>
+                </div>
+              ) : driverCerts.length > 0 ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {driverCerts.map((cert, idx) => (
+                    <span key={cert.id || idx} className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 text-[11px] font-bold flex items-center gap-1.5 border border-blue-200">
+                      <Award className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{cert.course_name || 'Verified Certificate'}</span>
+                      {cert.cert_number && <span className="text-[9px] font-mono opacity-75">({cert.cert_number})</span>}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500 font-medium py-1">
+                  No compliance certifications recorded in database for this driver profile.
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-end pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedDriverModal(null)}
+                className="px-5 py-2.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Close Profile
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

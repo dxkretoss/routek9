@@ -14,6 +14,8 @@ export default function SignupPage({ onSignup }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [vehicleType, setVehicleType] = useState('Cargo Van');
+  const [city, setCity] = useState('');
+  const [stateCode, setStateCode] = useState('TX');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -53,7 +55,8 @@ export default function SignupPage({ onSignup }) {
     setLoading(true);
     setError(null);
 
-    const nameToSave = fullName.trim() || email.split('@')[0] || 'User';
+    const cleanEmail = email.trim().toLowerCase();
+    const nameToSave = fullName.trim() || cleanEmail.split('@')[0] || 'User';
 
     // Password Validation for Non-Technical Users
     if (password.length < 8) {
@@ -83,14 +86,20 @@ export default function SignupPage({ onSignup }) {
     }
 
     try {
+      const cleanCity = city.trim() || 'Houston';
+      const cleanState = stateCode.trim().toUpperCase() || 'TX';
+
       // 1. Supabase Auth Registration
       const { data, error: authError } = await supabase.auth.signUp({
-        email: email,
+        email: cleanEmail,
         password: password,
         options: {
           data: {
             full_name: nameToSave,
-            role: signupRole
+            role: signupRole,
+            vehicle: vehicleType,
+            city: cleanCity,
+            state_code: cleanState
           },
           emailRedirectTo: `${window.location.origin}/dashboard`
         }
@@ -98,39 +107,31 @@ export default function SignupPage({ onSignup }) {
 
       if (authError) {
         if (authError.message?.toLowerCase().includes('already registered') || authError.message?.toLowerCase().includes('already exists')) {
-          throw new Error(`An account with email "${email}" already exists. Please log in instead.`);
+          throw new Error(`An account with email "${cleanEmail}" already exists. Please log in instead.`);
         }
         throw authError;
       }
 
       // Supabase returns identities: [] when the user/email ALREADY exists in the database!
       if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-        throw new Error(`An account with email "${email}" already exists. Please log in instead.`);
+        throw new Error(`An account with email "${cleanEmail}" already exists. Please log in instead.`);
       }
 
       const userId = data.user?.id;
       if (userId) {
-        // Create user profile record in public profiles table
-        await supabase.from('profiles').upsert({
-          id: userId,
-          full_name: nameToSave,
-          role: signupRole,
-          created_at: new Date().toISOString()
-        });
-
-        if (signupRole === 'driver') {
-          await supabase.from('driver_profiles').upsert({
+        // Single source of truth profile record in profiles table
+        try {
+          await supabase.from('profiles').upsert({
             id: userId,
             full_name: nameToSave,
-            vehicle_type: vehicleType,
+            role: signupRole,
+            vehicle: vehicleType,
+            city: cleanCity,
+            state_code: cleanState,
             created_at: new Date().toISOString()
           });
-        } else {
-          await supabase.from('company_profiles').upsert({
-            id: userId,
-            company_name: nameToSave,
-            created_at: new Date().toISOString()
-          });
+        } catch (pErr) {
+          console.warn("profiles signup upsert notice:", pErr);
         }
       }
 
@@ -143,7 +144,7 @@ export default function SignupPage({ onSignup }) {
       const newUser = {
         id: userId,
         name: nameToSave,
-        email: email,
+        email: cleanEmail,
         vehicle: signupRole === 'driver' ? vehicleType : 'Company Fleet',
         role: signupRole,
         stateCode: 'TX',
@@ -509,24 +510,55 @@ export default function SignupPage({ onSignup }) {
                 </div>
               </div>
 
-              {/* Primary Vehicle Select (Only visible for driver) */}
+              {/* Primary Vehicle Select & Location (Visible for driver) */}
               {signupRole === 'driver' && (
-                <div className="space-y-1.5 animate-fadeIn">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Primary Vehicle Class
-                  </label>
-                  <select
-                    value={vehicleType}
-                    onChange={(e) => setVehicleType(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-                  >
-                    <option value="Sedan / Hatchback">Sedan / Hatchback</option>
-                    <option value="Minivan / SUV">Minivan / SUV</option>
-                    <option value="Cargo Van">Cargo Van</option>
-                    <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
-                    <option value="16ft Box Truck">16ft Box Truck</option>
-                    <option value="26ft Box Truck">26ft Box Truck</option>
-                  </select>
+                <div className="space-y-3 animate-fadeIn">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Primary Vehicle Class
+                    </label>
+                    <select
+                      value={vehicleType}
+                      onChange={(e) => setVehicleType(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                    >
+                      <option value="Cargo Van">Cargo Van</option>
+                      <option value="Sedan / Hatchback">Sedan / Hatchback</option>
+                      <option value="Minivan / SUV">Minivan / SUV</option>
+                      <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
+                      <option value="16ft Box Truck">16ft Box Truck</option>
+                      <option value="26ft Box Truck">26ft Box Truck</option>
+                    </select>
+                  </div>
+
+                  {/* City & State Fields */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2 space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        City / Market
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Houston"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        State
+                      </label>
+                      <input
+                        type="text"
+                        maxLength="2"
+                        placeholder="TX"
+                        value={stateCode}
+                        onChange={(e) => setStateCode(e.target.value.toUpperCase())}
+                        className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all text-center uppercase"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

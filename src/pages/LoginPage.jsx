@@ -24,14 +24,24 @@ export default function LoginPage({ onLogin }) {
     setLoading(true);
     setError(null);
 
+    const cleanEmail = email.trim().toLowerCase();
+
     try {
       // 1. Supabase Auth Login
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: email,
+        email: cleanEmail,
         password: password
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        if (authError.message?.toLowerCase().includes('email not confirmed')) {
+          throw new Error("Your email address has not been confirmed yet. Please check your inbox for the verification email or resend confirmation below.");
+        }
+        if (authError.message?.toLowerCase().includes('invalid login credentials')) {
+          throw new Error("Invalid email or password. Please double-check your credentials or create a new account.");
+        }
+        throw authError;
+      }
 
       const userId = data.user?.id;
       let profileData = null;
@@ -42,17 +52,41 @@ export default function LoginPage({ onLogin }) {
         profileData = profile;
       }
 
-      const userName = profileData?.full_name || (email ? email.split('@')[0] : 'Jane A. Driver');
-      const userRole = profileData?.role || 'driver';
+      const metadata = data.user?.user_metadata || {};
+      const userName = profileData?.full_name || metadata.full_name || (cleanEmail ? cleanEmail.split('@')[0] : 'Driver User');
+      const userRole = profileData?.role || metadata.role || 'driver';
+      const userVehicle = profileData?.vehicle || metadata.vehicle || (userRole === 'driver' ? 'Cargo Van' : 'Company Fleet');
+
+      // Check if account (driver or company) is Deactivated by Admin
+      const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]').map(i => String(i).toLowerCase());
+      const lowerCleanEmail = cleanEmail ? cleanEmail.toLowerCase() : '';
+      const userIdStr = userId ? String(userId).toLowerCase() : '';
+
+      const isDeactivated =
+        profileData?.status === 'INACTIVE' ||
+        profileData?.status === 'DEACTIVATED' ||
+        profileData?.is_active === false ||
+        profileData?.isactive === false ||
+        deactivatedList.includes(lowerCleanEmail) ||
+        (userIdStr && deactivatedList.includes(userIdStr));
+
+      if (isDeactivated) {
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch (soErr) {
+          console.warn("Local signout notice:", soErr);
+        }
+        throw new Error("⛔ Account Deactivated: Your account has been deactivated by the administrator. Access is blocked. Please contact support@routek9.com for assistance.");
+      }
 
       const loggedInUser = {
         id: userId,
         name: userName,
-        email: email,
+        email: cleanEmail,
         role: userRole,
-        vehicle: userRole === 'driver' ? 'Cargo Van' : 'Company Fleet',
-        stateCode: 'TX',
-        city: 'Houston'
+        vehicle: userVehicle,
+        stateCode: profileData?.state_code || 'TX',
+        city: profileData?.city || 'Houston'
       };
 
       if (onLogin) {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { jsPDF } from "jspdf";
+import { supabase } from "../lib/supabase";
 import {
   Award,
   CheckCircle2,
@@ -16,70 +17,57 @@ import {
   FileText
 } from "lucide-react";
 
-const QUESTIONS = [
-  {
-    topic: "HIPAA",
-    q: "As a medical courier, when may you discuss a patient's protected health information (PHI) with someone outside your delivery workflow?",
-    options: [
-      "Anytime, as long as you don't name the patient",
-      "Only when the patient or a permitted party has authorized it, or the law requires it",
-      "With any healthcare worker who asks",
-      "In casual conversation with coworkers after your shift",
-    ],
-    answer: 1,
-  },
-  {
-    topic: "HIPAA",
-    q: "You accidentally leave a lab specimen manifest containing patient names in a public restroom. What is the correct first step?",
-    options: [
-      "Throw it away so nobody finds it",
-      "Ignore it — no diagnosis was listed",
-      "Immediately notify your dispatcher/compliance contact and document the incident",
-      "Post about it so patients can be warned",
-    ],
-    answer: 2,
-  },
-  {
-    topic: "Bloodborne Pathogens",
-    q: "Which of the following is considered a bloodborne pathogen under OSHA?",
-    options: ["Influenza (seasonal flu)", "Hepatitis B Virus (HBV)", "Common cold rhinovirus", "Athlete's foot fungus"],
-    answer: 1,
-  },
-  {
-    topic: "Bloodborne Pathogens",
-    q: "A specimen bag in your vehicle is leaking blood. What is the correct response?",
-    options: [
-      "Wipe it up with your bare hands and keep driving",
-      "Open a window and let it dry",
-      "Put on gloves, contain the spill using your spill kit, and disinfect the area following universal precautions",
-      "Return the bag to the sender without cleaning",
-    ],
-    answer: 2,
-  },
-  {
-    topic: "Bloodborne Pathogens",
-    q: "What does the term 'universal precautions' mean?",
-    options: [
-      "Only patients who look sick are treated as infectious",
-      "All human blood and certain body fluids are treated as if infectious",
-      "Precautions only apply inside a hospital",
-      "Gloves are optional if the specimen is sealed",
-    ],
-    answer: 1,
-  },
-];
-
-const PASSING_SCORE = 4;
 const PRICE_CENTS = 2500;
 
 export default function CertificationPage({ currentUser, onLogout }) {
   const [stage, setStage] = useState("intro"); // 'intro', 'test', 'results', 'checkout', 'paid'
   const [fullName, setFullName] = useState(currentUser?.name || "");
-  const [answers, setAnswers] = useState(() => QUESTIONS.map(() => null));
+  const [questionsList, setQuestionsList] = useState([]);
+  const [answers, setAnswers] = useState([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfFilename, setPdfFilename] = useState("certificate.pdf");
   const [pdfError, setPdfError] = useState(null);
   const [generating, setGenerating] = useState(false);
+
+  // Fetch dynamic questions strictly from Supabase DB
+  useEffect(() => {
+    async function loadDynamicQuestions() {
+      setLoadingQuestions(true);
+      try {
+        const { data, error } = await supabase
+          .from('exam_questions')
+          .select('*')
+          .order('id', { ascending: true });
+
+        if (data && data.length > 0) {
+          const formatted = data.map(q => ({
+            id: q.id,
+            topic: q.topic || 'Certification',
+            q: q.question || q.q || '',
+            options: Array.isArray(q.options)
+              ? q.options
+              : typeof q.options === 'string'
+                ? JSON.parse(q.options)
+                : [],
+            answer: Number(q.answer) || 0
+          }));
+          setQuestionsList(formatted);
+          setAnswers(formatted.map(() => null));
+        } else {
+          setQuestionsList([]);
+          setAnswers([]);
+        }
+      } catch (err) {
+        console.warn("Error loading exam questions:", err);
+        setQuestionsList([]);
+        setAnswers([]);
+      } finally {
+        setLoadingQuestions(false);
+      }
+    }
+    loadDynamicQuestions();
+  }, []);
   
   // Mock Checkout state
   const [cardForm, setCardForm] = useState({
@@ -90,6 +78,11 @@ export default function CertificationPage({ currentUser, onLogout }) {
   });
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const autoDownloadStarted = useRef(false);
+
+  const passingScore = useMemo(
+    () => Math.max(1, Math.ceil(questionsList.length * 0.8)),
+    [questionsList]
+  );
 
   const isMobile = useMemo(() => {
     if (typeof navigator === "undefined") return false;
@@ -103,14 +96,14 @@ export default function CertificationPage({ currentUser, onLogout }) {
   }, [pdfUrl]);
 
   const score = useMemo(
-    () => answers.reduce((acc, a, i) => acc + (a === QUESTIONS[i].answer ? 1 : 0), 0),
-    [answers]
+    () => answers.reduce((acc, a, i) => acc + (a === questionsList[i]?.answer ? 1 : 0), 0),
+    [answers, questionsList]
   );
-  const passed = score >= PASSING_SCORE;
+  const passed = score >= passingScore;
   const allAnswered = answers.every((a) => a !== null);
 
   function resetTest() {
-    setAnswers(QUESTIONS.map(() => null));
+    setAnswers(questionsList.map(() => null));
     setStage("test");
   }
 
@@ -222,8 +215,8 @@ export default function CertificationPage({ currentUser, onLogout }) {
     doc.text(wrapped, w / 2, 300, { align: "center", lineHeightFactor: 1.45 });
 
     // Score pill
-    const scoreVal = score > 0 ? score : PASSING_SCORE; // fallback if state cleared
-    const scoreText = `Examination Score  ${scoreVal} / ${QUESTIONS.length}`;
+    const scoreVal = score > 0 ? score : passingScore; // fallback if state cleared
+    const scoreText = `Examination Score  ${scoreVal} / ${questionsList.length}`;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     const pillW = doc.getTextWidth(scoreText) + 40;
@@ -360,113 +353,159 @@ export default function CertificationPage({ currentUser, onLogout }) {
           </h1>
           
           <p className="mx-auto max-w-2xl text-xs sm:text-sm text-slate-500 leading-relaxed font-medium">
-            Essential compliance credentialing for medical couriers. Answer 5 questions covering patient privacy safeguards and OSHA universal precautions, score at least {PASSING_SCORE}/{QUESTIONS.length}, and instantly unlock your official printable certificate for ${(PRICE_CENTS / 100).toFixed(0)}.
+            Essential compliance credentialing for medical couriers. Answer {questionsList.length} questions covering patient privacy safeguards and OSHA universal precautions, score at least {passingScore}/{questionsList.length}, and instantly unlock your official printable certificate for ${(PRICE_CENTS / 100).toFixed(0)}.
           </p>
         </div>
 
-        {/* STAGE 1: INTRO */}
-        {stage === "intro" && (
-          <section className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                <h4 className="font-bold text-xs text-[#0b132b]">1. HIPAA Compliance</h4>
-                <p className="text-[11px] text-slate-500 leading-relaxed">Covers PHI rules, delivery manifest safeguards, and reporting procedures.</p>
-              </div>
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                <h4 className="font-bold text-xs text-[#0b132b]">2. OSHA Pathogens</h4>
-                <p className="text-[11px] text-slate-500 leading-relaxed">Covers safe handling of biohazardous specimens, spill kits, and precautions.</p>
-              </div>
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                <h4 className="font-bold text-xs text-[#0b132b]">3. Immediate Certificate</h4>
-                <p className="text-[11px] text-slate-500 leading-relaxed">Download a high-quality, printable PDF containing your name and certificate ID.</p>
-              </div>
+        {/* ── NOT LOGGED IN: SHOW SIGNUP/LOGIN PROMPT CARD ── */}
+        {!currentUser ? (
+          <section className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-8 sm:p-12 text-center space-y-6 animate-fadeIn">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-rose-600">
+              <Award className="w-8 h-8" />
             </div>
 
-            <div className="space-y-4 pt-4 border-t border-slate-100">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Full Name (as it should appear on the certificate)
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Jane A. Driver"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-                />
-              </div>
+            <div className="space-y-2 max-w-md mx-auto">
+              <h2 className="text-2xl font-extrabold text-[#0b132b] font-serif-heading">
+                Sign in to take the Certification Exam
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium leading-relaxed">
+                You must be logged into your RouteK9 driver account to take the compliance exam, earn credentials, and download your official certificate.
+              </p>
+            </div>
 
-              <button
-                onClick={() => setStage("test")}
-                disabled={fullName.trim().length < 2}
-                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-40 cursor-pointer"
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <Link
+                to="/login"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md shadow-rose-600/20 transition-all text-center"
               >
-                Start the 5-Question Exam &rarr;
-              </button>
-              
-              {fullName.length > 0 && fullName.trim().length < 2 && (
-                <p className="text-xs text-rose-600 font-semibold">
-                  Please enter your full name (minimum 2 characters).
-                </p>
-              )}
+                Sign In to Account
+              </Link>
+              <Link
+                to="/signup"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[#0b132b] text-xs font-extrabold transition-all text-center"
+              >
+                Create Free Account
+              </Link>
             </div>
           </section>
-        )}
-
-        {/* STAGE 2: TEST */}
-        {stage === "test" && (
-          <section className="space-y-6">
-            {QUESTIONS.map((q, i) => (
-              <article key={i} className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-4">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                  Question {i + 1} of {QUESTIONS.length} &middot; {q.topic}
+        ) : loadingQuestions ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400 bg-white rounded-3xl border border-slate-200/90 shadow-xs">
+            <Loader2 className="w-8 h-8 animate-spin text-rose-600" />
+            <span className="text-xs font-bold">Loading compliance examination...</span>
+          </div>
+        ) : questionsList.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-200/90 p-12 text-center space-y-3 shadow-xs">
+            <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+            <h3 className="text-base font-bold text-slate-800">No exam questions available</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
+              Exam questions have not been added to the database yet. Please add questions in the Admin Panel.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* STAGE 1: INTRO */}
+            {stage === "intro" && (
+              <section className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+                    <h4 className="font-bold text-xs text-[#0b132b]">1. HIPAA Compliance</h4>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">Covers PHI rules, delivery manifest safeguards, and reporting procedures.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+                    <h4 className="font-bold text-xs text-[#0b132b]">2. OSHA Pathogens</h4>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">Covers safe handling of biohazardous specimens, spill kits, and precautions.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+                    <h4 className="font-bold text-xs text-[#0b132b]">3. Immediate Certificate</h4>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">Download a high-quality, printable PDF containing your name and certificate ID.</p>
+                  </div>
                 </div>
-                <h3 className="text-base font-bold text-[#0b132b] font-serif-heading leading-snug">{q.q}</h3>
-                <div className="grid grid-cols-1 gap-2.5">
-                  {q.options.map((opt, oi) => {
-                    const selected = answers[i] === oi;
-                    return (
-                      <label
-                        key={oi}
-                        className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
-                          selected
-                            ? "border-rose-600 bg-rose-50/50 text-[#0b132b]"
-                            : "border-slate-200 bg-slate-50 text-slate-700 hover:border-rose-300"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name={`q${i}`}
-                          checked={selected}
-                          onChange={() => {
-                            const next = [...answers];
-                            next[i] = oi;
-                            setAnswers(next);
-                          }}
-                          className="mt-0.5 h-4 w-4 accent-rose-600"
-                        />
-                        <span>{opt}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </article>
-            ))}
 
-            <div className="sticky bottom-4 z-20 flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-md backdrop-blur-md">
-              <span className="text-xs font-bold text-slate-500">
-                {answers.filter((a) => a !== null).length} of {QUESTIONS.length} answered
-              </span>
-              <button
-                onClick={() => setStage("results")}
-                disabled={!allAnswered}
-                className="px-6 py-2.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white text-xs font-bold disabled:opacity-40 cursor-pointer"
-              >
-                Submit Exam
-              </button>
-            </div>
-          </section>
-        )}
+                <div className="space-y-4 pt-4 border-t border-slate-100">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Full Name (as it should appear on the certificate)
+                    </label>
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Jane A. Driver"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => setStage("test")}
+                    disabled={fullName.trim().length < 2}
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-40 cursor-pointer"
+                  >
+                    Start the {questionsList.length}-Question Exam &rarr;
+                  </button>
+                  
+                  {fullName.length > 0 && fullName.trim().length < 2 && (
+                    <p className="text-xs text-rose-600 font-semibold">
+                      Please enter your full name (minimum 2 characters).
+                    </p>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* STAGE 2: TEST */}
+            {stage === "test" && (
+              <section className="space-y-6">
+                {questionsList.map((q, i) => (
+                  <article key={i} className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-4">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                      Question {i + 1} of {questionsList.length} &middot; {q.topic}
+                    </div>
+                    <h3 className="text-base font-bold text-[#0b132b] font-serif-heading leading-snug">{q.q}</h3>
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {q.options.map((opt, oi) => {
+                        const selected = answers[i] === oi;
+                        return (
+                          <label
+                            key={oi}
+                            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+                              selected
+                                ? "border-rose-600 bg-rose-50/50 text-[#0b132b]"
+                                : "border-slate-200 bg-slate-50 text-slate-700 hover:border-rose-300"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`q${i}`}
+                              checked={selected}
+                              onChange={() => {
+                                const next = [...answers];
+                                next[i] = oi;
+                                setAnswers(next);
+                              }}
+                              className="mt-0.5 h-4 w-4 accent-rose-600"
+                            />
+                            <span>{opt}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </article>
+                ))}
+
+                <div className="sticky bottom-4 z-20 flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-md backdrop-blur-md">
+                  <span className="text-xs font-bold text-slate-500">
+                    {answers.filter((a) => a !== null).length} of {questionsList.length} answered
+                  </span>
+                  <button
+                    onClick={() => setStage("results")}
+                    disabled={!allAnswered}
+                    className="px-6 py-2.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white text-xs font-bold disabled:opacity-40 cursor-pointer"
+                  >
+                    Submit Exam
+                  </button>
+                </div>
+              </section>
+            )}
 
         {/* STAGE 3: RESULTS */}
         {stage === "results" && (
@@ -474,7 +513,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
             <div className="space-y-1">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Your Exam Score</div>
               <div className={`text-6xl font-extrabold tracking-tight ${passed ? "text-emerald-600" : "text-rose-600"}`}>
-                {score} / {QUESTIONS.length}
+                {score} / {questionsList.length}
               </div>
             </div>
 
@@ -675,6 +714,8 @@ export default function CertificationPage({ currentUser, onLogout }) {
             )}
           </section>
         )}
+        </>
+      )}
 
         {/* Lower credential sections info */}
         <section className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6">

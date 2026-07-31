@@ -13,8 +13,61 @@ import {
   Activity,
   Calendar,
   CreditCard,
-  ArrowUpRight
+  ArrowUpRight,
+  AlertTriangle,
+  X
 } from 'lucide-react';
+
+// ─── Custom Confirm Modal ─────────────────────────────────────────
+export function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Delete', confirmColor = 'rose', loading = false }) {
+  if (!isOpen) return null;
+
+  const btnBgMap = {
+    rose: 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30',
+    amber: 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/30',
+    blue: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/30',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl w-full max-w-md p-6 sm:p-7 space-y-5">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-100/80 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-6 h-6 text-rose-600" />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading tracking-tight truncate">
+              {title || 'Confirm Action'}
+            </h3>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              {message || 'Are you sure you want to proceed with this action?'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-all cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer ${btnBgMap[confirmColor] || btnBgMap.rose}`}
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            <span>{confirmText}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Stat Card Skeleton ──────────────────────────────────────────
 export function StatCardSkeleton() {
@@ -293,17 +346,6 @@ export function UserListSection({
           />
         </div>
 
-        {roleFilter !== undefined && (
-          <select
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
-          >
-            <option value="all">All Roles</option>
-            <option value="driver">Drivers Only</option>
-            <option value="company">Companies Only</option>
-          </select>
-        )}
 
         <select
           value={sortField}

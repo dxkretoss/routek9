@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import Toast from '../components/Toast';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
@@ -31,7 +31,10 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  MapPin,
+  ExternalLink
 } from 'lucide-react';
 
 const MOCK_INBOX_MESSAGES = [
@@ -64,8 +67,16 @@ const MOCK_INBOX_MESSAGES = [
   }
 ];
 
-export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], onUpdateProfile, onOpenPricing }) {
+export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], savedUserRoutes: propSavedRoutes = [], onUpdateProfile, onOpenPricing }) {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Protected Route Guard: If user is deactivated or logged out, redirect immediately to /login
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/login');
+    }
+  }, [currentUser, navigate]);
 
   // Helper to determine initial active tab from URL query params
   const getInitialTab = () => {
@@ -75,10 +86,61 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     }
     if (tabParam === 'inbox') return 'inbox';
     if (tabParam === 'profile') return 'profile';
+    if (tabParam === 'routes') return 'routes';
     return 'courses';
   };
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
+  const [savedUserRoutes, setSavedUserRoutes] = useState(propSavedRoutes);
+  const [routeStatuses, setRouteStatuses] = useState({});
+
+  // Sync propSavedRoutes into state when prop changes
+  useEffect(() => {
+    if (propSavedRoutes && propSavedRoutes.length > 0) {
+      setSavedUserRoutes(prev => {
+        const map = new Map();
+        propSavedRoutes.forEach(item => map.set(item.id, item));
+        prev.forEach(item => {
+          if (!map.has(item.id)) map.set(item.id, item);
+        });
+        return Array.from(map.values());
+      });
+    }
+  }, [propSavedRoutes]);
+
+  // Fetch saved routes dynamically from Supabase database
+  useEffect(() => {
+    async function loadSupabaseRoutes() {
+      try {
+        const { data, error } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
+        if (data && data.length > 0) {
+          const formatted = data.map(r => ({
+            id: r.id,
+            title: r.title || 'Saved Courier Route',
+            driverName: r.driver_name || 'Driver',
+            stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
+            distanceMiles: r.distance_miles || 0,
+            durationMinutes: r.duration_minutes || 0,
+            status: r.status || 'ACTIVE',
+            stops: r.stops_data || [],
+            createdAt: r.created_at
+          }));
+
+          setSavedUserRoutes(prev => {
+            const map = new Map();
+            formatted.forEach(item => map.set(item.id, item));
+            prev.forEach(item => {
+              if (!map.has(item.id)) map.set(item.id, item);
+            });
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        console.warn("Could not fetch Supabase routes:", err);
+      }
+    }
+    loadSupabaseRoutes();
+  }, []);
 
   // Sync activeTab if URL searchParams change
   useEffect(() => {
@@ -88,6 +150,8 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       setActiveTab('inbox');
     } else if (searchParams.get('tab') === 'profile') {
       setActiveTab('profile');
+    } else if (searchParams.get('tab') === 'routes') {
+      setActiveTab('routes');
     } else if (searchParams.get('tab') === 'courses') {
       setActiveTab('courses');
     }
@@ -386,6 +450,17 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
           </button>
 
           <button
+            onClick={() => handleTabChange('routes')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'routes'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>My Planned Routes ({savedUserRoutes.length})</span>
+          </button>
+
+          <button
             onClick={() => handleTabChange('inbox')}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'inbox'
               ? 'bg-rose-600 text-white shadow-sm'
@@ -502,6 +577,134 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                         >
                           Review Lessons →
                         </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: My Saved & Planned Routes */}
+          {activeTab === 'routes' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+                    My Saved & Planned Routes
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    Routes optimized in Route Planner and tracked in your driver account.
+                  </p>
+                </div>
+
+                <Link
+                  to="/planner"
+                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-all"
+                >
+                  <Truck className="w-4 h-4" />
+                  <span>+ Plan New Route</span>
+                </Link>
+              </div>
+
+              {savedUserRoutes.length === 0 ? (
+                <div className="bg-white rounded-3xl border border-slate-200/90 p-16 text-center space-y-4 shadow-sm">
+                  <Truck className="w-12 h-12 text-slate-400 mx-auto" />
+                  <h3 className="text-lg font-bold text-[#0b132b]">No planned routes saved yet</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto font-medium">
+                    Use our AI-powered Route Planner to add stop addresses, optimize your route, and click "Save Route".
+                  </p>
+                  <Link
+                    to="/planner"
+                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition-all inline-flex items-center gap-2"
+                  >
+                    <span>Go to Route Planner →</span>
+                  </Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {savedUserRoutes.map(route => (
+                    <div key={route.id} className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-5 flex flex-col justify-between hover:border-slate-300 transition-all">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-extrabold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                              {route.id}
+                            </span>
+                            <h4 className="font-extrabold text-slate-900 text-sm">{route.title}</h4>
+                          </div>
+                          {/* Status dropdown (only when logged in) */}
+                          {currentUser && (
+                            <div className="relative">
+                              <select
+                                value={routeStatuses[route.id] || route.status || 'ACTIVE'}
+                                onChange={e => setRouteStatuses(prev => ({ ...prev, [route.id]: e.target.value }))}
+                                className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none ${(routeStatuses[route.id] || route.status) === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    (routeStatuses[route.id] || route.status) === 'ONGOING' ? 'bg-amber-50  text-amber-700  border-amber-200' :
+                                      'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  }`}
+                              >
+                                <option value="ACTIVE">Active</option>
+                                <option value="ONGOING">Ongoing</option>
+                                <option value="COMPLETED">Completed</option>
+                              </select>
+                              <ChevronDown className="w-2.5 h-2.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-current" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Stats Badges */}
+                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                            <span className="text-[10px] text-slate-400 block uppercase font-bold">Stops</span>
+                            <span className="font-extrabold text-[#0b132b]">{route.stopsCount} stops</span>
+                          </div>
+                          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                            <span className="text-[10px] text-slate-400 block uppercase font-bold">Distance</span>
+                            <span className="font-extrabold text-[#0b132b]">{route.distanceMiles} mi</span>
+                          </div>
+                          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                            <span className="text-[10px] text-slate-400 block uppercase font-bold">Drive Time</span>
+                            <span className="font-extrabold text-[#0b132b]">{route.durationMinutes} min</span>
+                          </div>
+                        </div>
+
+                        {/* Stops List */}
+                        {route.stops && route.stops.length > 0 && (
+                          <div className="bg-slate-50/80 p-3 rounded-2xl border border-slate-200/80 space-y-1.5 text-xs">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stops List:</span>
+                            <ul className="space-y-1 max-h-28 overflow-y-auto">
+                              {route.stops.map((s, idx) => (
+                                <li key={idx} className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60">
+                                  <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
+                                  <span className="truncate">{s.label}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 font-medium">
+                        <span>Saved on {new Date(route.createdAt).toLocaleDateString()}</span>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            to={`/planner?load=${route.id}`}
+                            className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>View in Planner</span>
+                          </Link>
+                          <a
+                            href={`https://www.google.com/maps/dir/${route.stops ? route.stops.map(s => encodeURIComponent(s.label)).join('/') : ''}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3.5 py-2 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>GPS Maps</span>
+                          </a>
+                        </div>
                       </div>
                     </div>
                   ))}

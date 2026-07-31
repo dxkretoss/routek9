@@ -14,7 +14,9 @@ import {
   X,
   UserCircle,
   DollarSign,
-  Activity
+  Activity,
+  HelpCircle,
+  Package
 } from 'lucide-react';
 
 import AdminLoginPage from './AdminLoginPage';
@@ -22,6 +24,8 @@ import AdminDashboard from './AdminDashboard';
 import AdminDriverList from './AdminDriverList';
 import AdminCompanyList from './AdminCompanyList';
 import AdminCourses from './AdminCourses';
+import AdminExamQuestions from './AdminExamQuestions';
+import AdminDispatchOrders from './AdminDispatchOrders';
 import AdminRevenue from './AdminRevenue';
 import AdminSettings from './AdminSettings';
 
@@ -30,7 +34,9 @@ const SIDEBAR_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'drivers', label: 'Driver List', icon: Truck },
   { key: 'companies', label: 'Company List', icon: Building2 },
+  { key: 'dispatch_orders', label: 'Dispatch Orders', icon: Package },
   { key: 'courses', label: 'Courses', icon: BookOpen },
+  { key: 'exam_questions', label: 'Exam Questions', icon: HelpCircle },
   { key: 'revenue', label: 'Revenue', icon: DollarSign },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -333,6 +339,10 @@ export default function AdminLayout({ currentUser, onLogout }) {
         return <AdminCompanyList users={getFilteredItems(companies)} {...listProps} />;
       case 'courses':
         return <AdminCourses />;
+      case 'exam_questions':
+        return <AdminExamQuestions />;
+      case 'dispatch_orders':
+        return <AdminDispatchOrders />;
       case 'revenue':
         return <AdminRevenue />;
       case 'settings':

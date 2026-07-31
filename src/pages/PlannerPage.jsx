@@ -3,12 +3,12 @@ import { RoutePlanner } from "../components/RoutePlanner";
 import { Rocket, MapPin, FileSpreadsheet, MessageSquare, DollarSign } from "lucide-react";
 import heroBgPattern from "../assets/hero_bg_pattern.png";
 
-export default function PlannerPage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) {
+export default function PlannerPage({ currentUser, onLogout, onSaveRoute, onOpenPricing, onTriggerGateModal }) {
   return (
     <>
       <main className="patriot flex-1 bg-white">
         <PlannerHero />
-        <RoutePlanner currentUser={currentUser} onOpenPricing={onOpenPricing} onTriggerGateModal={onTriggerGateModal} />
+        <RoutePlanner currentUser={currentUser} onSaveRoute={onSaveRoute} onOpenPricing={onOpenPricing} onTriggerGateModal={onTriggerGateModal} />
       </main>
     </>
   );

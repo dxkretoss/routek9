@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { supabase } from "../lib/supabase";
 import { mockDrivers } from "../data/mockDrivers";
 import PhoneInputPkg from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
@@ -24,7 +26,15 @@ import {
   AlertCircle,
   HelpCircle,
   Milestone,
-  Trash2
+  Trash2,
+  Save,
+  CheckCircle2,
+  Truck,
+  Check,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw
 } from "lucide-react";
 
 const ZONE_COLORS = [
@@ -187,7 +197,8 @@ function optimizeOrder(stops, goal) {
   return order;
 }
 
-export function RoutePlanner({ currentUser, onOpenPricing, onTriggerGateModal }) {
+export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTriggerGateModal }) {
+  const [searchParams] = useSearchParams();
   const [stops, setStops] = useState([]);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -206,6 +217,162 @@ export function RoutePlanner({ currentUser, onOpenPricing, onTriggerGateModal })
   const [autoZoneCount, setAutoZoneCount] = useState(3);
   const [wizardStep, setWizardStep] = useState(1);
   const [showAllPanels, setShowAllPanels] = useState(false);
+  const [routeSavedModal, setRouteSavedModal] = useState({ isOpen: false, route: null });
+  const [savingRoute, setSavingRoute] = useState(false);
+  const [routeHistory, setRouteHistory] = useState([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+  const [stopStatuses, setStopStatuses] = useState({});
+  const [expandedHistoryId, setExpandedHistoryId] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const isDriver = currentUser?.role === 'driver' || currentUser?.role === 'Driver';
+
+  // ── Fetch route history from Supabase backend ──────────────────────────
+  const fetchRoutesFromDB = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      let query = supabase
+        .from('routes')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      // Filter by logged-in user
+      if (currentUser?.id) {
+        query = query.eq('user_id', currentUser.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        // Normalise DB rows → internal route shape
+        const normalized = data.map(row => ({
+          id: row.id,
+          title: row.title || `Route ${row.id}`,
+          driverName: row.driver_name || '',
+          vehicleClass: row.vehicle_class || '',
+          stopsCount: row.stops_count || 0,
+          distanceMiles: row.distance_miles || 0,
+          durationMinutes: row.duration_minutes || 0,
+          fuelCost: row.fuel_cost || 0,
+          status: row.status || 'ACTIVE',
+          stops: Array.isArray(row.stops_data) ? row.stops_data : [],
+          createdAt: row.created_at,
+          savedAt: row.created_at,
+        }));
+
+        setRouteHistory(normalized);
+
+        // Build stopStatuses with 'pending' default for any unseen stop
+        setStopStatuses(prev => {
+          const merged = { ...prev };
+          normalized.forEach(route => {
+            (route.stops || []).forEach((_, idx) => {
+              const key = `${route.id}_${idx}`;
+              if (!merged[key]) merged[key] = 'pending';
+            });
+          });
+          return merged;
+        });
+      }
+    } catch (err) {
+      console.warn('fetchRoutesFromDB error:', err.message || err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [currentUser?.id]);
+
+  // Load on mount and whenever the logged-in user changes
+  useEffect(() => {
+    fetchRoutesFromDB();
+  }, [fetchRoutesFromDB]);
+
+  // Auto-load route from ?load=<routeId> URL param (coming from Driver Dashboard "View in Planner")
+  useEffect(() => {
+    const loadId = searchParams.get('load');
+    if (!loadId || routeHistory.length === 0) return;
+    const target = routeHistory.find(r => r.id === loadId);
+    if (target && target.stops && target.stops.length > 0) {
+      setStops(target.stops.map(s => ({ label: s.label, lat: s.lat, lon: s.lon, zoneId: null })));
+      setSelectedHistoryId(target.id);
+      setExpandedHistoryId(target.id);
+      setWizardStep(1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [searchParams, routeHistory]);
+
+  const handleSaveRouteToDashboardAndAdmin = async () => {
+    if (stops.length < 2) {
+      alert("Please add at least 2 stop addresses before saving your route.");
+      return;
+    }
+
+    setSavingRoute(true);
+    const fuelCostCalc = (distMi / AVG_MPG) * FUEL_PRICE;
+
+    const newRoute = {
+      id: `RTE-${Math.floor(1000 + Math.random() * 9000)}`,
+      title: stops[0]?.label ? `Route to ${stops[stops.length - 1]?.label.split(',')[0] || 'Destination'}` : 'Solo Courier Route',
+      driverName: currentUser?.name || 'Solo Driver',
+      driverId: currentUser?.id || 'guest',
+      driverEmail: currentUser?.email || 'driver@routek9.com',
+      vehicle: currentUser?.vehicle || 'Cargo Van',
+      stopsCount: stops.length,
+      stops: stops.map((s, idx) => ({
+        step: idx + 1,
+        label: s.label,
+        lat: s.lat,
+        lon: s.lon,
+        zoneId: s.zoneId || null
+      })),
+      distanceMiles: Number(distMi.toFixed(1)),
+      durationMinutes: Math.round(durMin),
+      fuelCost: Number(fuelCostCalc.toFixed(2)),
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString()
+    };
+
+    console.log("newRoute: ", newRoute);
+
+    if (onSaveRoute) {
+      onSaveRoute(newRoute);
+    }
+
+    // Save strictly to Supabase Database
+    try {
+      const validUuid = currentUser?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id) ? currentUser.id : null;
+
+      const { data, error } = await supabase.from('routes').insert([{
+        id: newRoute.id,
+        user_id: validUuid,
+        title: newRoute.title,
+        driver_name: newRoute.driverName,
+        stops_count: newRoute.stopsCount,
+        distance_miles: newRoute.distanceMiles,
+        duration_minutes: newRoute.durationMinutes,
+        status: newRoute.status,
+        stops_data: newRoute.stops,
+        created_at: newRoute.createdAt
+      }]).select();
+
+      if (error) {
+        console.warn("Supabase DB routes insert notice:", error.message || error);
+      } else {
+        // Refresh AFTER insert so the new record appears
+        await fetchRoutesFromDB();
+        setSelectedHistoryId(newRoute.id);
+        setExpandedHistoryId(newRoute.id);
+      }
+    } catch (dbErr) {
+      console.warn("Supabase DB routes insert error:", dbErr);
+      // Still try to refresh in case it was actually saved
+      await fetchRoutesFromDB();
+    }
+
+    setSavingRoute(false);
+    setRouteSavedModal({ isOpen: true, route: newRoute });
+  };
   const mapRef = useRef(null);
   const leafletMap = useRef(null);
   const layerGroup = useRef(null);
@@ -1039,6 +1206,36 @@ export function RoutePlanner({ currentUser, onOpenPricing, onTriggerGateModal })
             "radial-gradient(ellipse at top, color-mix(in oklab, var(--accent) 10%, transparent), transparent 60%)",
         }}
       />
+
+      {/* ── LOGIN GATE ── */}
+      {!currentUser ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center">
+          <div className="w-20 h-20 rounded-3xl bg-[#0b132b] flex items-center justify-center shadow-2xl">
+            <Truck className="w-10 h-10 text-white" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-extrabold text-[#0b132b] font-serif-heading">Sign in to use Route Planner</h2>
+            <p className="text-slate-500 font-medium mt-2 text-sm max-w-md mx-auto">
+              Plan, optimize, and save delivery routes with AI-powered stop sequencing. Create a free account to get started.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <a
+              href="/login"
+              className="px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-sm shadow-lg shadow-rose-600/30 transition-all"
+            >
+              Sign In
+            </a>
+            <a
+              href="/signup"
+              className="px-6 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[#0b132b] font-extrabold text-sm transition-all"
+            >
+              Create Free Account
+            </a>
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-6">
         {/* Left: controls + list */}
         <div className="min-w-0 space-y-4">
@@ -1496,263 +1693,296 @@ export function RoutePlanner({ currentUser, onOpenPricing, onTriggerGateModal })
           {(showAllPanels || wizardStep === 3) && (
             <div className="space-y-4">
               {stops.length > 0 && (
-                <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-                  <button
-                    type="button"
-                    onClick={() => setZonesOpen((o) => !o)}
-                    className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-rose-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></svg>
-                      </span>
-                      <span className="text-base font-bold text-primary">Zones</span>
-                      {zones.length > 0 && (
-                        <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px] font-bold text-rose-600">
-                          {zones.length}
-                        </span>
-                      )}
-                    </div>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className={`text-primary/60 transition-transform ${zonesOpen ? "rotate-180" : ""}`}
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </button>
-                  {zonesOpen && (
-                    <>
-                      <div className="mt-3 text-xs text-slate-500 font-medium">
-                        Section off addresses that are close to each other and hand each zone to a different driver.
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-slate-50 p-2">
-                        <label className="text-[11px] font-semibold text-primary/80">Auto-group into</label>
-                        <input
-                          type="number"
-                          min={2}
-                          max={ZONE_COLORS.length}
-                          value={autoZoneCount}
-                          onChange={(e) => setAutoZoneCount(Math.max(2, Math.min(ZONE_COLORS.length, parseInt(e.target.value) || 2)))}
-                          className="w-14 rounded border border-border bg-white px-2 py-1 text-xs"
-                        />
-                        <span className="text-[11px] text-muted-foreground font-semibold">zones by proximity</span>
-                        <button
-                          type="button"
-                          onClick={autoGroupZones}
-                          className="ml-auto rounded-md bg-[#0b132b] text-white px-3 py-1.5 text-xs font-bold hover:bg-[#1a264a] cursor-pointer"
-                        >
-                          Auto-group
-                        </button>
-                      </div>
+                <>
+                  {isDriver ? (
+                    <div className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-sm space-y-3">
                       <button
                         type="button"
-                        onClick={() => addZone()}
-                        className="mt-2 rounded-lg border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 cursor-pointer"
+                        onClick={handleSaveRouteToDashboardAndAdmin}
+                        disabled={savingRoute || stops.length < 2}
+                        className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        + Add zone
+                        <Save className="w-4 h-4" />
+                        <span>{savingRoute ? 'Saving Route...' : 'Save Route'}</span>
                       </button>
-                      {zones.length === 0 && (
-                        <div className="mt-3 rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
-                          No zones yet. Add one manually or auto-group by proximity.
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-4">
+                      {/* Save Route Button for Admin/Dispatcher */}
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-extrabold text-[#0b132b]">Save & Dispatch Route</div>
+                          <div className="text-[10px] text-slate-500 font-medium">Save complete route data to Admin Panel & Driver Dashboard</div>
                         </div>
-                      )}
-                      <div className="mt-3 space-y-3">
-                        {zones.map((z) => {
-                          const zStops = stopsInZone(z.id);
-                          const over = zStops.length > GOOGLE_ZONE_LIMIT;
-                          return (
-                            <div
-                              key={z.id}
-                              className="rounded-lg border border-border bg-white p-3"
-                              style={{ borderLeft: `4px solid ${z.color}` }}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="inline-block h-4 w-4 flex-shrink-0 rounded-full border border-white shadow"
-                                  style={{ background: z.color }}
-                                />
-                                <input
-                                  value={z.name}
-                                  onChange={(e) => updateZone(z.id, { name: e.target.value })}
-                                  className="min-w-0 flex-1 rounded border border-border bg-white px-2 py-1 text-sm font-semibold text-primary"
-                                />
-                                <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
-                                  {zStops.length} stop{zStops.length === 1 ? "" : "s"}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => removeZone(z.id)}
-                                  className="rounded p-1 text-xs text-slate-400 hover:text-rose-600 cursor-pointer flex items-center justify-center"
-                                  title="Delete zone"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                              <div className="mt-2.5 space-y-2">
-                                {spares.length > 0 && (
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                      Assign Driver
-                                    </label>
-                                    <select
-                                      value={z.driverPhone ?? ""}
-                                      onChange={(e) => {
-                                        const selected = spares.find((d) => d.phone === e.target.value);
-                                        if (selected) {
-                                          updateZone(z.id, {
-                                            driverName: `${selected.first_name} ${selected.last_name}`,
-                                            driverPhone: selected.phone,
-                                          });
-                                        }
-                                      }}
-                                      className="w-full rounded border border-border bg-slate-50 px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white"
-                                    >
-                                      <option value="">— Select Registered Driver —</option>
-                                      {spares.map((d) => (
-                                        <option key={d.id} value={d.phone}>
-                                          {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                )}
-
-                                <div className="grid grid-cols-2 gap-2">
-                                  <input
-                                    placeholder="Driver name"
-                                    value={z.driverName ?? ""}
-                                    onChange={(e) => updateZone(z.id, { driverName: e.target.value })}
-                                    className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
-                                  />
-                                  <input
-                                    type="tel"
-                                    placeholder="Driver phone"
-                                    value={z.driverPhone ?? ""}
-                                    onChange={(e) => updateZone(z.id, { driverPhone: e.target.value })}
-                                    className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
-                                  />
-                                </div>
-
-                                {z.driverName && z.driverPhone && !spares.some((d) => d.phone === z.driverPhone) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const parts = z.driverName.trim().split(" ");
-                                      const newDriver = {
-                                        id: uid(),
-                                        first_name: parts[0] || "Driver",
-                                        last_name: parts.slice(1).join(" ") || "",
-                                        phone: z.driverPhone.trim(),
-                                        city: userLoc?.city || "Local",
-                                        state: userLoc?.state || "US",
-                                      };
-                                      setSpares((prev) => [newDriver, ...prev]);
-                                    }}
-                                    className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1 mt-1"
-                                  >
-                                    + Save "{z.driverName}" to registered drivers list
-                                  </button>
-                                )}
-
-                                {/* Assigned Stops in this Zone */}
-                                <div className="mt-2.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 space-y-1.5">
-                                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                                    <span>Stops in {z.name} ({zStops.length})</span>
-                                  </div>
-                                  {zStops.length === 0 ? (
-                                    <div className="text-[11px] text-slate-400 italic font-medium py-1">
-                                      No stops assigned to this zone yet.
-                                    </div>
-                                  ) : (
-                                    <ul className="space-y-1 max-h-36 overflow-y-auto">
-                                      {zStops.map((s) => (
-                                        <li key={s.id} className="flex items-center justify-between gap-1 text-[11px] font-medium text-slate-700 bg-white px-2 py-1 rounded border border-slate-200/80 shadow-2xs">
-                                          <span className="truncate flex items-center gap-1">
-                                            <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
-                                            <span className="truncate">{s.label}</span>
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => assignStopZone(s.id, undefined)}
-                                            className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 shrink-0"
-                                            title="Remove stop from zone"
-                                          >
-                                            <X className="w-3 h-3" />
-                                          </button>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-
-                                  {/* Quick add stop dropdown */}
-                                  {stops.length > 0 && (
-                                    <select
-                                      value=""
-                                      onChange={(e) => {
-                                        if (e.target.value) assignStopZone(e.target.value, z.id);
-                                      }}
-                                      className="w-full mt-1.5 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 focus:outline-none focus:border-rose-500"
-                                    >
-                                      <option value="">+ Assign a stop to {z.name}…</option>
-                                      {stops.map((s) => (
-                                        <option key={s.id} value={s.id}>
-                                          {s.zoneId === z.id ? `✓ (Already in ${z.name}) ` : s.zoneId ? `[In ${zones.find((zn) => zn.id === s.zoneId)?.name || 'Other Zone'}] ` : '[Unzoned] '}
-                                          {s.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  )}
-                                </div>
-                              </div>
-                              {over && (
-                                <div className="mt-2 rounded border border-rose-500/20 bg-rose-50 px-2 py-1 text-[11px] text-rose-600 font-semibold">
-                                  {zStops.length}/{GOOGLE_ZONE_LIMIT} — over Google's optimization limit. Split before planning.
-                                </div>
-                              )}
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => planZone(z.id)}
-                                  disabled={zStops.length < 2 || over || optimizing}
-                                  className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-xs font-bold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
-                                >
-                                  Plan zone
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => sendZoneToDriver(z)}
-                                  disabled={zStops.length === 0 || !z.driverPhone}
-                                  className="rounded-md border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-                                >
-                                  <Send className="w-3.5 h-3.5" />
-                                  <span>Send to driver</span>
-                                </button>
-                                {zStops.length >= 2 && (
-                                  <a
-                                    href={zoneGoogleLink(z.id)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:border-rose-600 flex items-center justify-center bg-white"
-                                  >
-                                    Open in Maps
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
+                        <button
+                          type="button"
+                          onClick={handleSaveRouteToDashboardAndAdmin}
+                          disabled={savingRoute || stops.length < 2}
+                          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>{savingRoute ? 'Saving...' : 'Save Route'}</span>
+                        </button>
                       </div>
-                    </>
+
+                      <button
+                        type="button"
+                        onClick={() => setZonesOpen((o) => !o)}
+                        className="flex w-full items-center justify-between gap-3 text-left cursor-pointer pt-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-rose-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></svg>
+                          </span>
+                          <span className="text-base font-bold text-primary">Zones</span>
+                          {zones.length > 0 && (
+                            <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px] font-bold text-rose-600">
+                              {zones.length}
+                            </span>
+                          )}
+                        </div>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className={`text-primary/60 transition-transform ${zonesOpen ? "rotate-180" : ""}`}
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      {zonesOpen && (
+                        <>
+                          <div className="mt-3 text-xs text-slate-500 font-medium">
+                            Section off addresses that are close to each other and hand each zone to a different driver.
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-slate-50 p-2">
+                            <label className="text-[11px] font-semibold text-primary/80">Auto-group into</label>
+                            <input
+                              type="number"
+                              min={2}
+                              max={ZONE_COLORS.length}
+                              value={autoZoneCount}
+                              onChange={(e) => setAutoZoneCount(Math.max(2, Math.min(ZONE_COLORS.length, parseInt(e.target.value) || 2)))}
+                              className="w-14 rounded border border-border bg-white px-2 py-1 text-xs"
+                            />
+                            <span className="text-[11px] text-muted-foreground font-semibold">zones by proximity</span>
+                            <button
+                              type="button"
+                              onClick={autoGroupZones}
+                              className="ml-auto rounded-md bg-[#0b132b] text-white px-3 py-1.5 text-xs font-bold hover:bg-[#1a264a] cursor-pointer"
+                            >
+                              Auto-group
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => addZone()}
+                            className="mt-2 rounded-lg border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 cursor-pointer"
+                          >
+                            + Add zone
+                          </button>
+                          {zones.length === 0 && (
+                            <div className="mt-3 rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                              No zones yet. Add one manually or auto-group by proximity.
+                            </div>
+                          )}
+                          <div className="mt-3 space-y-3">
+                            {zones.map((z) => {
+                              const zStops = stopsInZone(z.id);
+                              const over = zStops.length > GOOGLE_ZONE_LIMIT;
+                              return (
+                                <div
+                                  key={z.id}
+                                  className="rounded-lg border border-border bg-white p-3"
+                                  style={{ borderLeft: `4px solid ${z.color}` }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="inline-block h-4 w-4 flex-shrink-0 rounded-full border border-white shadow"
+                                      style={{ background: z.color }}
+                                    />
+                                    <input
+                                      value={z.name}
+                                      onChange={(e) => updateZone(z.id, { name: e.target.value })}
+                                      className="min-w-0 flex-1 rounded border border-border bg-white px-2 py-1 text-sm font-semibold text-primary"
+                                    />
+                                    <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
+                                      {zStops.length} stop{zStops.length === 1 ? "" : "s"}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeZone(z.id)}
+                                      className="rounded p-1 text-xs text-slate-400 hover:text-rose-600 cursor-pointer flex items-center justify-center"
+                                      title="Delete zone"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                  <div className="mt-2.5 space-y-2">
+                                    {spares.length > 0 && (
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                          Assign Driver
+                                        </label>
+                                        <select
+                                          value={z.driverPhone ?? ""}
+                                          onChange={(e) => {
+                                            const selected = spares.find((d) => d.phone === e.target.value);
+                                            if (selected) {
+                                              updateZone(z.id, {
+                                                driverName: `${selected.first_name} ${selected.last_name}`,
+                                                driverPhone: selected.phone,
+                                              });
+                                            }
+                                          }}
+                                          className="w-full rounded border border-border bg-slate-50 px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white"
+                                        >
+                                          <option value="">— Select Registered Driver —</option>
+                                          {spares.map((d) => (
+                                            <option key={d.id} value={d.phone}>
+                                              {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <input
+                                        placeholder="Driver name"
+                                        value={z.driverName ?? ""}
+                                        onChange={(e) => updateZone(z.id, { driverName: e.target.value })}
+                                        className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
+                                      />
+                                      <input
+                                        type="tel"
+                                        placeholder="Driver phone"
+                                        value={z.driverPhone ?? ""}
+                                        onChange={(e) => updateZone(z.id, { driverPhone: e.target.value })}
+                                        className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
+                                      />
+                                    </div>
+
+                                    {z.driverName && z.driverPhone && !spares.some((d) => d.phone === z.driverPhone) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const parts = z.driverName.trim().split(" ");
+                                          const newDriver = {
+                                            id: uid(),
+                                            first_name: parts[0] || "Driver",
+                                            last_name: parts.slice(1).join(" ") || "",
+                                            phone: z.driverPhone.trim(),
+                                            city: userLoc?.city || "Local",
+                                            state: userLoc?.state || "US",
+                                          };
+                                          setSpares((prev) => [newDriver, ...prev]);
+                                        }}
+                                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1 mt-1"
+                                      >
+                                        + Save "{z.driverName}" to registered drivers list
+                                      </button>
+                                    )}
+
+                                    {/* Assigned Stops in this Zone */}
+                                    <div className="mt-2.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 space-y-1.5">
+                                      <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                                        <span>Stops in {z.name} ({zStops.length})</span>
+                                      </div>
+                                      {zStops.length === 0 ? (
+                                        <div className="text-[11px] text-slate-400 italic font-medium py-1">
+                                          No stops assigned to this zone yet.
+                                        </div>
+                                      ) : (
+                                        <ul className="space-y-1 max-h-36 overflow-y-auto">
+                                          {zStops.map((s) => (
+                                            <li key={s.id} className="flex items-center justify-between gap-1 text-[11px] font-medium text-slate-700 bg-white px-2 py-1 rounded border border-slate-200/80 shadow-2xs">
+                                              <span className="truncate flex items-center gap-1">
+                                                <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                                                <span className="truncate">{s.label}</span>
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => assignStopZone(s.id, undefined)}
+                                                className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 shrink-0"
+                                                title="Remove stop from zone"
+                                              >
+                                                <X className="w-3 h-3" />
+                                              </button>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+
+                                      {/* Quick add stop dropdown */}
+                                      {stops.length > 0 && (
+                                        <select
+                                          value=""
+                                          onChange={(e) => {
+                                            if (e.target.value) assignStopZone(e.target.value, z.id);
+                                          }}
+                                          className="w-full mt-1.5 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 focus:outline-none focus:border-rose-500"
+                                        >
+                                          <option value="">+ Assign a stop to {z.name}…</option>
+                                          {stops.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                              {s.zoneId === z.id ? `✓ (Already in ${z.name}) ` : s.zoneId ? `[In ${zones.find((zn) => zn.id === s.zoneId)?.name || 'Other Zone'}] ` : '[Unzoned] '}
+                                              {s.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {over && (
+                                    <div className="mt-2 rounded border border-rose-500/20 bg-rose-50 px-2 py-1 text-[11px] text-rose-600 font-semibold">
+                                      {zStops.length}/{GOOGLE_ZONE_LIMIT} — over Google's optimization limit. Split before planning.
+                                    </div>
+                                  )}
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => planZone(z.id)}
+                                      disabled={zStops.length < 2 || over || optimizing}
+                                      className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-xs font-bold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+                                    >
+                                      Plan zone
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => sendZoneToDriver(z)}
+                                      disabled={zStops.length === 0 || !z.driverPhone}
+                                      className="rounded-md border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                                    >
+                                      <Send className="w-3.5 h-3.5" />
+                                      <span>Send to driver</span>
+                                    </button>
+                                    {zStops.length >= 2 && (
+                                      <a
+                                        href={zoneGoogleLink(z.id)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:border-rose-600 flex items-center justify-center bg-white"
+                                      >
+                                        Open in Maps
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
-                </div>
+                </>
               )}
 
               {stops.length >= 2 && (
@@ -2079,6 +2309,284 @@ export function RoutePlanner({ currentUser, onOpenPricing, onTriggerGateModal })
           </div>
         </div>
       )}
+
+      {/* Custom Modal for Route Saved Success */}
+      {routeSavedModal.isOpen && routeSavedModal.route && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6">
+            <div className="text-center space-y-3">
+              <div className="w-16 h-16 rounded-3xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 animate-bounce" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-black text-[#0b132b] font-serif-heading">
+                  Route Saved Successfully!
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  Saved live dispatch records to Admin Panel and synced to Driver Dashboard.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Route ID</span>
+                  <div className="font-extrabold text-rose-600 text-sm">{routeSavedModal.route.id}</div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Total Distance</span>
+                  <div className="font-black text-slate-900 text-base">{routeSavedModal.route.distanceMiles} mi ({routeSavedModal.route.durationMinutes} min)</div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">Stops ({routeSavedModal.route.stopsCount} stops):</div>
+                <ul className="space-y-1 max-h-32 overflow-y-auto">
+                  {routeSavedModal.route.stops.map((s, idx) => (
+                    <li key={idx} className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60">
+                      <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{s.step}</span>
+                      <span className="truncate">{s.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              <a
+                href="/dashboard?tab=routes"
+                className="w-full sm:flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer text-center"
+              >
+                <Truck className="w-4 h-4" />
+                <span>Track in Driver Dashboard →</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setRouteSavedModal({ isOpen: false, route: null })}
+                className="w-full sm:w-auto px-5 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ROUTE PLAN HISTORY (from Supabase API) ===== */}
+      <div className="mt-10 space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Route Plan History</h3>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">Loaded from database — click to reload into planner or manage stop statuses</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {routeHistory.length > 0 && (
+              <span className="px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold">{routeHistory.length} route{routeHistory.length !== 1 ? 's' : ''}</span>
+            )}
+            <button
+              type="button"
+              onClick={fetchRoutesFromDB}
+              disabled={loadingHistory}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${loadingHistory ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Loading state */}
+        {loadingHistory && (
+          <div className="flex items-center justify-center py-10 gap-3 text-slate-400">
+            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            <span className="text-sm font-semibold">Loading routes from database…</span>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loadingHistory && routeHistory.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-400 bg-slate-50 rounded-3xl border border-slate-200">
+            <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"/></svg>
+            <p className="text-sm font-bold">No saved routes yet</p>
+            <p className="text-xs">Plan a route above and click "Save Route" to see it here</p>
+          </div>
+        )}
+
+        {/* ── TABLE ── */}
+        {!loadingHistory && routeHistory.length > 0 && (
+          <div className="bg-white rounded-md border border-slate-200 shadow-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#0b132b] text-white text-[11px] font-extrabold uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left rounded-tl-md">Route ID</th>
+                    <th className="px-4 py-3 text-left">Title</th>
+                    <th className="px-4 py-3 text-center">Stops</th>
+                    <th className="px-4 py-3 text-center">Distance</th>
+                    <th className="px-4 py-3 text-center">Drive Time</th>
+                    <th className="px-4 py-3 text-center">Progress</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-center">Saved</th>
+                    <th className="px-4 py-3 text-center rounded-tr-md">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {routeHistory.map((route, rowIdx) => {
+                    const isExpanded = expandedHistoryId === route.id;
+                    const isSelected = selectedHistoryId === route.id;
+                    const routeStops = route.stops || [];
+                    const completedCount = routeStops.filter((_, idx) => stopStatuses[`${route.id}_${idx}`] === 'complete').length;
+                    const ongoingCount = routeStops.filter((_, idx) => stopStatuses[`${route.id}_${idx}`] === 'ongoing').length;
+                    const allComplete = routeStops.length > 0 && completedCount === routeStops.length;
+                    const anyOngoing = ongoingCount > 0;
+                    const overallStatus = allComplete ? 'complete' : anyOngoing ? 'ongoing' : 'pending';
+                    const pct = routeStops.length === 0 ? 0 : Math.round((completedCount / routeStops.length) * 100);
+
+                    return (
+                      <React.Fragment key={route.id}>
+                        {/* Main row */}
+                        <tr className={`transition-colors ${isSelected ? 'bg-rose-50' : rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-rose-50/60`}>
+                          <td className="px-4 py-3.5">
+                            <span className="font-mono text-xs font-bold text-rose-600">{route.id}</span>
+                          </td>
+                          <td className="px-4 py-3.5 max-w-[200px]">
+                            <span className="font-semibold text-slate-800 text-xs line-clamp-1">{route.title}</span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            <span className="font-bold text-slate-700 text-xs">{route.stopsCount}</span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            <span className="font-bold text-slate-700 text-xs">{route.distanceMiles} mi</span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            <span className="font-bold text-slate-700 text-xs">{route.durationMinutes} min</span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center min-w-[100px]">
+                            <div className="flex items-center gap-1.5">
+                              <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-700 ${allComplete ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] font-bold text-slate-400 w-7 text-right">{pct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                              overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              overallStatus === 'ongoing'  ? 'bg-amber-50  text-amber-700  border-amber-200'  :
+                                                            'bg-slate-100 text-slate-600  border-slate-200'
+                            }`}>{overallStatus}</span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {new Date(route.savedAt).toLocaleDateString()}<br/>
+                              <span className="text-[9px]">{new Date(route.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                title="Load this route into the planner"
+                                onClick={() => {
+                                  setStops(route.stops.map(s => ({ label: s.label, lat: s.lat, lon: s.lon, zoneId: null })));
+                                  setSelectedHistoryId(route.id);
+                                  setWizardStep(1);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-[10px] shadow transition-colors cursor-pointer flex items-center gap-1"
+                              >
+                                <Truck className="w-3 h-3" />
+                                Load
+                              </button>
+                              <button
+                                type="button"
+                                title="Manage stop statuses"
+                                onClick={() => setExpandedHistoryId(isExpanded ? null : route.id)}
+                                className="p-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                              >
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Expanded stop status row */}
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={9} className="px-6 pb-4 pt-2 bg-slate-50 border-t border-slate-100">
+                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Stop-by-Stop Status</div>
+                              <div className="space-y-1.5">
+                                {routeStops.map((stop, idx) => {
+                                  const key = `${route.id}_${idx}`;
+                                  const status = stopStatuses[key] || 'pending';
+                                  return (
+                                    <div key={idx} className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-xs">
+                                      <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
+                                        status === 'complete' ? 'bg-emerald-600 text-white' :
+                                        status === 'ongoing'  ? 'bg-amber-500 text-white'   :
+                                                                'bg-slate-200 text-slate-600'
+                                      }`}>{idx + 1}</span>
+                                      <span className="flex-1 text-xs font-medium text-slate-700 truncate">{stop.label}</span>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {(['pending', 'ongoing', 'complete']).map(s => (
+                                          <button
+                                            key={s}
+                                            type="button"
+                                            onClick={() => setStopStatuses(prev => ({ ...prev, [key]: s }))}
+                                            className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase cursor-pointer border transition-all ${
+                                              status === s
+                                                ? s === 'complete' ? 'bg-emerald-600 text-white border-emerald-600'
+                                                  : s === 'ongoing' ? 'bg-amber-500 text-white border-amber-500'
+                                                  : 'bg-slate-700 text-white border-slate-700'
+                                                : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'
+                                            }`}
+                                          >{s}</button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex justify-end gap-2 mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const u = {};
+                                    routeStops.forEach((_, idx) => { u[`${route.id}_${idx}`] = 'pending'; });
+                                    setStopStatuses(prev => ({ ...prev, ...u }));
+                                  }}
+                                  className="px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 font-bold text-[9px] hover:bg-slate-50 cursor-pointer"
+                                >Reset All</button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const u = {};
+                                    routeStops.forEach((_, idx) => { u[`${route.id}_${idx}`] = 'complete'; });
+                                    setStopStatuses(prev => ({ ...prev, ...u }));
+                                  }}
+                                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9px] cursor-pointer"
+                                >✓ Mark All Complete</button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      </>) /* end currentUser ternary */}
 
     </section>
   );

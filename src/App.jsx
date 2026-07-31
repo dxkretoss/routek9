@@ -31,6 +31,7 @@ import PlannerPage from './pages/PlannerPage';
 import CompaniesPage from './pages/CompaniesPage';
 // import GrowthPage from './pages/GrowthPage';
 import CertificationPage from './pages/CertificationPage';
+import DispatchOrdersPage from './pages/DispatchOrdersPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import PricingPage from './pages/PricingPage';
 import ProCheckoutPage from './pages/ProCheckoutPage';
@@ -214,6 +215,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getCookie(SESSION_COOKIE_NAME) || null);
   const [purchasedCourses, setPurchasedCourses] = useState(() => getCookie(COURSES_COOKIE_NAME) || []);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+  const [savedUserRoutes, setSavedUserRoutes] = useState([]);
+
+  const handleSaveUserRoute = (newRoute) => {
+    setSavedUserRoutes(prev => [newRoute, ...prev.filter(r => r.id !== newRoute.id)]);
+  };
 
   // PRO Feature Gate Popup State
   const [gateModalState, setGateModalState] = useState({
@@ -234,9 +240,9 @@ export default function App() {
     // 2. Subscribe to auth state changes (Google OAuth login, Email confirmation, Sign in, Sign out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        syncSupabaseProfile(session.user);
-        // If returning from email verification or auth redirect on auth pages, navigate to dashboard!
-        if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        const isActive = await syncSupabaseProfile(session.user);
+        // Navigate to dashboard only if user account is active and verified!
+        if (isActive && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
           const currentPath = window.location.pathname;
           if (currentPath === '/login' || currentPath === '/signup') {
             navigate('/dashboard');
@@ -260,6 +266,34 @@ export default function App() {
         .select('*')
         .eq('id', supabaseUser.id)
         .single();
+
+      // Deactivation Enforcement Check
+      const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]').map(i => String(i).toLowerCase());
+      const lowerEmail = (supabaseUser.email || '').toLowerCase();
+      const userIdStr = String(supabaseUser.id).toLowerCase();
+
+      const isDeactivated =
+        profile?.status === 'INACTIVE' ||
+        profile?.status === 'DEACTIVATED' ||
+        profile?.is_active === false ||
+        profile?.isactive === false ||
+        deactivatedList.includes(lowerEmail) ||
+        deactivatedList.includes(userIdStr);
+
+      if (isDeactivated) {
+        console.warn("Account deactivated by administrator. Signing out immediately.");
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch (soErr) {
+          console.warn("Local signout notice:", soErr);
+        }
+        setCurrentUser(null);
+        deleteCookie(SESSION_COOKIE_NAME);
+        if (window.location.pathname === '/dashboard') {
+          navigate('/login');
+        }
+        return false;
+      }
 
       const userRole = profile?.role || supabaseUser.user_metadata?.role || 'driver';
       let userName = profile?.full_name || supabaseUser.user_metadata?.full_name || (supabaseUser.email ? supabaseUser.email.split('@')[0] : 'User');
@@ -286,15 +320,15 @@ export default function App() {
         const updated = {
           ...(prev || {}),
           id: supabaseUser.id,
-          name: userName,
-          email: supabaseUser.email,
+          name: profile?.full_name || userName,
+          email: profile?.email || supabaseUser.email,
           role: userRole,
-          vehicle: prev?.vehicle || profile?.vehicle || (userRole === 'driver' ? 'Cargo Van' : 'Company Fleet'),
-          stateCode: prev?.stateCode || profile?.state_code || '',
-          city: prev?.city || profile?.city || '',
-          phone: prev?.phone || profile?.phone || '',
-          dotNumber: prev?.dotNumber || profile?.dot_number || '',
-          insurancePolicy: prev?.insurancePolicy || profile?.insurance_policy || '',
+          vehicle: profile?.vehicle || prev?.vehicle || (userRole === 'driver' ? 'Cargo Van' : 'Company Fleet'),
+          stateCode: profile?.state_code || prev?.stateCode || '',
+          city: profile?.city || prev?.city || '',
+          phone: profile?.phone || prev?.phone || '',
+          dotNumber: profile?.dot_number || prev?.dotNumber || '',
+          insurancePolicy: profile?.insurance_policy || prev?.insurancePolicy || '',
           isPro: prev?.isPro || false,
           subscriptionPlan: prev?.subscriptionPlan || 'free'
         };
@@ -386,47 +420,53 @@ export default function App() {
   };
 
   const handleUpdateProfile = async (updatedProfile) => {
-    const updatedUser = { ...currentUser, ...updatedProfile };
+    let userId = currentUser?.id;
+    if (!userId) {
+      const { data: authData } = await supabase.auth.getUser();
+      userId = authData?.user?.id;
+    }
+
+    const updatedUser = {
+      ...(currentUser || {}),
+      ...updatedProfile,
+      vehicle: updatedProfile.vehicle || updatedProfile.vehicleClass || currentUser?.vehicle,
+      city: updatedProfile.city || updatedProfile.cityName || currentUser?.city,
+      stateCode: updatedProfile.stateCode || updatedProfile.state_code || currentUser?.stateCode,
+      dotNumber: updatedProfile.dotNumber || updatedProfile.dot_number || currentUser?.dotNumber,
+      insurancePolicy: updatedProfile.insurancePolicy || updatedProfile.insurance_policy || currentUser?.insurancePolicy
+    };
+
+    if (userId) updatedUser.id = userId;
+
     setCurrentUser(updatedUser);
     setCookie(SESSION_COOKIE_NAME, updatedUser, 30);
 
-    if (currentUser?.id) {
+    if (userId) {
       try {
-        const { error } = await supabase.from('profiles').upsert({
-          id: currentUser.id,
-          email: updatedUser.email,
-          full_name: updatedUser.name,
-          phone: updatedUser.phone,
-          role: updatedUser.role,
-          vehicle: updatedUser.vehicle,
-          state_code: updatedUser.stateCode,
-          city: updatedUser.city,
-          dot_number: updatedUser.dotNumber,
-          insurance_policy: updatedUser.insurancePolicy,
+        const payload = {
+          id: userId,
+          email: updatedUser.email || '',
+          full_name: updatedUser.name || updatedUser.fullName || '',
+          role: updatedUser.role || 'driver',
+          vehicle: updatedUser.vehicle || '',
+          city: updatedUser.city || '',
+          state_code: updatedUser.stateCode || '',
+          phone: updatedUser.phone || '',
+          dot_number: updatedUser.dotNumber || '',
+          insurance_policy: updatedUser.insurancePolicy || '',
           updated_at: new Date().toISOString()
-        });
+        };
 
-        // Fallback to core schema columns if custom columns haven't been added to Supabase DB yet
+        const { error } = await supabase.from('profiles').upsert(payload);
+
         if (error) {
-          if (error.code === 'PGRST204' || error.message?.includes('schema cache')) {
-            const { error: fallbackError } = await supabase.from('profiles').upsert({
-              id: currentUser.id,
-              email: updatedUser.email,
-              full_name: updatedUser.name,
-              role: updatedUser.role,
-              updated_at: new Date().toISOString()
-            });
-            if (fallbackError) {
-              return { success: false, error: fallbackError.message };
-            }
-            return { success: true };
-          }
+          console.error("Supabase profile save error:", error);
           return { success: false, error: error.message };
         }
         return { success: true };
       } catch (err) {
-        console.warn("Supabase profile save notice:", err);
-        return { success: false, error: err.message || "Failed to update profile" };
+        console.error("Supabase profile save catch:", err);
+        return { success: false, error: err.message || "Failed to save profile" };
       }
     }
     return { success: true };
@@ -451,12 +491,13 @@ export default function App() {
           <Route path="/training" element={<TrainingListPage currentUser={currentUser} onLogout={handleLogout} />} />
           <Route path="/training/:courseId" element={<CourseDetailPage currentUser={currentUser} onLogout={handleLogout} />} />
           <Route path="/checkout/:courseId" element={<CheckoutPage currentUser={currentUser} onLogout={handleLogout} onCompletePurchase={handleCompletePurchase} />} />
-          <Route path="/dashboard" element={<DashboardPage currentUser={currentUser} onLogout={handleLogout} purchasedCourses={purchasedCourses} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
+          <Route path="/dashboard" element={<DashboardPage currentUser={currentUser} onLogout={handleLogout} purchasedCourses={purchasedCourses} savedUserRoutes={savedUserRoutes} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
           <Route path="/profile" element={<ProfilePage currentUser={currentUser} onLogout={handleLogout} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
           <Route path="/notifications" element={<NotificationsPage currentUser={currentUser} onLogout={handleLogout} />} />
           <Route path="/drivers" element={<DriversPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
           <Route path="/companies" element={<CompaniesPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
-          <Route path="/planner" element={<PlannerPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
+          <Route path="/planner" element={<PlannerPage currentUser={currentUser} onLogout={handleLogout} onSaveRoute={handleSaveUserRoute} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
+          <Route path="/dispatch-orders" element={<DispatchOrdersPage currentUser={currentUser} onLogout={handleLogout} />} />
           {/* <Route path="/growth" element={<GrowthPage currentUser={currentUser} onLogout={handleLogout} />} /> */}
           <Route path="/certification" element={<CertificationPage currentUser={currentUser} onLogout={handleLogout} />} />
         </Route>

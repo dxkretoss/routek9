@@ -83,8 +83,9 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
               {renderLink('Find Routes', '/', '#map-section', true)}
               {renderLink('Gov Contracts', '/', '#government-contracts-section', true)}
               {renderLink('Route Planner', '/planner')}
+              {currentUser && currentUser?.role !== 'company' && renderLink('Dispatch Orders', '/dispatch-orders')}
               {showBuyRoute && renderLink('Buy a Route', '/', '#buy-a-route-section', true)}
-              {renderLink('Drivers', '/drivers')}
+              {(!currentUser || currentUser?.role !== 'driver') && renderLink('Drivers', '/drivers')}
               {renderLink('Companies', '/companies')}
               {/* {renderLink('Growth', '/growth')} */}
               {renderLink('Training', '/training')}
@@ -226,6 +227,12 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           <Link to="/" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Home</Link>
           <a href="/#map-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Find Routes</a>
           <Link to="/planner" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Route Planner</Link>
+          {currentUser && currentUser?.role !== 'company' && (
+            <Link to="/dispatch-orders" onClick={() => setMobileMenuOpen(false)} className="py-2 text-rose-600 font-extrabold flex items-center justify-between">
+              <span>Dispatch Orders</span>
+              <span className="px-2 py-0.5 text-[9px] bg-rose-600 text-white rounded-full font-bold uppercase">LIVE</span>
+            </Link>
+          )}
           <a href="/#government-contracts-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Gov Contracts</a>
 
           {showBuyRoute && (
@@ -237,9 +244,11 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
             <span>Notifications</span>
             <span className="px-2 py-0.5 text-[10px] bg-rose-600 text-white rounded-full font-bold">3 New</span>
           </Link>
-          <Link to="/drivers" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
-            Drivers Directory
-          </Link>
+          {(!currentUser || currentUser?.role !== 'driver') && (
+            <Link to="/drivers" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+              Drivers Directory
+            </Link>
+          )}
           <Link to="/companies" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
             Companies Directory
           </Link>

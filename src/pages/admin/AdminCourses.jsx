@@ -12,7 +12,7 @@ import {
   Layers,
   Upload
 } from 'lucide-react';
-import { CourseCard } from './components/AdminComponents';
+import { CourseCard, ConfirmModal } from './components/AdminComponents';
 import { getCourses, createCourse, updateCourse, deleteCourse, DEFAULT_COURSE_IMAGES } from '../../lib/courses';
 
 export default function AdminCourses() {
@@ -21,6 +21,10 @@ export default function AdminCourses() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
+
+  // Custom Delete Confirm Modal State
+  const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, courseId: null, title: '' });
+  const [deleting, setDeleting] = useState(false);
 
   // New Course Form State
   const [newTitle, setNewTitle] = useState('');
@@ -70,7 +74,8 @@ export default function AdminCourses() {
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("Please select an image file smaller than 5MB.");
+      setSuccessMsg("Please select an image file smaller than 5MB.");
+      setTimeout(() => setSuccessMsg(null), 4000);
       return;
     }
 
@@ -165,13 +170,18 @@ export default function AdminCourses() {
     setTimeout(() => setSuccessMsg(null), 4000);
   };
 
-  const handleDeleteCourse = async (id, title) => {
-    if (!window.confirm(`Are you sure you want to delete "${title}"?`)) return;
+  const promptDeleteCourse = (id, title) => {
+    setDeleteModalState({ isOpen: true, courseId: id, title });
+  };
 
-    await deleteCourse(id);
-    setCourses(prev => prev.filter(c => c.id !== id));
-
-    setSuccessMsg(`Course "${title}" removed from Supabase.`);
+  const handleExecuteDelete = async () => {
+    if (!deleteModalState.courseId) return;
+    setDeleting(true);
+    await deleteCourse(deleteModalState.courseId);
+    setCourses(prev => prev.filter(c => c.id !== deleteModalState.courseId));
+    setDeleting(false);
+    setSuccessMsg(`Course "${deleteModalState.title}" removed from Supabase.`);
+    setDeleteModalState({ isOpen: false, courseId: null, title: '' });
     setTimeout(() => setSuccessMsg(null), 4000);
   };
 
@@ -199,7 +209,7 @@ export default function AdminCourses() {
 
       {/* Success Notification */}
       {successMsg && (
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between">
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between animate-fadeIn">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{successMsg}</span>
@@ -265,7 +275,7 @@ export default function AdminCourses() {
                         <span>Edit Course</span>
                       </button>
                       <button
-                        onClick={() => handleDeleteCourse(course.id, course.title)}
+                        onClick={() => promptDeleteCourse(course.id, course.title)}
                         className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -286,18 +296,13 @@ export default function AdminCourses() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center">
-                  <BookOpen className="w-5 h-5 text-rose-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Create New Course</h3>
-                  <p className="text-xs text-slate-400 font-medium">Add a dynamic training course with modules to Supabase</p>
-                </div>
+              <div>
+                <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Create New Training Course</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Add a new course module with image, pricing, and curriculum syllabus</p>
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -309,14 +314,14 @@ export default function AdminCourses() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Hazardous Materials Courier Certification"
+                  placeholder="e.g. Master Contractor Certification"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                 />
               </div>
 
-              {/* Cover Image: File Upload OR Direct URL OR Presets */}
+              {/* Cover Image */}
               <div className="space-y-2.5 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
                 <label className="block text-xs font-bold text-slate-800 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
@@ -327,8 +332,6 @@ export default function AdminCourses() {
                 </label>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                  
-                  {/* Option 1: File Upload */}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">Option 1: Upload Image File</label>
                     <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white border border-dashed border-rose-300 hover:border-rose-500 text-rose-600 font-bold text-xs cursor-pointer shadow-xs transition-all hover:bg-rose-50/50">
@@ -343,7 +346,6 @@ export default function AdminCourses() {
                     </label>
                   </div>
 
-                  {/* Option 2: Image URL */}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">Option 2: Direct Image Link URL</label>
                     <input
@@ -354,18 +356,28 @@ export default function AdminCourses() {
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
                     />
                   </div>
-
                 </div>
 
-                {/* Option 3: Presets */}
+                {/* Presets */}
                 <div className="space-y-1 pt-1">
                   <span className="text-[10px] text-slate-400 font-bold uppercase">Or Pick Preset Image:</span>
                   <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setNewImageUrl('')}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        !newImageUrl
+                          ? 'bg-slate-800 text-white border-slate-800'
+                          : 'bg-white hover:bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      Clear Selection
+                    </button>
                     {PRESET_IMAGES.map((img, idx) => (
                       <button
                         key={idx}
                         type="button"
-                        onClick={() => setNewImageUrl(img.url)}
+                        onClick={() => setNewImageUrl(newImageUrl === img.url ? '' : img.url)}
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
                           newImageUrl === img.url
                             ? 'bg-rose-600 text-white border-rose-600'
@@ -378,7 +390,6 @@ export default function AdminCourses() {
                   </div>
                 </div>
 
-                {/* Live Image Preview */}
                 {newImageUrl && (
                   <div className="relative h-28 rounded-2xl overflow-hidden border border-slate-300 shadow-inner bg-slate-900 group">
                     <img src={newImageUrl} alt="Cover Preview" className="w-full h-full object-cover" />
@@ -435,142 +446,6 @@ export default function AdminCourses() {
                 />
               </div>
 
-              {/* Dynamic Outcomes List */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-slate-700">Key Outcomes (Bullet Points)</label>
-                  <button
-                    type="button"
-                    onClick={() => setNewOutcomes([...newOutcomes, ''])}
-                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
-                  >
-                    + Add Outcome Bullet
-                  </button>
-                </div>
-
-                {newOutcomes.map((outcome, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder={`Outcome ${idx + 1}`}
-                      value={outcome}
-                      onChange={(e) => {
-                        const updated = [...newOutcomes];
-                        updated[idx] = e.target.value;
-                        setNewOutcomes(updated);
-                      }}
-                      className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500"
-                    />
-                    {newOutcomes.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setNewOutcomes(newOutcomes.filter((_, i) => i !== idx))}
-                        className="p-2 text-slate-400 hover:text-rose-600 cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Dynamic Syllabus Modules Editor */}
-              <div className="space-y-3 pt-4 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-extrabold text-[#0b132b] flex items-center gap-1.5">
-                    <Layers className="w-4 h-4 text-rose-600" />
-                    <span>Course Curriculum & Syllabus Modules ({newOutline.length})</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setNewOutline([...newOutline, { moduleNumber: newOutline.length + 1, moduleTitle: `Module ${newOutline.length + 1}`, lessons: [''] }])}
-                    className="text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-700 px-3 py-1 rounded-lg transition-all cursor-pointer"
-                  >
-                    + Add Curriculum Module
-                  </button>
-                </div>
-
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                  {newOutline.map((mod, mIdx) => (
-                    <div key={mIdx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-extrabold uppercase text-rose-600 bg-rose-50 px-2 py-0.5 rounded">
-                          Module 0{mIdx + 1}
-                        </span>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Module Title (e.g. Master Contractor Foundations)"
-                          value={mod.moduleTitle}
-                          onChange={(e) => {
-                            const updated = [...newOutline];
-                            updated[mIdx].moduleTitle = e.target.value;
-                            setNewOutline(updated);
-                          }}
-                          className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                        />
-                        {newOutline.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setNewOutline(newOutline.filter((_, i) => i !== mIdx))}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 cursor-pointer"
-                            title="Delete Module"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Lessons List under this Module */}
-                      <div className="space-y-1.5 pl-2 border-l-2 border-rose-300">
-                        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
-                          <span>Module Lessons:</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = [...newOutline];
-                              updated[mIdx].lessons.push('');
-                              setNewOutline(updated);
-                            }}
-                            className="text-rose-600 hover:underline cursor-pointer"
-                          >
-                            + Add Lesson
-                          </button>
-                        </div>
-                        {mod.lessons.map((lesson, lIdx) => (
-                          <div key={lIdx} className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              placeholder={`Lesson ${lIdx + 1}`}
-                              value={lesson}
-                              onChange={(e) => {
-                                const updated = [...newOutline];
-                                updated[mIdx].lessons[lIdx] = e.target.value;
-                                setNewOutline(updated);
-                              }}
-                              className="flex-1 px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-800"
-                            />
-                            {mod.lessons.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updated = [...newOutline];
-                                  updated[mIdx].lessons = updated[mIdx].lessons.filter((_, i) => i !== lIdx);
-                                  setNewOutline(updated);
-                                }}
-                                className="text-slate-400 hover:text-rose-600 cursor-pointer"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -598,18 +473,13 @@ export default function AdminCourses() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center">
-                  <Edit className="w-5 h-5 text-indigo-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Edit Course</h3>
-                  <p className="text-xs text-slate-400 font-medium">Update course details, image, and syllabus modules in Supabase</p>
-                </div>
+              <div>
+                <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Edit Course</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Modify pricing, image cover, or curriculum syllabus</p>
               </div>
               <button
                 onClick={() => setShowEditModal(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -627,7 +497,7 @@ export default function AdminCourses() {
                 />
               </div>
 
-              {/* Cover Image: File Upload OR Direct URL OR Presets */}
+              {/* Cover Image */}
               <div className="space-y-2.5 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
                 <label className="block text-xs font-bold text-slate-800 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
@@ -638,8 +508,6 @@ export default function AdminCourses() {
                 </label>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                  
-                  {/* Option 1: File Upload */}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">Option 1: Upload Image File</label>
                     <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white border border-dashed border-indigo-300 hover:border-indigo-500 text-indigo-600 font-bold text-xs cursor-pointer shadow-xs transition-all hover:bg-indigo-50/50">
@@ -654,7 +522,6 @@ export default function AdminCourses() {
                     </label>
                   </div>
 
-                  {/* Option 2: Image URL */}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">Option 2: Direct Image Link URL</label>
                     <input
@@ -665,18 +532,28 @@ export default function AdminCourses() {
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
                   </div>
-
                 </div>
 
-                {/* Option 3: Presets */}
+                {/* Presets */}
                 <div className="space-y-1 pt-1">
                   <span className="text-[10px] text-slate-400 font-bold uppercase">Or Pick Preset Image:</span>
                   <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditImageUrl('')}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        !editImageUrl
+                          ? 'bg-slate-800 text-white border-slate-800'
+                          : 'bg-white hover:bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      Clear Selection
+                    </button>
                     {PRESET_IMAGES.map((img, idx) => (
                       <button
                         key={idx}
                         type="button"
-                        onClick={() => setEditImageUrl(img.url)}
+                        onClick={() => setEditImageUrl(editImageUrl === img.url ? '' : img.url)}
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
                           editImageUrl === img.url
                             ? 'bg-indigo-600 text-white border-indigo-600'
@@ -689,7 +566,6 @@ export default function AdminCourses() {
                   </div>
                 </div>
 
-                {/* Live Image Preview */}
                 {editImageUrl && (
                   <div className="relative h-28 rounded-2xl overflow-hidden border border-slate-300 shadow-inner bg-slate-900 group">
                     <img src={editImageUrl} alt="Cover Preview" className="w-full h-full object-cover" />
@@ -700,7 +576,7 @@ export default function AdminCourses() {
                       <button
                         type="button"
                         onClick={() => setEditImageUrl('')}
-                        className="text-white hover:text-indigo-400 p-1 bg-black/60 hover:bg-black/90 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                        className="text-white hover:text-rose-400 p-1 bg-black/60 hover:bg-black/90 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
                       >
                         Remove
                       </button>
@@ -743,143 +619,6 @@ export default function AdminCourses() {
                 />
               </div>
 
-              {/* Dynamic Outcomes List */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-slate-700">Key Outcomes (Bullet Points)</label>
-                  <button
-                    type="button"
-                    onClick={() => setEditOutcomes([...editOutcomes, ''])}
-                    className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
-                  >
-                    + Add Outcome Bullet
-                  </button>
-                </div>
-
-                {editOutcomes.map((outcome, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder={`Outcome ${idx + 1}`}
-                      value={outcome}
-                      onChange={(e) => {
-                        const updated = [...editOutcomes];
-                        updated[idx] = e.target.value;
-                        setEditOutcomes(updated);
-                      }}
-                      className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
-                    />
-                    {editOutcomes.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setEditOutcomes(editOutcomes.filter((_, i) => i !== idx))}
-                        className="p-2 text-slate-400 hover:text-rose-600 cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Dynamic Syllabus Modules Editor */}
-              <div className="space-y-3 pt-4 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-extrabold text-[#0b132b] flex items-center gap-1.5">
-                    <Layers className="w-4 h-4 text-indigo-600" />
-                    <span>Course Curriculum & Syllabus Modules ({editOutline.length})</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setEditOutline([...editOutline, { moduleNumber: editOutline.length + 1, moduleTitle: `Module ${editOutline.length + 1}`, lessons: [''] }])}
-                    className="text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded-lg transition-all cursor-pointer"
-                  >
-                    + Add Curriculum Module
-                  </button>
-                </div>
-
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                  {editOutline.map((mod, mIdx) => (
-                    <div key={mIdx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-extrabold uppercase text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
-                          Module 0{mIdx + 1}
-                        </span>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Module Title (e.g. Legal Setup & DOT/MC Authority)"
-                          value={mod.moduleTitle}
-                          onChange={(e) => {
-                            const updated = [...editOutline];
-                            updated[mIdx].moduleTitle = e.target.value;
-                            setEditOutline(updated);
-                          }}
-                          className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                        />
-                        {editOutline.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setEditOutline(editOutline.filter((_, i) => i !== mIdx))}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 cursor-pointer"
-                            title="Delete Module"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Lessons List under this Module */}
-                      <div className="space-y-1.5 pl-2 border-l-2 border-indigo-300">
-                        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
-                          <span>Module Lessons:</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = [...editOutline];
-                              if (!updated[mIdx].lessons) updated[mIdx].lessons = [];
-                              updated[mIdx].lessons.push('');
-                              setEditOutline(updated);
-                            }}
-                            className="text-indigo-600 hover:underline cursor-pointer"
-                          >
-                            + Add Lesson
-                          </button>
-                        </div>
-                        {(mod.lessons || []).map((lesson, lIdx) => (
-                          <div key={lIdx} className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              placeholder={`Lesson ${lIdx + 1}`}
-                              value={lesson}
-                              onChange={(e) => {
-                                const updated = [...editOutline];
-                                updated[mIdx].lessons[lIdx] = e.target.value;
-                                setEditOutline(updated);
-                              }}
-                              className="flex-1 px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-800"
-                            />
-                            {(mod.lessons || []).length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updated = [...editOutline];
-                                  updated[mIdx].lessons = updated[mIdx].lessons.filter((_, i) => i !== lIdx);
-                                  setEditOutline(updated);
-                                }}
-                                className="text-slate-400 hover:text-rose-600 cursor-pointer"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -901,6 +640,18 @@ export default function AdminCourses() {
           </div>
         </div>
       )}
+
+      {/* CUSTOM DELETE CONFIRMATION MODAL */}
+      <ConfirmModal
+        isOpen={deleteModalState.isOpen}
+        onClose={() => setDeleteModalState({ isOpen: false, courseId: null, title: '' })}
+        onConfirm={handleExecuteDelete}
+        title="Delete Course"
+        message={`Are you sure you want to delete "${deleteModalState.title}"? This will permanently remove it from Supabase.`}
+        confirmText="Delete Course"
+        confirmColor="rose"
+        loading={deleting}
+      />
     </div>
   );
 }
