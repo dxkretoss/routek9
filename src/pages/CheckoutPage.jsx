@@ -16,6 +16,7 @@ import { useState, useEffect } from 'react';
 
 
 import { getCourses } from '../lib/courses';
+import { supabase } from '../lib/supabase';
 
 export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase }) {
   const { courseId } = useParams();
@@ -51,6 +52,41 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
   const [cardholderName, setCardholderName] = useState(certName);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  const queryParams = new URLSearchParams(location.search);
+  const sessionId = queryParams.get('session_id');
+
+  useEffect(() => {
+    if (sessionId && course) {
+      async function handlePaymentSuccess() {
+        onCompletePurchase(course.id, certName);
+
+        try {
+          const { data: existing } = await supabase
+            .from('transactions')
+            .select('id')
+            .eq('id', sessionId)
+            .limit(1);
+
+          if (!existing || existing.length === 0) {
+            await supabase.from('transactions').insert([{
+              id: sessionId,
+              email: currentUser?.email || 'guest@routek9.com',
+              description: course.title || `Route K9 Course Purchase`,
+              amount: `$${course.price || 49}.00`,
+              status: 'Succeeded',
+              created_at: new Date().toISOString()
+            }]);
+          }
+        } catch (err) {
+          console.warn("Failed to save transaction record to database:", err);
+        }
+
+        setShowSuccessModal(true);
+      }
+      handlePaymentSuccess();
+    }
+  }, [sessionId, course, currentUser]);
 
   const handlePay = (e) => {
     e.preventDefault();

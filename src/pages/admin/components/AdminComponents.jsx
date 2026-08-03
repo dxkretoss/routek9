@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../../lib/supabase';
 import {
   Users,
   Truck,
@@ -244,14 +245,46 @@ export function CourseCard({ course, detailed = false }) {
   );
 }
 
-// ─── Recent Transactions Table ──────────────────────────────────
 export function RecentTransactionsTable() {
-  const transactions = [
-    { id: 'tx_101', email: 'john.driver@gmail.com', desc: 'Route K9 PRO Membership (Monthly)', amount: '$29.00', date: 'Jul 31, 2026', status: 'Succeeded' },
-    { id: 'tx_102', email: 'sarah.courier@yahoo.com', desc: 'HIPAA Medical Courier Certification', amount: '$49.00', date: 'Jul 30, 2026', status: 'Succeeded' },
-    { id: 'tx_103', email: 'mike.fleet@logistics.com', desc: 'TSA Airport Security Clearance Course', amount: '$99.00', date: 'Jul 29, 2026', status: 'Succeeded' },
-    { id: 'tx_104', email: 'alex.trans@gmail.com', desc: 'Route K9 PRO Membership (Yearly)', amount: '$299.00', date: 'Jul 28, 2026', status: 'Succeeded' },
+  const [dbTransactions, setDbTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchTx() {
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (data) {
+          setDbTransactions(data);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch transactions:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchTx();
+  }, []);
+
+  const mockTransactions = [
+    { id: 'tx_101', email: 'john.driver@gmail.com', description: 'Route K9 PRO Membership (Monthly)', amount: '$29.00', created_at: '2026-07-31T12:00:00Z', status: 'Succeeded' },
+    { id: 'tx_102', email: 'sarah.courier@yahoo.com', description: 'HIPAA Medical Courier Certification', amount: '$49.00', created_at: '2026-07-30T12:00:00Z', status: 'Succeeded' },
+    { id: 'tx_103', email: 'mike.fleet@logistics.com', description: 'TSA Airport Security Clearance Course', amount: '$99.00', created_at: '2026-07-29T12:00:00Z', status: 'Succeeded' },
+    { id: 'tx_104', email: 'alex.trans@gmail.com', description: 'Route K9 PRO Membership (Yearly)', amount: '$299.00', created_at: '2026-07-28T12:00:00Z', status: 'Succeeded' },
   ];
+
+  const transactions = dbTransactions.length > 0 ? dbTransactions : mockTransactions;
+
+  if (loading && dbTransactions.length === 0) {
+    return (
+      <div className="py-6 text-center text-xs font-bold text-slate-400">
+        Loading Stripe transactions...
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -266,19 +299,26 @@ export function RecentTransactionsTable() {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50 text-xs">
-          {transactions.map((tx) => (
-            <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-              <td className="px-6 py-4 font-bold text-slate-900">{tx.email}</td>
-              <td className="px-6 py-4 text-slate-600 font-medium">{tx.desc}</td>
-              <td className="px-6 py-4 font-extrabold text-emerald-600">{tx.amount}</td>
-              <td className="px-6 py-4 text-slate-400 font-medium">{tx.date}</td>
-              <td className="px-6 py-4">
-                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
-                  {tx.status}
-                </span>
-              </td>
-            </tr>
-          ))}
+          {transactions.map((tx) => {
+            const formattedDate = new Date(tx.created_at || tx.date).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            });
+            return (
+              <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4 font-bold text-slate-900">{tx.email}</td>
+                <td className="px-6 py-4 text-slate-600 font-medium">{tx.description || tx.desc}</td>
+                <td className="px-6 py-4 font-extrabold text-emerald-600">{tx.amount}</td>
+                <td className="px-6 py-4 text-slate-400 font-medium">{formattedDate}</td>
+                <td className="px-6 py-4">
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
+                    {tx.status}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

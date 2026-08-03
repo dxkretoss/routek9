@@ -41,7 +41,7 @@ export async function createCertificationCheckout({ data }) {
     }
 
     const params = new URLSearchParams({
-      ui_mode: "embedded",
+      ui_mode: "embedded_page",
       mode: isSubscription ? "subscription" : "payment",
       return_url: cleanReturnUrl,
       "line_items[0][price_data][currency]": "usd",
