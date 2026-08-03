@@ -91,7 +91,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
       }
 
       const getSubscriptionDetails = (userId, email) => {
-        const userSubs = rawTxs.filter(tx => 
+        const userSubs = rawTxs.filter(tx =>
           tx.status === 'Succeeded' &&
           (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
           ((tx.user_id && String(tx.user_id) === String(userId)) || (tx.email && email && tx.email.toLowerCase() === email.toLowerCase()))
@@ -397,8 +397,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                       </td>
 
                       <td className="px-6 py-4 font-bold">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${driver.membership === 'Pro' 
-                          ? 'bg-amber-50 text-amber-700 border-amber-300 font-black' 
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${driver.membership === 'Pro'
+                          ? 'bg-amber-50 text-amber-700 border-amber-300 font-black'
                           : 'bg-slate-50 text-slate-500 border-slate-300'}`}>
                           {driver.membership === 'Pro' ? '★ Pro' : 'Free'}
                         </span>
@@ -532,8 +532,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              overallStatus === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                'bg-slate-100 text-slate-600 border-slate-200'
+                            overallStatus === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              'bg-slate-100 text-slate-600 border-slate-200'
                             }`}>
                             {overallStatus}
                           </span>
@@ -673,8 +673,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                         <span className="truncate" title={s.label}>{s.label}</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-slate-100 text-slate-600 border-slate-200'
+                        s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          'bg-slate-100 text-slate-600 border-slate-200'
                         }`}>
                         {s.status || 'pending'}
                       </span>
@@ -716,13 +716,13 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
               background: #94a3b8;
             }
           `}</style>
-          
+
           <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Modal Header */}
             <div className="p-6 bg-slate-900 text-white flex justify-between items-start text-left">
               <div className="flex items-center gap-3.5 flex-1">
-                <div className={`w-12 h-12 rounded-2xl font-black text-lg flex items-center justify-center shadow-md shrink-0 ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600' : 'bg-[#0b132b]'}`}>
+                <div className={`w-12 h-12 bg-rose-600 rounded-2xl font-black text-lg flex items-center justify-center shadow-md shrink-0 ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600' : 'bg-[#0b132b]'}`}>
                   {(selectedDriverModal.full_name || selectedDriverModal.email || 'D').charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
@@ -752,7 +752,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
 
             {/* Modal Content */}
             <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700 custom-modal-scrollbar">
-              
+
               {/* Account Status Control Card */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-left">
                 <div>
@@ -858,7 +858,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                       {selectedDriverModal.membership === 'Pro' ? 'Pro Plan' : 'Free Starter'}
                     </span>
                   </div>
-                  
+
                   <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block">Amount Paid</span>
                     <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.amountPaid || '$0.00'}</span>

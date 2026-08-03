@@ -62,7 +62,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
       }
 
       const getSubscriptionDetails = (userId, email) => {
-        const userSubs = rawTxs.filter(tx => 
+        const userSubs = rawTxs.filter(tx =>
           tx.status === 'Succeeded' &&
           (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
           ((tx.user_id && String(tx.user_id) === String(userId)) || (tx.email && email && tx.email.toLowerCase() === email.toLowerCase()))
@@ -275,8 +275,8 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
 
                       {/* Member status */}
                       <td className="px-6 py-4 font-bold">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${comp.membership === 'Pro' 
-                          ? 'bg-amber-50 text-amber-700 border-amber-300 font-black' 
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${comp.membership === 'Pro'
+                          ? 'bg-amber-50 text-amber-700 border-amber-300 font-black'
                           : 'bg-slate-50 text-slate-500 border-slate-300'}`}>
                           {comp.membership === 'Pro' ? '★ Pro' : 'Free'}
                         </span>
@@ -339,6 +339,23 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
       {/* FULL COMPANY DETAILS MODAL POPUP */}
       {selectedCompanyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
+          <style>{`
+            .custom-modal-scrollbar::-webkit-scrollbar {
+              width: 6px;
+            }
+            .custom-modal-scrollbar::-webkit-scrollbar-track {
+              background: #f1f5f9;
+              border-radius: 10px;
+            }
+            .custom-modal-scrollbar::-webkit-scrollbar-thumb {
+              background: #cbd5e1;
+              border-radius: 10px;
+            }
+            .custom-modal-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: #94a3b8;
+            }
+          `}</style>
+
           <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
 
             {/* Modal Header */}
@@ -368,7 +385,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
             </div>
 
             {/* Modal Content */}
-            <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700">
+            <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700  custom-modal-scrollbar">
 
               {/* Account Status Control Card */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
@@ -446,7 +463,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                       {selectedCompanyModal.membership === 'Pro' ? 'Pro Plan' : 'Free Starter'}
                     </span>
                   </div>
-                  
+
                   <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block">Amount Paid</span>
                     <span className="font-extrabold text-slate-800">{selectedCompanyModal.subscription?.amountPaid || '$0.00'}</span>
