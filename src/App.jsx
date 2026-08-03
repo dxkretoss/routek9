@@ -218,6 +218,7 @@ export default function App() {
   useEffect(() => {
     async function loadPurchasedCourses() {
       if (currentUser?.id) {
+        let dbSucceeded = false;
         try {
           const { data, error } = await supabase
             .from('transactions')
@@ -225,20 +226,25 @@ export default function App() {
 
           if (data && !error) {
             const courseIds = data
-              .filter(tx => String(tx.user_id) === String(currentUser.id) && tx.status === 'Succeeded')
+              .filter(tx => 
+                tx.status === 'Succeeded' && 
+                (String(tx.user_id) === String(currentUser.id) || 
+                 (tx.email && currentUser.email && tx.email.toLowerCase() === currentUser.email.toLowerCase()))
+              )
               .map(tx => tx.course_id)
               .filter(Boolean);
-            if (courseIds.length > 0) {
-              setPurchasedCourses(courseIds);
-              return;
-            }
+            setPurchasedCourses(courseIds);
+            dbSucceeded = true;
           }
         } catch (err) {
           console.warn("Error loading purchased courses from DB:", err);
         }
-        // Fallback to cookie for local testing or if DB columns don't exist yet
-        const cookieCourses = getCookie(COURSES_COOKIE_NAME) || [];
-        setPurchasedCourses(cookieCourses);
+
+        if (!dbSucceeded) {
+          // Fallback to cookie only if DB query failed
+          const cookieCourses = getCookie(COURSES_COOKIE_NAME) || [];
+          setPurchasedCourses(cookieCourses);
+        }
       } else {
         setPurchasedCourses([]);
       }
@@ -464,6 +470,7 @@ export default function App() {
     }
     setCurrentUser(null);
     deleteCookie(SESSION_COOKIE_NAME);
+    deleteCookie(COURSES_COOKIE_NAME);
     navigate('/');
   };
 

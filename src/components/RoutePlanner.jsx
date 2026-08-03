@@ -377,17 +377,66 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
     fetchRoutesFromDB();
   }, [fetchRoutesFromDB]);
 
+  const loadRouteIntoPlanner = (route) => {
+    if (!route || !route.stops) return;
+    
+    // 1. Reconstruct stops
+    const stopsWithZones = route.stops.map(s => ({
+      id: s.id || `stop-${Math.random()}`,
+      label: s.label,
+      lat: s.lat,
+      lon: s.lon,
+      zoneId: s.zoneId || null
+    }));
+    setStops(stopsWithZones);
+
+    // 2. Reconstruct zones
+    const uniqueZonesMap = new Map();
+    route.stops.forEach(s => {
+      if (s.zoneId) {
+        if (!uniqueZonesMap.has(s.zoneId)) {
+          uniqueZonesMap.set(s.zoneId, {
+            id: s.zoneId,
+            name: s.zoneName || getFriendlyZoneName(s, route.stops),
+            driverId: s.driverId || null,
+            driverName: s.driverName || '',
+            driverPhone: s.driverPhone || ''
+          });
+        }
+      }
+    });
+    const reconstructedZones = Array.from(uniqueZonesMap.values());
+    setZones(reconstructedZones);
+
+    // 3. Reconstruct whole-route driver assignment if no zones
+    if (reconstructedZones.length === 0) {
+      const firstStopWithDriver = route.stops.find(s => s.driverId);
+      if (firstStopWithDriver) {
+        setAssignedDriverId(firstStopWithDriver.driverId || "");
+      } else {
+        setAssignedDriverId("");
+      }
+    } else {
+      setAssignedDriverId("");
+    }
+
+    // 4. Set rest of UI states
+    setSelectedHistoryId(route.id);
+    setExpandedHistoryId(route.id);
+    
+    const hasAssignments = reconstructedZones.length > 0 || route.stops.some(s => s.driverId);
+    setWizardStep(hasAssignments ? 3 : 1);
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   // Auto-load route from ?load=<routeId> URL param (coming from Driver Dashboard "View in Planner")
   useEffect(() => {
     const loadId = searchParams.get('load');
     if (!loadId || routeHistory.length === 0) return;
     const target = routeHistory.find(r => r.id === loadId);
     if (target && target.stops && target.stops.length > 0) {
-      setStops(target.stops.map(s => ({ label: s.label, lat: s.lat, lon: s.lon, zoneId: null })));
-      setSelectedHistoryId(target.id);
-      setExpandedHistoryId(target.id);
-      setWizardStep(1);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      loadRouteIntoPlanner(target);
     }
   }, [searchParams, routeHistory]);
 
@@ -2820,12 +2869,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                                   <button
                                     type="button"
                                     title="Load this route into the planner"
-                                    onClick={() => {
-                                      setStops(route.stops.map(s => ({ label: s.label, lat: s.lat, lon: s.lon, zoneId: null })));
-                                      setSelectedHistoryId(route.id);
-                                      setWizardStep(1);
-                                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                                    }}
+                                    onClick={() => loadRouteIntoPlanner(route)}
                                     className="px-2.5 py-1.5 rounded-lg bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-[10px] shadow transition-colors cursor-pointer flex items-center gap-1"
                                   >
                                     <Truck className="w-3 h-3" />
