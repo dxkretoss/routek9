@@ -347,6 +347,42 @@ export default function App() {
         }
       }
 
+      let isPro = false;
+      let subscriptionPlan = 'free';
+      let subscribedAt = null;
+      let nextRenewal = null;
+
+      try {
+        const { data: txs, error: txError } = await supabase
+          .from('transactions')
+          .select('*');
+
+        if (txs && !txError) {
+          const userSubs = txs.filter(tx => 
+            String(tx.user_id) === String(supabaseUser.id) && 
+            tx.status === 'Succeeded' && 
+            (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro'))
+          );
+
+          if (userSubs.length > 0) {
+            userSubs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestSub = userSubs[0];
+            const createdTime = new Date(latestSub.created_at).getTime();
+            const isYearly = latestSub.course_id === 'pro-yearly' || latestSub.description?.toLowerCase().includes('yearly') || latestSub.amount?.includes('299');
+            const validityPeriod = isYearly ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+
+            if (Date.now() - createdTime < validityPeriod) {
+              isPro = true;
+              subscriptionPlan = isYearly ? 'yearly' : 'pro';
+              subscribedAt = new Date(createdTime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+              nextRenewal = new Date(createdTime + validityPeriod).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            }
+          }
+        }
+      } catch (subErr) {
+        console.warn("Could not check subscription status:", subErr);
+      }
+
       setCurrentUser((prev) => {
         const updated = {
           ...(prev || {}),
@@ -360,8 +396,10 @@ export default function App() {
           phone: profile?.phone || prev?.phone || '',
           dotNumber: profile?.dot_number || prev?.dotNumber || '',
           insurancePolicy: profile?.insurance_policy || prev?.insurancePolicy || '',
-          isPro: prev?.isPro || false,
-          subscriptionPlan: prev?.subscriptionPlan || 'free'
+          isPro: isPro || prev?.isPro || false,
+          subscriptionPlan: subscriptionPlan || prev?.subscriptionPlan || 'free',
+          subscribedAt: subscribedAt || prev?.subscribedAt || null,
+          nextRenewal: nextRenewal || prev?.nextRenewal || null
         };
         setCookie(SESSION_COOKIE_NAME, updated, 30);
         return updated;

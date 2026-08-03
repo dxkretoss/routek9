@@ -16,6 +16,7 @@ import {
   FileText
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro }) {
   const [searchParams] = useSearchParams();
@@ -36,6 +37,97 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [subscriptionReceipt, setSubscriptionReceipt] = useState(null);
+  const [hasProcessed, setHasProcessed] = useState(false);
+
+  const queryParams = new URLSearchParams(window.location.search);
+  const sessionId = queryParams.get('session_id');
+
+  // Self-healing database insert helper for transactions
+  async function safeInsertTransaction(payload) {
+    const { data, error } = await supabase.from('transactions').insert([payload]).select();
+    if (error) {
+      if (error.code === '42703' || error.message?.includes('column')) {
+        const match = error.message?.match(/column "(\w+)"/);
+        const missingColumn = match ? match[1] : null;
+        if (missingColumn && payload.hasOwnProperty(missingColumn)) {
+          const nextPayload = { ...payload };
+          delete nextPayload[missingColumn];
+          return await safeInsertTransaction(nextPayload);
+        }
+      }
+      if (payload.hasOwnProperty('user_id')) {
+        const nextPayload = { ...payload };
+        delete nextPayload.user_id;
+        return await safeInsertTransaction(nextPayload);
+      }
+      if (payload.hasOwnProperty('course_id')) {
+        const nextPayload = { ...payload };
+        delete nextPayload.course_id;
+        return await safeInsertTransaction(nextPayload);
+      }
+      throw error;
+    }
+    return data;
+  }
+
+  useEffect(() => {
+    if (sessionId && !hasProcessed) {
+      setHasProcessed(true);
+      async function handleSubSuccess() {
+        const now = new Date();
+        const subscribedAt = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+        const renewalDate = new Date(now);
+        if (billingCycle === 'yearly') {
+          renewalDate.setFullYear(renewalDate.getFullYear() + 1);
+        } else {
+          renewalDate.setMonth(renewalDate.getMonth() + 1);
+        }
+        const nextRenewal = renewalDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+        const subscriptionData = {
+          isPro: true,
+          subscriptionPlan: billingCycle === 'yearly' ? 'yearly' : 'pro',
+          planName: 'Route K9 PRO Membership',
+          billingCycle,
+          amountPaid: `$${price}.00 USD`,
+          subscribedAt,
+          nextRenewal
+        };
+
+        // Upgrade local state
+        onUpgradePro(subscriptionData);
+        setSubscriptionReceipt(subscriptionData);
+
+        // Save transaction to DB
+        try {
+          const { data: existing } = await supabase
+            .from('transactions')
+            .select('id')
+            .eq('id', sessionId)
+            .limit(1);
+
+          if (!existing || existing.length === 0) {
+            await safeInsertTransaction({
+              id: sessionId,
+              user_id: currentUser?.id || null,
+              course_id: `pro-${billingCycle}`,
+              email: currentUser?.email || 'guest@routek9.com',
+              description: `Route K9 PRO Membership (${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'})`,
+              amount: `$${price}.00`,
+              status: 'Succeeded',
+              created_at: new Date().toISOString()
+            });
+          }
+        } catch (err) {
+          console.warn("Failed to save subscription transaction record to database:", err);
+        }
+
+        setShowSuccessModal(true);
+      }
+      handleSubSuccess();
+    }
+  }, [sessionId, billingCycle, price, currentUser, hasProcessed]);
 
   useEffect(() => {
     if (currentUser) {
