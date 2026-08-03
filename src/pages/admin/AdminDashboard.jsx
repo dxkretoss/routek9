@@ -136,7 +136,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
             />
             <StatCard
               label="Total Revenue"
-              value={totalRevenue > 0 ? `$${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD` : "$18,450.00 USD"}
+              value={`$${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
               subtext="Course & subscription sales"
               icon={DollarSign}
               color="rose"

@@ -66,11 +66,11 @@ export default function AdminRevenue() {
     loadRevenueStats();
   }, []);
 
-  const displayTotalRevenue = totalRevenue > 0 ? totalRevenue : 18450;
-  const displayCourseSales = courseSales > 0 ? courseSales : 13520;
-  const displayAvgOrderValue = avgOrderValue > 0 ? avgOrderValue : 46.80;
-  const displayProCount = proSubscriptionsCount > 0 ? proSubscriptionsCount : 170;
-  const displayMRR = totalRevenue > 0 ? (totalRevenue - courseSales) : 4930;
+  const displayTotalRevenue = totalRevenue;
+  const displayCourseSales = courseSales;
+  const displayAvgOrderValue = avgOrderValue;
+  const displayProCount = proSubscriptionsCount;
+  const displayMRR = totalRevenue - courseSales;
 
   const handleExportCSV = () => {
     setExportNotice("Financial statement CSV report exported successfully!");
