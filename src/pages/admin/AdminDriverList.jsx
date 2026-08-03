@@ -699,159 +699,189 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
 
       {/* ── DRIVER DETAILS MODAL ── */}
       {selectedDriverModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl font-extrabold flex items-center justify-center text-base shadow-sm ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600 text-white' : 'bg-[#0b132b] text-white'
-                  }`}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/60 backdrop-blur-xs animate-fadeIn">
+          <style>{`
+            .custom-modal-scrollbar::-webkit-scrollbar {
+              width: 6px;
+            }
+            .custom-modal-scrollbar::-webkit-scrollbar-track {
+              background: #f1f5f9;
+              border-radius: 10px;
+            }
+            .custom-modal-scrollbar::-webkit-scrollbar-thumb {
+              background: #cbd5e1;
+              border-radius: 10px;
+            }
+            .custom-modal-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: #94a3b8;
+            }
+          `}</style>
+          
+          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Modal Header */}
+            <div className="p-6 bg-slate-900 text-white flex justify-between items-start text-left">
+              <div className="flex items-center gap-3.5 flex-1">
+                <div className={`w-12 h-12 rounded-2xl font-black text-lg flex items-center justify-center shadow-md shrink-0 ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600' : 'bg-[#0b132b]'}`}>
                   {(selectedDriverModal.full_name || selectedDriverModal.email || 'D').charAt(0).toUpperCase()}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-xl font-extrabold text-[#0b132b]">{selectedDriverModal.full_name || 'Driver Profile'}</h3>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-extrabold text-white font-serif-heading truncate max-w-[250px]">
+                      {selectedDriverModal.full_name || 'Driver Profile'}
+                    </h3>
                     {selectedDriverModal.verified && (
-                      <ShieldCheck className="w-5 h-5 text-emerald-500" title="Verified Driver" />
+                      <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" title="Verified Driver" />
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-slate-400 font-semibold">{selectedDriverModal.email}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
-                      }`}>
-                      {selectedDriverModal.status || 'ACTIVE'}
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className="text-xs text-slate-300 font-medium truncate max-w-[250px]">{selectedDriverModal.email}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-extrabold text-[10px] uppercase border border-rose-500/30 shrink-0">
+                      Driver Profile
                     </span>
                   </div>
                 </div>
               </div>
-
               <button
                 onClick={() => setSelectedDriverModal(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-4"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Quick Status Control Panel */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-bold text-[#0b132b] block">Driver Account Status</span>
-                <span className="text-[11px] text-slate-500 font-medium">
-                  {selectedDriverModal.status === 'INACTIVE'
-                    ? 'Account is DEACTIVATED. Driver cannot log in.'
-                    : 'Account is ACTIVE. Driver can log into portal.'}
-                </span>
-              </div>
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700 custom-modal-scrollbar">
+              
+              {/* Account Status Control Card */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-left">
+                <div>
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                    Account Access Permission
+                  </div>
+                  <div className="text-xs font-extrabold text-slate-900 mt-0.5 flex items-center gap-1.5">
+                    {selectedDriverModal.status === 'INACTIVE' ? (
+                      <span className="text-rose-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5" /> Deactivated (Login Blocked)
+                      </span>
+                    ) : (
+                      <span className="text-emerald-600 flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Active Member Account
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-              <select
-                value={selectedDriverModal.status || 'ACTIVE'}
-                onChange={(e) => handleAccountStatusChange(selectedDriverModal.id, selectedDriverModal.email, e.target.value)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold uppercase border cursor-pointer focus:outline-none ${selectedDriverModal.status === 'INACTIVE'
-                  ? 'bg-rose-600 text-white border-rose-700'
-                  : 'bg-emerald-600 text-white border-emerald-700'
-                  }`}
-              >
-                <option value="ACTIVE">ACTIVE</option>
-                <option value="INACTIVE">DEACTIVATED</option>
-              </select>
-            </div>
-
-            {/* Contact & Location Details */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phone Number</span>
-                <div className="flex items-center gap-2 font-extrabold text-slate-800">
-                  <Phone className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{selectedDriverModal.phone ? selectedDriverModal.phone : 'Not Provided'}</span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedDriverModal.status || 'ACTIVE'}
+                    onChange={(e) => handleAccountStatusChange(selectedDriverModal.id, selectedDriverModal.email, e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-extrabold text-xs text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="INACTIVE">DEACTIVATED</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Location / Market</span>
-                <div className="flex items-center gap-2 font-extrabold text-slate-800">
-                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                  <span>
-                    {(selectedDriverModal.city || selectedDriverModal.state_code)
-                      ? `${selectedDriverModal.city || ''}${selectedDriverModal.city && selectedDriverModal.state_code ? ', ' : ''}${selectedDriverModal.state_code || ''}`
-                      : 'Not Provided'}
-                  </span>
+              {/* Profile Grid Details */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1 text-left">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phone Number</span>
+                  <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                    <Phone className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{selectedDriverModal.phone ? selectedDriverModal.phone : 'Not Provided'}</span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Vehicle Type</span>
-                <div className="flex items-center gap-2 font-extrabold text-slate-800">
-                  <Truck className="w-3.5 h-3.5 text-rose-600" />
-                  <span>{selectedDriverModal.vehicle ? selectedDriverModal.vehicle : 'Not Specified'}</span>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Member Since</span>
-                <div className="flex items-center gap-2 font-extrabold text-slate-800">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{selectedDriverModal.created_at ? new Date(selectedDriverModal.created_at).toLocaleDateString() : 'N/A'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Compliance Credentials & Badges (100% Dynamic from Supabase) */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Compliance Credentials & Badges</span>
-              {certsLoading ? (
-                <div className="flex items-center gap-2 text-xs text-slate-400 font-bold py-1">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
-                  <span>Fetching certifications from database...</span>
-                </div>
-              ) : driverCerts.length > 0 ? (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {driverCerts.map((cert, idx) => (
-                    <span key={cert.id || idx} className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 text-[11px] font-bold flex items-center gap-1.5 border border-blue-200">
-                      <Award className="w-3.5 h-3.5 text-blue-600" />
-                      <span>{cert.course_name || 'Verified Certificate'}</span>
-                      {cert.cert_number && <span className="text-[9px] font-mono opacity-75">({cert.cert_number})</span>}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1 text-left">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Location / Market</span>
+                  <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                    <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                    <span>
+                      {(selectedDriverModal.city || selectedDriverModal.state_code)
+                        ? `${selectedDriverModal.city || ''}${selectedDriverModal.city && selectedDriverModal.state_code ? ', ' : ''}${selectedDriverModal.state_code || ''}`
+                        : 'Not Provided'}
                     </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-slate-500 font-medium py-1">
-                  No compliance certifications recorded in database for this driver profile.
-                </div>
-              )}
-            </div>
-
-            {/* Subscription Membership Details */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PRO Plan & Billing Details</span>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Membership status</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase inline-block ${selectedDriverModal.membership === 'Pro' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                    {selectedDriverModal.membership === 'Pro' ? 'Pro Plan' : 'Free Starter'}
-                  </span>
-                </div>
-                
-                <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Amount Paid</span>
-                  <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.amountPaid || '$0.00'}</span>
+                  </div>
                 </div>
 
-                {selectedDriverModal.membership === 'Pro' && (
-                  <>
-                    <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase block">Date Subscribed</span>
-                      <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.subscribedAt}</span>
-                    </div>
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1 text-left">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Vehicle Type</span>
+                  <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                    <Truck className="w-3.5 h-3.5 text-rose-600" />
+                    <span>{selectedDriverModal.vehicle ? selectedDriverModal.vehicle : 'Not Specified'}</span>
+                  </div>
+                </div>
 
-                    <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase block">Days Remaining / Renewal</span>
-                      <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.daysLeft} days left ({selectedDriverModal.subscription?.nextRenewal})</span>
-                    </div>
-                  </>
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1 text-left">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Member Since</span>
+                  <div className="flex items-center gap-2 font-extrabold text-slate-800">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{selectedDriverModal.created_at ? new Date(selectedDriverModal.created_at).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Compliance Credentials & Badges (100% Dynamic from Supabase) */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-left">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Compliance Credentials & Badges</span>
+                {certsLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 font-bold py-1">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                    <span>Fetching certifications from database...</span>
+                  </div>
+                ) : driverCerts.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {driverCerts.map((cert, idx) => (
+                      <span key={cert.id || idx} className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 text-[11px] font-bold flex items-center gap-1.5 border border-blue-200 animate-fadeIn">
+                        <Award className="w-3.5 h-3.5 text-blue-600" />
+                        <span>{cert.course_name || 'Verified Certificate'}</span>
+                        {cert.cert_number && <span className="text-[9px] font-mono opacity-75 font-bold">({cert.cert_number})</span>}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 font-medium py-1">
+                    No compliance certifications recorded in database for this driver profile.
+                  </div>
                 )}
               </div>
+
+              {/* Subscription Membership Details */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-left">PRO Plan & Billing Details</span>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Membership status</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase inline-block ${selectedDriverModal.membership === 'Pro' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {selectedDriverModal.membership === 'Pro' ? 'Pro Plan' : 'Free Starter'}
+                    </span>
+                  </div>
+                  
+                  <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Amount Paid</span>
+                    <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.amountPaid || '$0.00'}</span>
+                  </div>
+
+                  {selectedDriverModal.membership === 'Pro' && (
+                    <>
+                      <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase block">Date Subscribed</span>
+                        <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.subscribedAt}</span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase block">Days Remaining / Renewal</span>
+                        <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.daysLeft} days left ({selectedDriverModal.subscription?.nextRenewal})</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
             </div>
+
           </div>
         </div>
       )}
