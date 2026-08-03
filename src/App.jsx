@@ -225,16 +225,22 @@ export default function App() {
             .eq('user_id', currentUser.id)
             .eq('status', 'Succeeded');
 
-          if (data) {
-            const courseIds = data.map(tx => tx.course_id);
-            setPurchasedCourses(courseIds);
-            return;
+          if (data && !error) {
+            const courseIds = data.map(tx => tx.course_id).filter(Boolean);
+            if (courseIds.length > 0) {
+              setPurchasedCourses(courseIds);
+              return;
+            }
           }
         } catch (err) {
           console.warn("Error loading purchased courses from DB:", err);
         }
+        // Fallback to cookie for local testing or if DB columns don't exist yet
+        const cookieCourses = getCookie(COURSES_COOKIE_NAME) || [];
+        setPurchasedCourses(cookieCourses);
+      } else {
+        setPurchasedCourses([]);
       }
-      setPurchasedCourses([]);
     }
     loadPurchasedCourses();
   }, [currentUser]);
@@ -432,7 +438,9 @@ export default function App() {
   };
 
   const handleCompletePurchase = (courseId, certName) => {
-    setPurchasedCourses(prev => Array.from(new Set([...prev, courseId])));
+    const nextCourses = Array.from(new Set([...purchasedCourses, courseId]));
+    setPurchasedCourses(nextCourses);
+    setCookie(COURSES_COOKIE_NAME, nextCourses, 60);
 
     if (currentUser) {
       const updatedUser = { ...currentUser, name: certName || currentUser.name };

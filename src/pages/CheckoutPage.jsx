@@ -52,12 +52,44 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
   const [cardholderName, setCardholderName] = useState(certName);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [hasProcessed, setHasProcessed] = useState(false);
 
   const queryParams = new URLSearchParams(location.search);
   const sessionId = queryParams.get('session_id');
 
+  // Self-healing database insert helper for transactions
+  async function safeInsertTransaction(payload) {
+    const { data, error } = await supabase.from('transactions').insert([payload]).select();
+    if (error) {
+      // If column doesn't exist, remove it and retry
+      if (error.code === '42703' || error.message?.includes('column')) {
+        const match = error.message?.match(/column "(\w+)"/);
+        const missingColumn = match ? match[1] : null;
+        if (missingColumn && payload.hasOwnProperty(missingColumn)) {
+          const nextPayload = { ...payload };
+          delete nextPayload[missingColumn];
+          return await safeInsertTransaction(nextPayload);
+        }
+      }
+      // Explicit fallbacks for known custom columns
+      if (payload.hasOwnProperty('user_id')) {
+        const nextPayload = { ...payload };
+        delete nextPayload.user_id;
+        return await safeInsertTransaction(nextPayload);
+      }
+      if (payload.hasOwnProperty('course_id')) {
+        const nextPayload = { ...payload };
+        delete nextPayload.course_id;
+        return await safeInsertTransaction(nextPayload);
+      }
+      throw error;
+    }
+    return data;
+  }
+
   useEffect(() => {
-    if (sessionId && course) {
+    if (sessionId && course && !hasProcessed) {
+      setHasProcessed(true);
       async function handlePaymentSuccess() {
         onCompletePurchase(course.id, certName);
 
@@ -69,7 +101,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
             .limit(1);
 
           if (!existing || existing.length === 0) {
-            await supabase.from('transactions').insert([{
+            await safeInsertTransaction({
               id: sessionId,
               user_id: currentUser?.id || null,
               course_id: course.id,
@@ -78,7 +110,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
               amount: `$${course.price || 49}.00`,
               status: 'Succeeded',
               created_at: new Date().toISOString()
-            }]);
+            });
           }
         } catch (err) {
           console.warn("Failed to save transaction record to database:", err);
@@ -88,7 +120,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
       }
       handlePaymentSuccess();
     }
-  }, [sessionId, course, currentUser]);
+  }, [sessionId, course, currentUser, hasProcessed]);
 
   const handlePay = (e) => {
     e.preventDefault();
