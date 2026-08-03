@@ -221,12 +221,13 @@ export default function App() {
         try {
           const { data, error } = await supabase
             .from('transactions')
-            .select('course_id')
-            .eq('user_id', currentUser.id)
-            .eq('status', 'Succeeded');
+            .select('*');
 
           if (data && !error) {
-            const courseIds = data.map(tx => tx.course_id).filter(Boolean);
+            const courseIds = data
+              .filter(tx => String(tx.user_id) === String(currentUser.id) && tx.status === 'Succeeded')
+              .map(tx => tx.course_id)
+              .filter(Boolean);
             if (courseIds.length > 0) {
               setPurchasedCourses(courseIds);
               return;

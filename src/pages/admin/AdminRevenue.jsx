@@ -26,15 +26,15 @@ export default function AdminRevenue() {
       try {
         const { data, error } = await supabase
           .from('transactions')
-          .select('*')
-          .eq('status', 'Succeeded');
+          .select('*');
 
-        if (data && data.length > 0) {
+        if (data && !error && data.length > 0) {
+          const succeededTx = data.filter(tx => tx.status === 'Succeeded');
           let revSum = 0;
           let courseSum = 0;
           let subCount = 0;
 
-          data.forEach(tx => {
+          succeededTx.forEach(tx => {
             const val = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
             if (!isNaN(val)) {
               revSum += val;

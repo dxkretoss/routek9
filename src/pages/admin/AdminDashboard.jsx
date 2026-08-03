@@ -67,15 +67,18 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
     }
     async function fetchRevenue() {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('transactions')
-          .select('amount')
-          .eq('status', 'Succeeded');
+          .select('*');
 
-        if (data && data.length > 0) {
-          const sum = data.reduce((acc, tx) => {
-            const num = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
-            return acc + (isNaN(num) ? 0 : num);
+        if (data && !error && data.length > 0) {
+          const succeededTx = data.filter(tx => tx.status === 'Succeeded');
+          const sum = succeededTx.reduce((acc, tx) => {
+            if (tx.amount) {
+              const num = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
+              return acc + (isNaN(num) ? 0 : num);
+            }
+            return acc;
           }, 0);
           setTotalRevenue(sum);
         }
