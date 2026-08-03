@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { jsPDF } from "jspdf";
-import { supabase } from "../lib/supabase";
+import { supabase, recordDriverCertification } from "../lib/supabase";
 import {
   Award,
   CheckCircle2,
@@ -30,6 +30,92 @@ export default function CertificationPage({ currentUser, onLogout }) {
   const [pdfFilename, setPdfFilename] = useState("certificate.pdf");
   const [pdfError, setPdfError] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [hasProcessed, setHasProcessed] = useState(false);
+
+  // Self-healing database insert helper for transactions
+  async function safeInsertTransaction(payload) {
+    const { data, error } = await supabase.from('transactions').insert([payload]).select();
+    if (error) {
+      if (error.code === '42703' || error.message?.includes('column')) {
+        const match = error.message?.match(/column "(\w+)"/);
+        const missingColumn = match ? match[1] : null;
+        if (missingColumn && payload.hasOwnProperty(missingColumn)) {
+          const nextPayload = { ...payload };
+          delete nextPayload[missingColumn];
+          return await safeInsertTransaction(nextPayload);
+        }
+      }
+      if (payload.hasOwnProperty('user_id')) {
+        const nextPayload = { ...payload };
+        delete nextPayload.user_id;
+        return await safeInsertTransaction(nextPayload);
+      }
+      if (payload.hasOwnProperty('course_id')) {
+        const nextPayload = { ...payload };
+        delete nextPayload.course_id;
+        return await safeInsertTransaction(nextPayload);
+      }
+      throw error;
+    }
+    return data;
+  }
+
+  // Handle URL redirect with session_id after successful payment
+  useEffect(() => {
+    const queryParams = new URLSearchParams(window.location.search);
+    const sessionIdFromUrl = queryParams.get('session_id');
+
+    if (sessionIdFromUrl && !hasProcessed) {
+      setHasProcessed(true);
+      
+      async function processSuccessfulPayment() {
+        setStage("paid");
+        
+        // 1. Record the transaction in Supabase
+        try {
+          const txPayload = {
+            id: sessionIdFromUrl,
+            user_id: currentUser?.id || null,
+            course_id: 'hipaa-bbp',
+            email: currentUser?.email || 'guest@routek9.com',
+            description: 'HIPAA & Bloodborne Pathogens Certification',
+            amount: '$25.00',
+            status: 'Succeeded',
+            created_at: new Date().toISOString()
+          };
+          
+          await safeInsertTransaction(txPayload);
+        } catch (err) {
+          console.warn("Could not save HIPAA transaction:", err);
+        }
+
+        // 2. Record the driver's certificate
+        if (currentUser?.id) {
+          try {
+            await recordDriverCertification({
+              driverId: currentUser.id,
+              courseId: 'hipaa-bbp',
+              courseName: 'HIPAA & Bloodborne Pathogens',
+              certNumber: `K9-HIPAA-${Math.floor(100000 + Math.random() * 900000)}`
+            });
+          } catch (cErr) {
+            console.warn("Could not record driver certification in Supabase:", cErr);
+          }
+        }
+        
+        // 3. Clear session_id from URL search params to avoid loops
+        try {
+          queryParams.delete('session_id');
+          const newRelativePathQuery = window.location.pathname + (queryParams.toString() ? '?' + queryParams.toString() : '');
+          window.history.replaceState(null, '', newRelativePathQuery);
+        } catch (urlErr) {
+          console.warn("URL cleanup error:", urlErr);
+        }
+      }
+      
+      processSuccessfulPayment();
+    }
+  }, [currentUser, hasProcessed]);
 
   // Fetch dynamic questions strictly from Supabase DB
   useEffect(() => {
@@ -310,8 +396,38 @@ export default function CertificationPage({ currentUser, onLogout }) {
   }, [buildCertificatePdf, setCertificatePreview]);
 
   // Handle mock payment submit
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = async () => {
     setStage("paid");
+    
+    const mockSessionId = `mock_cs_${Date.now()}`;
+    try {
+      const txPayload = {
+        id: mockSessionId,
+        user_id: currentUser?.id || null,
+        course_id: 'hipaa-bbp',
+        email: currentUser?.email || 'guest@routek9.com',
+        description: 'HIPAA & Bloodborne Pathogens Certification',
+        amount: '$25.00',
+        status: 'Succeeded',
+        created_at: new Date().toISOString()
+      };
+      await safeInsertTransaction(txPayload);
+    } catch (err) {
+      console.warn("Could not save mock transaction:", err);
+    }
+
+    if (currentUser?.id) {
+      try {
+        await recordDriverCertification({
+          driverId: currentUser.id,
+          courseId: 'hipaa-bbp',
+          courseName: 'HIPAA & Bloodborne Pathogens',
+          certNumber: `K9-HIPAA-${Math.floor(100000 + Math.random() * 900000)}`
+        });
+      } catch (cErr) {
+        console.warn("Could not record certification:", cErr);
+      }
+    }
   };
 
   useEffect(() => {
