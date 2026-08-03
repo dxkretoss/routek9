@@ -232,6 +232,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 uppercase font-extrabold text-[10px]">
                     <th className="py-3 px-4">Route ID</th>
+                    <th className="py-3 px-4">Route Title/Zone</th>
                     <th className="py-3 px-4">Driver Name</th>
                     <th className="py-3 px-4">Vehicle</th>
                     <th className="py-3 px-4">Stops</th>
@@ -253,6 +254,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
                     return (
                       <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 px-4 font-mono font-bold text-rose-600">{r.id}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900 truncate max-w-[200px]" title={r.title}>{r.title}</td>
                         <td className="py-3 px-4 font-bold text-slate-900">{r.driverName}</td>
                         <td className="py-3 px-4">{r.vehicle}</td>
                         <td className="py-3 px-4 font-bold">{r.stopsCount} stops</td>

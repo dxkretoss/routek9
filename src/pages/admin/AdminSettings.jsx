@@ -80,27 +80,27 @@ export default function AdminSettings({ currentUser }) {
     <div className="space-y-6 animate-fadeIn">
 
 
-      {/* Tabs Bar */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+      {/* Tabs Selector */}
+      <div className="flex border-b border-slate-200">
         <button
           onClick={() => setActiveTab('profile')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'profile'
-            ? 'bg-[#0b132b] text-white shadow-md'
-            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${activeTab === 'profile'
+              ? 'border-rose-600 text-rose-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
-          <UserCircle className="w-4 h-4 text-rose-400" />
+          <UserCircle className="w-3.5 h-3.5" />
           <span>Admin Profile</span>
         </button>
 
         <button
           onClick={() => setActiveTab('security')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'security'
-            ? 'bg-[#0b132b] text-white shadow-md'
-            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${activeTab === 'security'
+              ? 'border-rose-600 text-rose-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
-          <KeyRound className="w-4 h-4 text-rose-400" />
+          <KeyRound className="w-3.5 h-3.5" />
           <span>Change Password</span>
         </button>
       </div>
@@ -174,9 +174,6 @@ export default function AdminSettings({ currentUser }) {
       {activeTab === 'security' && (
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 sm:p-8 space-y-6">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-            <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center">
-              <Lock className="w-5 h-5 text-rose-600" />
-            </div>
             <div>
               <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Change Password</h3>
               <p className="text-xs text-slate-400 font-medium">Update your admin login password securely</p>

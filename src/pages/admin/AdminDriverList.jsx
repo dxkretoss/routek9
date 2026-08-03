@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { supabase, updateDriverVerification, fetchAllRouteBids, updateBidStatus, fetchDriverCertifications } from '../../lib/supabase';
 
-export default function AdminDriverList({ searchQuery, setSearchQuery }) {
+export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh }) {
   const [drivers, setDrivers] = useState([]);
   const [bids, setBids] = useState([]);
   const [routes, setRoutes] = useState([]);
@@ -34,6 +34,19 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
   const [selectedDriverModal, setSelectedDriverModal] = useState(null);
   const [driverCerts, setDriverCerts] = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
+  const [activeDriverModal, setActiveDriverModal] = useState(null);
+
+  function getFriendlyZoneName(stop, stopsList = []) {
+    if (!stop) return '';
+    if (stop.zoneName) return stop.zoneName;
+    if (!stop.zoneId) return '';
+    if (stop.zoneId.startsWith('zone-')) {
+      return stop.zoneId.replace('zone-', 'Zone ');
+    }
+    const uniqueZoneIds = Array.from(new Set(stopsList.map(s => s.zoneId).filter(Boolean)));
+    const index = uniqueZoneIds.indexOf(stop.zoneId);
+    return index >= 0 ? `Zone ${index + 1}` : 'Zone';
+  }
 
   // Load Driver Profiles, Bids, and Saved Routes from Supabase & localStorage
   const loadData = async () => {
@@ -151,7 +164,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
           .order('created_at', { ascending: false });
 
         if (routesData) {
-          setRoutes(routesData.map(r => ({
+          const driverOnlyRoutes = routesData.filter(r => !r.company_id);
+          setRoutes(driverOnlyRoutes.map(r => ({
             id: r.id,
             user_id: r.user_id,
             title: r.title || 'Saved Courier Route',
@@ -289,47 +303,76 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
 
   return (
     <div className="space-y-6">
-      {/* Search & Sub-Nav Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
-        {/* Tab Buttons */}
-        <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-          <button
-            onClick={() => setActiveTab('drivers')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'drivers' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-          >
-            Driver Directory ({drivers.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('routes')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'routes' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-          >
-            Saved Routes ({routes.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('bids')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'bids' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-          >
-            Route Bids ({bids.length})
-          </button>
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/60">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight">
+            Driver Management
+          </h2>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Manage registered contract drivers, monitor active delivery routes, & verify certifications
+          </p>
         </div>
+        <button
+          onClick={loadData}
+          className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-2 self-start sm:self-auto"
+        >
+          <span>Refresh Data</span>
+        </button>
+      </div>
 
-        {/* Search */}
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Tabs Selector */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('drivers')}
+          className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'drivers'
+            ? 'border-rose-600 text-rose-600'
+            : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+        >
+          Driver Directory ({drivers.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('routes')}
+          className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'routes'
+            ? 'border-rose-600 text-rose-600'
+            : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+        >
+          Saved Routes ({routes.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('bids')}
+          className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'bids'
+            ? 'border-rose-600 text-rose-600'
+            : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+        >
+          Route Bids ({bids.length})
+        </button>
+      </div>
+
+      {/* Search Filter Input */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
-            placeholder="Search drivers or location..."
+            placeholder={
+              activeTab === 'drivers'
+                ? "Search drivers or location..."
+                : activeTab === 'routes'
+                  ? "Search routes by ID or title..."
+                  : "Search bids..."
+            }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500"
+            className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+              className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
             >
               ✕
             </button>
@@ -663,17 +706,38 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
             </div>
 
             {selectedRouteModal.stops && selectedRouteModal.stops.length > 0 && (
-              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stop Addresses ({selectedRouteModal.stops.length} stops):</span>
-                <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs text-left">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stop Addresses & Dispatches ({selectedRouteModal.stops.length} stops):</span>
+                <ul className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {selectedRouteModal.stops.map((s, idx) => (
-                    <li key={idx} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
-                        <span className="truncate" title={s.label}>{s.label}</span>
+                    <li key={idx} className="flex items-start justify-between gap-3 text-[11px] font-semibold text-slate-700 bg-white p-3 rounded-xl border border-slate-200/60 shadow-2xs">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">{s.step || idx + 1}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-slate-800 font-semibold" title={s.label}>{s.label}</div>
+                          {(s.zoneName || s.zoneId || s.driverName) && (
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              {(s.zoneName || s.zoneId) && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-50 text-[9px] font-bold text-rose-700 border border-rose-100">
+                                  {getFriendlyZoneName(s, selectedRouteModal.stops || [])}
+                                </span>
+                              )}
+                              {s.driverName && (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-50 text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                                  title="Click to view driver contact details"
+                                >
+                                  {s.driverName}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-300' :
                           'bg-slate-100 text-slate-600 border-slate-200'
                         }`}>
                         {s.status || 'pending'}
@@ -882,6 +946,55 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
 
             </div>
 
+          </div>
+        </div>
+      )}
+      {/* Active Driver Info Modal Popup */}
+      {activeDriverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-base">
+                👤
+              </div>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm">{activeDriverModal.name}</h4>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Contract Driver</span>
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Phone Number</span>
+                <span className="font-extrabold text-slate-800 text-xs">{activeDriverModal.phone || 'No phone number provided'}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              {activeDriverModal.phone && (
+                <a
+                  href={`tel:${activeDriverModal.phone}`}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <span>Call Driver</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

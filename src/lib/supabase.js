@@ -153,3 +153,104 @@ export async function fetchDriverCertifications(driverId) {
     return [];
   }
 }
+
+// 4. Notification Helpers
+export async function createNotification(notifData) {
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .insert([{
+        user_id: notifData.userId || null,
+        title: notifData.title,
+        message: notifData.message,
+        category: notifData.category || 'System',
+        unread: notifData.unread ?? true,
+        important: notifData.important ?? false,
+        action_url: notifData.actionUrl || null,
+        action_text: notifData.actionText || null,
+        created_at: new Date().toISOString()
+      }])
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn("createNotification notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchNotifications(userId) {
+  try {
+    const query = supabase
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (userId) {
+      query.or(`user_id.eq.${userId},user_id.is.null`);
+    } else {
+      query.is('user_id', null);
+    }
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn("fetchNotifications notice:", err.message);
+    return [];
+  }
+}
+
+export async function markNotificationRead(notifId, isUnread = false) {
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .update({ unread: isUnread })
+      .eq('id', notifId)
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn("markNotificationRead notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function markAllNotificationsRead(userId) {
+  try {
+    const query = supabase
+      .from('notifications')
+      .update({ unread: false });
+      
+    if (userId) {
+      query.eq('user_id', userId);
+    } else {
+      query.is('user_id', null);
+    }
+    
+    const { data, error } = await query.select('*');
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.warn("markAllNotificationsRead notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteNotificationRecord(notifId) {
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notifId)
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.warn("deleteNotificationRecord notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}

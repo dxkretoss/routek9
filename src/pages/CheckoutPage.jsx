@@ -12,11 +12,11 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 
 import { getCourses } from '../lib/courses';
-import { supabase } from '../lib/supabase';
+import { supabase, createNotification } from '../lib/supabase';
 
 export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase }) {
   const { courseId } = useParams();
@@ -53,6 +53,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [hasProcessed, setHasProcessed] = useState(false);
+  const processingRef = useRef(false);
 
   const queryParams = new URLSearchParams(location.search);
   const sessionId = queryParams.get('session_id');
@@ -88,7 +89,8 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
   }
 
   useEffect(() => {
-    if (sessionId && course && !hasProcessed) {
+    if (sessionId && course && !processingRef.current) {
+      processingRef.current = true;
       setHasProcessed(true);
       async function handlePaymentSuccess() {
         onCompletePurchase(course.id, certName);
@@ -116,6 +118,21 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
           console.warn("Failed to save transaction record to database:", err);
         }
 
+        // Create notification
+        try {
+          await createNotification({
+            userId: currentUser?.id || null,
+            title: 'Course Purchased Successfully',
+            message: `Successfully purchased training course: "${course.title || 'Route K9 Training'}". You can now start learning!`,
+            category: 'Certification',
+            important: true,
+            actionUrl: '/dashboard',
+            actionText: 'Start Learning'
+          });
+        } catch (notifErr) {
+          console.warn("Could not save course purchase notification:", notifErr);
+        }
+
         setShowSuccessModal(true);
       }
       handlePaymentSuccess();
@@ -126,10 +143,42 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
     e.preventDefault();
     setIsProcessing(true);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       onCompletePurchase(activeCourse.id, certName);
       setIsProcessing(false);
       setShowSuccessModal(true);
+
+      // Save a mock transaction
+      const mockSessionId = `mock_course_cs_${Date.now()}`;
+      try {
+        await safeInsertTransaction({
+          id: mockSessionId,
+          user_id: currentUser?.id || null,
+          course_id: activeCourse.id,
+          email: currentUser?.email || 'guest@routek9.com',
+          description: activeCourse.title || `Route K9 Course Purchase`,
+          amount: `$${activeCourse.price || 49}.00`,
+          status: 'Succeeded',
+          created_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.warn("Failed to save mock course purchase transaction:", err);
+      }
+
+      // Create notification
+      try {
+        await createNotification({
+          userId: currentUser?.id || null,
+          title: 'Course Purchased Successfully',
+          message: `Successfully purchased training course: "${activeCourse.title}". You can now start learning!`,
+          category: 'Certification',
+          important: true,
+          actionUrl: '/dashboard',
+          actionText: 'Start Learning'
+        });
+      } catch (notifErr) {
+        console.warn("Could not save course purchase notification:", notifErr);
+      }
     }, 1000);
   };
 

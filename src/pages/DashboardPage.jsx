@@ -93,6 +93,19 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const [savedUserRoutes, setSavedUserRoutes] = useState(propSavedRoutes);
   const [routeStatuses, setRouteStatuses] = useState({});
+  const [activeDriverModal, setActiveDriverModal] = useState(null);
+
+  function getFriendlyZoneName(stop, stopsList = []) {
+    if (!stop) return '';
+    if (stop.zoneName) return stop.zoneName;
+    if (!stop.zoneId) return '';
+    if (stop.zoneId.startsWith('zone-')) {
+      return stop.zoneId.replace('zone-', 'Zone ');
+    }
+    const uniqueZoneIds = Array.from(new Set(stopsList.map(s => s.zoneId).filter(Boolean)));
+    const index = uniqueZoneIds.indexOf(stop.zoneId);
+    return index >= 0 ? `Zone ${index + 1}` : 'Zone';
+  }
 
   // Sync propSavedRoutes into state when prop changes
   useEffect(() => {
@@ -108,11 +121,22 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     }
   }, [propSavedRoutes]);
 
-  // Fetch saved routes dynamically from Supabase database
+  // Fetch saved routes dynamically from Supabase database for this user only
   useEffect(() => {
     async function loadSupabaseRoutes() {
+      if (!currentUser?.id) return;
       try {
-        const { data, error } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
+        const isCompany = currentUser?.role === 'company' || currentUser?.role === 'Company';
+        let query = supabase.from('routes').select('*');
+
+        if (isCompany) {
+          query = query.or(`user_id.eq.${currentUser.id},company_id.eq.${currentUser.id}`);
+        } else {
+          query = query.eq('user_id', currentUser.id);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false });
+
         if (data && data.length > 0) {
           const formatted = data.map(r => ({
             id: r.id,
@@ -648,8 +672,8 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                                 value={routeStatuses[route.id] || route.status || 'ACTIVE'}
                                 onChange={e => setRouteStatuses(prev => ({ ...prev, [route.id]: e.target.value }))}
                                 className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none ${(routeStatuses[route.id] || route.status) === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                    (routeStatuses[route.id] || route.status) === 'ONGOING' ? 'bg-amber-50  text-amber-700  border-amber-200' :
-                                      'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  (routeStatuses[route.id] || route.status) === 'ONGOING' ? 'bg-amber-50  text-amber-700  border-amber-200' :
+                                    'bg-emerald-50 text-emerald-700 border-emerald-200'
                                   }`}
                               >
                                 <option value="ACTIVE">Active</option>
@@ -681,18 +705,38 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                         {route.stops && route.stops.length > 0 && (
                           <div className="bg-slate-50/80 p-3 rounded-2xl border border-slate-200/80 space-y-1.5 text-xs">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stops List:</span>
-                            <ul className="space-y-1 max-h-28 overflow-y-auto">
+                            <ul className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
                               {route.stops.map((s, idx) => (
-                                <li key={idx} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
-                                    <span className="truncate" title={s.label}>{s.label}</span>
+                                <li key={idx} className="flex items-start justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-2 rounded-lg border border-slate-200/60">
+                                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                                    <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">{s.step || idx + 1}</span>
+                                    <div className="min-w-0 flex-1">
+                                      <span className="truncate block" title={s.label}>{s.label}</span>
+                                      {(s.zoneName || s.zoneId || s.driverName) && (
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                          {(s.zoneName || s.zoneId) && (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-50 text-[9px] font-bold text-rose-700 border border-rose-100">
+                                              {getFriendlyZoneName(s, route.stops || [])}
+                                            </span>
+                                          )}
+                                          {s.driverName && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
+                                              className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-50 text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                                              title="Click to view driver contact details"
+                                            >
+                                              {s.driverName}
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${
-                                    s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                     s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                    'bg-slate-100 text-slate-600 border-slate-200'
-                                  }`}>
+                                      'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}>
                                     {s.status || 'pending'}
                                   </span>
                                 </li>
@@ -1157,6 +1201,56 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
         </div>
       </main>
+
+      {/* Active Driver Info Modal Popup */}
+      {activeDriverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-base">
+                👤
+              </div>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm">{activeDriverModal.name}</h4>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Contract Driver</span>
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Phone Number</span>
+                <span className="font-extrabold text-slate-800 text-xs">{activeDriverModal.phone || 'No phone number provided'}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              {activeDriverModal.phone && (
+                <a
+                  href={`tel:${activeDriverModal.phone}`}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <span>Call Driver</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Download Toast Notification */}
       {downloadToast && (

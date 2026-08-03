@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { supabase, createNotification } from "../lib/supabase";
 import { mockDrivers } from "../data/mockDrivers";
 import PhoneInputPkg from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
@@ -78,6 +78,19 @@ const FUEL_PRICE = 3.35;
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function getFriendlyZoneName(stop, stopsList = []) {
+  if (!stop) return '';
+  if (stop.zoneName) return stop.zoneName;
+  if (!stop.zoneId) return '';
+  if (stop.zoneId.startsWith('zone-')) {
+    return stop.zoneId.replace('zone-', 'Zone ');
+  }
+  // Fallback for random/raw IDs (e.g. tgtllxgt, ztn1i5f8)
+  const uniqueZoneIds = Array.from(new Set(stopsList.map(s => s.zoneId).filter(Boolean)));
+  const index = uniqueZoneIds.indexOf(stop.zoneId);
+  return index >= 0 ? `Zone ${index + 1}` : 'Zone';
 }
 
 // Simple K-means on lat/lon to auto-cluster stops into k zones.
@@ -224,8 +237,12 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   const [stopStatuses, setStopStatuses] = useState({});
   const [expandedHistoryId, setExpandedHistoryId] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [assignedDriverId, setAssignedDriverId] = useState("");
+  const [dispatchError, setDispatchError] = useState(null);
+  const [activeDriverModal, setActiveDriverModal] = useState(null);
 
   const isDriver = currentUser?.role === 'driver' || currentUser?.role === 'Driver';
+  const isCompany = currentUser?.role === 'company' || currentUser?.role === 'Company';
 
   // ── Fetch route history from Supabase backend ──────────────────────────
   const fetchRoutesFromDB = useCallback(async () => {
@@ -239,7 +256,11 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
       // Filter by logged-in user
       if (currentUser?.id) {
-        query = query.eq('user_id', currentUser.id);
+        if (isCompany) {
+          query = query.or(`user_id.eq.${currentUser.id},company_id.eq.${currentUser.id}`);
+        } else {
+          query = query.eq('user_id', currentUser.id);
+        }
       }
 
       const { data, error } = await query;
@@ -370,51 +391,153 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
     }
   }, [searchParams, routeHistory]);
 
+  // Self-healing database insert helper for routes
+  async function safeInsertRoute(payload) {
+    const { data, error } = await supabase.from('routes').insert([payload]).select();
+    if (error) {
+      if (error.code === '42703' || error.message?.includes('column')) {
+        const match = error.message?.match(/column "(\w+)"/);
+        const missingColumn = match ? match[1] : null;
+        if (missingColumn && payload.hasOwnProperty(missingColumn)) {
+          const nextPayload = { ...payload };
+          delete nextPayload[missingColumn];
+          return await safeInsertRoute(nextPayload);
+        }
+      }
+      throw error;
+    }
+    return data;
+  }
+
   const handleSaveRouteToDashboardAndAdmin = async () => {
     if (stops.length < 2) {
       alert("Please add at least 2 stop addresses before saving your route.");
       return;
     }
 
+    setDispatchError(null);
     setSavingRoute(true);
+    const isCompany = currentUser?.role === 'company' || currentUser?.role === 'Company';
     const fuelCostCalc = (distMi / AVG_MPG) * FUEL_PRICE;
 
-    const newRoute = {
-      id: `RTE-${Math.floor(1000 + Math.random() * 9000)}`,
-      title: stops[0]?.label ? `Route to ${stops[stops.length - 1]?.label.split(',')[0] || 'Destination'}` : 'Solo Courier Route',
-      driverName: currentUser?.name || 'Solo Driver',
-      driverId: currentUser?.id || 'guest',
-      driverEmail: currentUser?.email || 'driver@routek9.com',
-      vehicle: currentUser?.vehicle || 'Cargo Van',
-      stopsCount: stops.length,
-      stops: stops.map((s, idx) => ({
-        step: idx + 1,
-        label: s.label,
-        lat: s.lat,
-        lon: s.lon,
-        zoneId: s.zoneId || null,
-        status: 'pending'
-      })),
-      distanceMiles: Number(distMi.toFixed(1)),
-      durationMinutes: Math.round(durMin),
-      fuelCost: Number(fuelCostCalc.toFixed(2)),
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString()
-    };
-
-    console.log("newRoute: ", newRoute);
-
-    if (onSaveRoute) {
-      onSaveRoute(newRoute);
-    }
-
-    // Save strictly to Supabase Database
     try {
-      const validUuid = currentUser?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id) ? currentUser.id : null;
+      // Prepare stops with embedded driver details
+      const preparedStops = stops.map((s, idx) => {
+        const zoneOfStop = s.zoneId ? zones.find(z => z.id === s.zoneId) : null;
+        let driverId = null;
+        let driverName = null;
+        let driverPhone = null;
 
-      const { data, error } = await supabase.from('routes').insert([{
+        if (zoneOfStop) {
+          driverId = zoneOfStop.driverId || null;
+          driverName = zoneOfStop.driverName || null;
+          driverPhone = zoneOfStop.driverPhone || null;
+
+          const matchingSpare = spares.find(d => {
+            if (zoneOfStop.driverId && d.id === zoneOfStop.driverId) return true;
+            if (!zoneOfStop.driverId && zoneOfStop.driverPhone && d.phone === zoneOfStop.driverPhone && d.phone !== '555-0199') return true;
+            return false;
+          });
+          if (matchingSpare) {
+            driverId = matchingSpare.id;
+            driverName = `${matchingSpare.first_name} ${matchingSpare.last_name}`;
+            driverPhone = matchingSpare.phone;
+          }
+        } else {
+          const targetDriverId = assignedDriverId || (currentUser?.role === 'driver' ? currentUser.id : null);
+          if (targetDriverId) {
+            const matchingSpare = spares.find(d => d.id === targetDriverId);
+            if (matchingSpare) {
+              driverId = matchingSpare.id;
+              driverName = `${matchingSpare.first_name} ${matchingSpare.last_name}`;
+              driverPhone = matchingSpare.phone;
+            } else if (currentUser?.role === 'driver') {
+              driverId = currentUser.id;
+              driverName = currentUser.name;
+              driverPhone = currentUser.phone || '555-0199';
+            }
+          }
+        }
+
+        return {
+          id: s.id || `stop-${idx}-${Math.random()}`,
+          step: idx + 1,
+          label: s.label,
+          lat: s.lat,
+          lon: s.lon,
+          zoneId: s.zoneId || null,
+          zoneName: zoneOfStop ? zoneOfStop.name : null,
+          status: 'pending',
+          driverId,
+          driverName,
+          driverPhone
+        };
+      });
+
+      setDispatchError(null);
+
+      // Company Validation: Check that every single stop has an assigned driver!
+      if (isCompany) {
+        const unassignedStop = preparedStops.find(s => !s.driverId);
+        if (unassignedStop) {
+          if (unassignedStop.zoneId) {
+            const zoneOfStop = zones.find(z => z.id === unassignedStop.zoneId);
+            setDispatchError({
+              type: 'zone',
+              zoneId: unassignedStop.zoneId,
+              message: `Please assign a driver to "${zoneOfStop?.name || 'the zone'}" before dispatching.`
+            });
+          } else {
+            setDispatchError({
+              type: 'entire',
+              message: "Please select a driver to assign this route to before saving!"
+            });
+          }
+          setSavingRoute(false);
+          return;
+        }
+      }
+
+      // Determine master driverName
+      let masterDriverName = currentUser?.name || 'Solo Driver';
+      if (isCompany) {
+        if (zones.length > 0) {
+          const activeDriverNames = Array.from(new Set(preparedStops.map(s => s.driverName).filter(Boolean)));
+          masterDriverName = activeDriverNames.length > 0 ? activeDriverNames.join(', ') : 'Multiple Drivers';
+        } else if (assignedDriverId) {
+          const matchingSpare = spares.find(d => d.id === assignedDriverId);
+          if (matchingSpare) masterDriverName = `${matchingSpare.first_name} ${matchingSpare.last_name}`;
+        }
+      }
+
+      const newRouteId = `RTE-${Math.floor(1000 + Math.random() * 9000)}`;
+      const companyUuid = currentUser?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id) ? currentUser.id : null;
+
+      const newRoute = {
+        id: newRouteId,
+        title: stops[0]?.label ? `Route to ${stops[stops.length - 1]?.label.split(',')[0] || 'Destination'}` : 'Solo Courier Route',
+        driverName: masterDriverName,
+        driverId: isCompany ? null : (currentUser?.id || 'guest'), // If company, user_id is set to company ID, so company owns it
+        driverEmail: isCompany ? 'company@routek9.com' : (currentUser?.email || 'driver@routek9.com'),
+        vehicle: currentUser?.vehicle || 'Cargo Van',
+        stopsCount: stops.length,
+        stops: preparedStops,
+        distanceMiles: Number(distMi.toFixed(1)),
+        durationMinutes: Math.round(durMin),
+        fuelCost: Number(fuelCostCalc.toFixed(2)),
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString()
+      };
+
+      if (onSaveRoute) {
+        onSaveRoute(newRoute);
+      }
+
+      // Save to Supabase
+      await safeInsertRoute({
         id: newRoute.id,
-        user_id: validUuid,
+        user_id: companyUuid, // Owned by company creator so it shows in their dashboard
+        company_id: companyUuid,
         title: newRoute.title,
         driver_name: newRoute.driverName,
         stops_count: newRoute.stopsCount,
@@ -423,24 +546,51 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         status: newRoute.status,
         stops_data: newRoute.stops,
         created_at: newRoute.createdAt
-      }]).select();
+      });
 
-      if (error) {
-        console.warn("Supabase DB routes insert notice:", error.message || error);
-      } else {
-        // Refresh AFTER insert so the new record appears
-        await fetchRoutesFromDB();
-        setSelectedHistoryId(newRoute.id);
-        setExpandedHistoryId(newRoute.id);
+      // Send notifications to each assigned driver
+      const uniqueDriverIds = Array.from(new Set(preparedStops.map(s => s.driverId).filter(Boolean)));
+      for (const dId of uniqueDriverIds) {
+        if (dId !== currentUser?.id) {
+          const validUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dId) ? dId : null;
+          if (validUuid) {
+            try {
+              await createNotification({
+                userId: validUuid,
+                title: 'New Route Assigned',
+                message: `A company dispatcher has assigned a new route to you: "${newRoute.title}".`,
+                category: 'Route Match',
+                important: true,
+                actionUrl: '/dashboard',
+                actionText: 'View Dashboard'
+              });
+            } catch (notifErr) {
+              console.warn("Could not save assigned route notification:", notifErr);
+            }
+          }
+        }
       }
+
+      await fetchRoutesFromDB();
+      setSelectedHistoryId(newRoute.id);
+      setExpandedHistoryId(newRoute.id);
+      setRouteSavedModal({ isOpen: true, route: newRoute });
+      
+      // Reset planner states and return to Step 1
+      setStops([]);
+      setRouteGeo(null);
+      setDistMi(0);
+      setDurMin(0);
+      setZones([]);
+      setAssignedDriverId("");
+      setDispatchError(null);
+      setWizardStep(1);
     } catch (dbErr) {
       console.warn("Supabase DB routes insert error:", dbErr);
-      // Still try to refresh in case it was actually saved
       await fetchRoutesFromDB();
+    } finally {
+      setSavingRoute(false);
     }
-
-    setSavingRoute(false);
-    setRouteSavedModal({ isOpen: true, route: newRoute });
   };
   const mapRef = useRef(null);
   const leafletMap = useRef(null);
@@ -459,22 +609,48 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   const [userLoc, setUserLoc] = useState(null);
   const [locStatus, setLocStatus] = useState("idle");
 
-  // Load spare drivers from local mockDrivers instead of supabase database
-  const [spares, setSpares] = useState(() => {
-    return mockDrivers.map(d => {
-      const names = d.full_name.split(' ');
-      return {
-        id: d.user_id,
-        first_name: names[0] || '',
-        last_name: names.slice(1).join(' ') || '',
-        phone: '555-0199',
-        city: d.city,
-        state: d.state,
-        lat: d.city === 'Atlanta' ? 33.7490 : d.city === 'Chicago' ? 41.8781 : d.city === 'Los Angeles' ? 34.0522 : d.city === 'Dallas' ? 32.7767 : d.city === 'Miami' ? 25.7617 : d.city === 'Detroit' ? 42.3314 : 39.5,
-        lon: d.city === 'Atlanta' ? -84.3880 : d.city === 'Chicago' ? -87.6298 : d.city === 'Los Angeles' ? -118.2437 : d.city === 'Dallas' ? -96.7970 : d.city === 'Miami' ? -80.1918 : d.city === 'Detroit' ? -83.0458 : -98.35,
-      };
-    });
-  });
+  // Load registered drivers from supabase database
+  const [spares, setSpares] = useState([]);
+
+  useEffect(() => {
+    async function loadRealDrivers() {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone, city, state_code, vehicle')
+          .eq('role', 'driver');
+        if (!error && data) {
+           const mapped = data.map(d => {
+             let firstName = 'Driver';
+             let lastName = '';
+             if (d.full_name && d.full_name.trim()) {
+               const names = d.full_name.trim().split(' ');
+               firstName = names[0];
+               lastName = names.slice(1).join(' ');
+             } else if (d.email) {
+               firstName = d.email.split('@')[0];
+             }
+             return {
+               id: d.id,
+               first_name: firstName,
+               last_name: lastName,
+               phone: d.phone || '555-0199',
+               city: d.city || 'Houston',
+               state: d.state_code || 'TX',
+               lat: 39.5,
+               lon: -98.35,
+               email: d.email,
+               isReal: true
+             };
+           });
+          setSpares(mapped);
+        }
+      } catch (err) {
+        console.warn("Could not load real drivers for assignment:", err);
+      }
+    }
+    loadRealDrivers();
+  }, []);
 
   const requestUserLocation = useCallback(() => {
     if (!("geolocation" in navigator)) {
@@ -1778,20 +1954,83 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                       ) : (
                         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-4">
                           {/* Save Route Button for Admin/Dispatcher */}
-                          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-xs font-extrabold text-[#0b132b]">Save & Dispatch Route</div>
-                              <div className="text-[10px] text-slate-500 font-medium">Save complete route data to Admin Panel & Driver Dashboard</div>
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                            <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-200/60">
+                              <div>
+                                <div className="text-xs font-extrabold text-[#0b132b]">Save & Dispatch Route</div>
+                                <div className="text-[10px] text-slate-500 font-medium">Save complete route data to Admin Panel & Driver Dashboard</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleSaveRouteToDashboardAndAdmin}
+                                disabled={savingRoute || stops.length < 2}
+                                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
+                              >
+                                <Save className="w-3.5 h-3.5" />
+                                <span>{savingRoute ? 'Saving...' : (isCompany && zones.length > 0) ? 'Dispatch Zones' : 'Save Route'}</span>
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={handleSaveRouteToDashboardAndAdmin}
-                              disabled={savingRoute || stops.length < 2}
-                              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
-                            >
-                              <Save className="w-3.5 h-3.5" />
-                              <span>{savingRoute ? 'Saving...' : 'Save Route'}</span>
-                            </button>
+
+                            {/* Company assigns driver to the master route if no zones are used */}
+                            {isCompany && zones.length === 0 && (
+                              <div className="pt-1">
+                                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                  Assign Driver for Entire Route
+                                </label>
+                                <select
+                                  value={assignedDriverId}
+                                  onChange={(e) => {
+                                    setAssignedDriverId(e.target.value);
+                                    if (dispatchError && dispatchError.type === 'entire') {
+                                      setDispatchError(null);
+                                    }
+                                  }}
+                                  className={`w-full rounded-xl border px-3 py-2 text-xs font-semibold text-primary focus:outline-none transition-all ${dispatchError && dispatchError.type === 'entire'
+                                    ? 'border-rose-600 bg-rose-50/20 ring-1 ring-rose-600'
+                                    : 'border-slate-200 bg-white'
+                                    }`}
+                                >
+                                  <option value="">— Select Driver —</option>
+                                  {spares.map(d => (
+                                    <option key={d.id} value={d.id}>
+                                      {d.first_name} {d.last_name} ({d.city}, {d.state})
+                                    </option>
+                                  ))}
+                                </select>
+                                {dispatchError && dispatchError.type === 'entire' && (
+                                  <div className="text-[10px] text-rose-600 font-extrabold mt-1.5 animate-pulse flex items-center gap-1">
+                                    <span>⚠️</span>
+                                    <span>{dispatchError.message}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Company sees zone wise dispatch preview if zones are used */}
+                            {isCompany && zones.length > 0 && (
+                              <div className="pt-1 space-y-2">
+                                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                                  Zone Dispatches Preview:
+                                </div>
+                                <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
+                                  {zones.map(z => {
+                                    const zStops = stops.filter(s => s.zoneId === z.id);
+                                    if (zStops.length === 0) return null;
+                                    return (
+                                      <div key={z.id} className="flex items-center justify-between text-[11px] border border-slate-100 rounded-lg p-2 bg-white shadow-xs">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: z.color }}></span>
+                                          <span className="font-bold text-slate-800">{z.name} ({zStops.length} stops)</span>
+                                        </div>
+                                        <span className="text-slate-500 font-semibold truncate max-w-[120px]">
+                                          {z.driverName ? `Driver: ${z.driverName}` : 'Unassigned'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <button
@@ -1900,25 +2139,44 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                                               Assign Driver
                                             </label>
                                             <select
-                                              value={z.driverPhone ?? ""}
+                                              value={z.driverId ?? z.driverPhone ?? ""}
                                               onChange={(e) => {
-                                                const selected = spares.find((d) => d.phone === e.target.value);
+                                                const selected = spares.find((d) => d.id === e.target.value || d.phone === e.target.value);
                                                 if (selected) {
                                                   updateZone(z.id, {
                                                     driverName: `${selected.first_name} ${selected.last_name}`,
                                                     driverPhone: selected.phone,
+                                                    driverId: selected.id,
+                                                  });
+                                                  if (dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id) {
+                                                    setDispatchError(null);
+                                                  }
+                                                } else {
+                                                  updateZone(z.id, {
+                                                    driverName: "",
+                                                    driverPhone: "",
+                                                    driverId: null,
                                                   });
                                                 }
                                               }}
-                                              className="w-full rounded border border-border bg-slate-50 px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white"
+                                              className={`w-full rounded border px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white transition-all ${dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id
+                                                ? 'border-rose-600 bg-rose-50/20 ring-1 ring-rose-600'
+                                                : 'border-border bg-slate-50'
+                                                }`}
                                             >
                                               <option value="">— Select Registered Driver —</option>
                                               {spares.map((d) => (
-                                                <option key={d.id} value={d.phone}>
+                                                <option key={d.id} value={d.id}>
                                                   {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
                                                 </option>
                                               ))}
                                             </select>
+                                            {dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id && (
+                                              <div className="text-[9px] text-rose-600 font-extrabold mt-1 animate-pulse flex items-center gap-1">
+                                                <span>⚠️</span>
+                                                <span>{dispatchError.message}</span>
+                                              </div>
+                                            )}
                                           </div>
                                         )}
 
@@ -2389,10 +2647,12 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                   </div>
                   <div>
                     <h3 className="text-2xl font-black text-[#0b132b] font-serif-heading">
-                      Route Saved Successfully!
+                      {routeSavedModal.route.title?.toLowerCase().includes('zone') ? 'Zones Dispatched Successfully!' : 'Route Saved Successfully!'}
                     </h3>
                     <p className="text-xs text-slate-500 font-medium mt-1">
-                      Saved live dispatch records to Admin Panel and synced to Driver Dashboard.
+                      {routeSavedModal.route.title?.toLowerCase().includes('zone')
+                        ? 'All zone-assigned routes have been successfully saved and dispatched.'
+                        : 'Saved live dispatch records to Admin Panel and synced to Driver Dashboard.'}
                     </p>
                   </div>
                 </div>
@@ -2593,47 +2853,54 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                                       const key = `${route.id}_${idx}`;
                                       const status = stopStatuses[key] || 'pending';
                                       return (
-                                        <div key={idx} className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-xs">
-                                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${status === 'complete' ? 'bg-emerald-600 text-white' :
+                                        <div key={idx} className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-xs">
+                                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${status === 'complete' ? 'bg-emerald-600 text-white' :
                                             status === 'ongoing' ? 'bg-amber-500 text-white' :
                                               'bg-slate-200 text-slate-600'
                                             }`}>{idx + 1}</span>
-                                          <span className="flex-1 text-xs font-medium text-slate-700 truncate">{stop.label}</span>
+                                          <div className="flex-1 min-w-0">
+                                            <span className="text-xs font-medium text-slate-700 truncate block">{stop.label}</span>
+                                            {(stop.zoneName || stop.zoneId || stop.driverName) && (
+                                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                                {(stop.zoneName || stop.zoneId) && (
+                                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-50 text-[9px] font-bold text-rose-700 border border-rose-100">
+                                                    {getFriendlyZoneName(stop, routeStops)}
+                                                  </span>
+                                                )}
+                                                {stop.driverName && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setActiveDriverModal({ name: stop.driverName, phone: stop.driverPhone })}
+                                                    className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-50 text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                                                    title="Click to view driver contact details"
+                                                  >
+                                                    {stop.driverName}
+                                                  </button>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
                                           <div className="relative inline-block shrink-0">
                                             <select
                                               value={status}
                                               onChange={(e) => handleStopStatusChange(route.id, idx, e.target.value)}
-                                              className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
-                                                status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                              className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                                                 status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                                                'bg-slate-50 text-slate-600 border-slate-300'
-                                              }`}
+                                                  'bg-slate-50 text-slate-600 border-slate-300'
+                                                }`}
                                             >
                                               <option value="pending">PENDING</option>
                                               <option value="ongoing">ONGOING</option>
                                               <option value="complete">COMPLETE</option>
                                             </select>
-                                            <ChevronDown className={`w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${
-                                              status === 'complete' ? 'text-emerald-600' :
+                                            <ChevronDown className={`w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${status === 'complete' ? 'text-emerald-600' :
                                               status === 'ongoing' ? 'text-amber-600' :
-                                              'text-slate-500'
-                                            }`} />
+                                                'text-slate-500'
+                                              }`} />
                                           </div>
                                         </div>
                                       );
                                     })}
-                                  </div>
-                                  <div className="flex justify-end gap-2 mt-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleBatchStopStatusChange(route.id, 'pending')}
-                                      className="px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 font-bold text-[9px] hover:bg-slate-50 cursor-pointer"
-                                    >Reset All</button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleBatchStopStatusChange(route.id, 'complete')}
-                                      className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9px] cursor-pointer"
-                                    >✓ Mark All Complete</button>
                                   </div>
                                 </td>
                               </tr>
@@ -2650,6 +2917,56 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           </div>
 
         </>) /* end currentUser ternary */}
+
+      {/* Active Driver Info Modal Popup */}
+      {activeDriverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-base">
+                👤
+              </div>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm">{activeDriverModal.name}</h4>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Contract Driver</span>
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Phone Number</span>
+                <span className="font-extrabold text-slate-800 text-xs">{activeDriverModal.phone || 'No phone number provided'}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              {activeDriverModal.phone && (
+                <a
+                  href={`tel:${activeDriverModal.phone}`}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <span>Call Driver</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </section>
   );

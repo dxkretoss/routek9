@@ -15,8 +15,8 @@ import {
   Users,
   FileText
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState, useRef } from 'react';
+import { supabase, createNotification } from '../lib/supabase';
 
 export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro }) {
   const [searchParams] = useSearchParams();
@@ -38,6 +38,7 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [subscriptionReceipt, setSubscriptionReceipt] = useState(null);
   const [hasProcessed, setHasProcessed] = useState(false);
+  const processingRef = useRef(false);
 
   const queryParams = new URLSearchParams(window.location.search);
   const sessionId = queryParams.get('session_id');
@@ -71,7 +72,8 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   }
 
   useEffect(() => {
-    if (sessionId && !hasProcessed) {
+    if (sessionId && !processingRef.current) {
+      processingRef.current = true;
       setHasProcessed(true);
       async function handleSubSuccess() {
         const now = new Date();
@@ -123,6 +125,21 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
           console.warn("Failed to save subscription transaction record to database:", err);
         }
 
+        // Create notification
+        try {
+          await createNotification({
+            userId: currentUser?.id || null,
+            title: 'PRO Membership Activated',
+            message: `Thank you! Your Route K9 PRO Membership (${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'}) is now active. Enjoy premium features!`,
+            category: 'Earnings',
+            important: true,
+            actionUrl: '/dashboard',
+            actionText: 'View Dashboard'
+          });
+        } catch (notifErr) {
+          console.warn("Could not save PRO notification:", notifErr);
+        }
+
         setShowSuccessModal(true);
       }
       handleSubSuccess();
@@ -166,11 +183,43 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
       nextRenewal
     };
 
-    setTimeout(() => {
+    setTimeout(async () => {
       onUpgradePro(subscriptionData);
       setSubscriptionReceipt(subscriptionData);
       setIsProcessing(false);
       setShowSuccessModal(true);
+
+      // Save a mock transaction
+      const mockSessionId = `mock_pro_cs_${Date.now()}`;
+      try {
+        await safeInsertTransaction({
+          id: mockSessionId,
+          user_id: currentUser?.id || null,
+          course_id: `pro-${billingCycle}`,
+          email: currentUser?.email || 'guest@routek9.com',
+          description: `Route K9 PRO Membership (${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'})`,
+          amount: `$${price}.00`,
+          status: 'Succeeded',
+          created_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.warn("Failed to save mock subscription transaction:", err);
+      }
+
+      // Create notification
+      try {
+        await createNotification({
+          userId: currentUser?.id || null,
+          title: 'PRO Membership Activated',
+          message: `Thank you! Your Route K9 PRO Membership (${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'}) is now active. Enjoy premium features!`,
+          category: 'Earnings',
+          important: true,
+          actionUrl: '/dashboard',
+          actionText: 'View Dashboard'
+        });
+      } catch (notifErr) {
+        console.warn("Could not save PRO notification:", notifErr);
+      }
     }, 1000);
   };
 

@@ -335,13 +335,36 @@ export default function App() {
       // Create profile row if it doesn't exist yet (e.g. Google OAuth)
       if (!profile) {
         try {
-          await supabase.from('profiles').upsert({
+          const { error: upsertErr } = await supabase.from('profiles').upsert({
             id: supabaseUser.id,
             email: supabaseUser.email,
             full_name: userName,
             role: userRole,
             updated_at: new Date().toISOString()
           });
+
+          if (upsertErr && (upsertErr.code === '23503' || upsertErr.message?.includes('foreign key'))) {
+            console.warn("User ID not found in auth.users. Signing out client session.");
+            try {
+              await supabase.auth.signOut({ scope: 'local' });
+            } catch (soErr) {
+              console.warn("Server-side signout failed, clearing local session cache:", soErr);
+            }
+            try {
+              for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && (key.startsWith('sb-') || key.includes('auth-token'))) {
+                  localStorage.removeItem(key);
+                }
+              }
+            } catch (lsErr) {
+              console.warn("LocalStorage clear error:", lsErr);
+            }
+            setCurrentUser(null);
+            deleteCookie(SESSION_COOKIE_NAME);
+            window.location.reload();
+            return false;
+          }
         } catch (e) {
           console.warn("RLS notice: profile insert skipped, using user metadata instead.", e);
         }
@@ -404,8 +427,10 @@ export default function App() {
         setCookie(SESSION_COOKIE_NAME, updated, 30);
         return updated;
       });
+      return true;
     } catch (err) {
       console.error("Error syncing Supabase user profile:", err);
+      return false;
     }
   };
 

@@ -234,17 +234,15 @@ export default function AdminExamQuestions() {
   });
 
   return (
-    <div className="p-6 lg:p-10 max-w-7xl mx-auto space-y-8 animate-fadeIn">
+    <div className="max-w-7xl mx-auto space-y-8 animate-fadeIn">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
           <div className="flex items-center gap-2.5">
-            <span className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600">
-              <FileText className="w-5 h-5" />
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight">
               Certification Exam Questions
-            </h1>
+            </h2>
           </div>
           <p className="text-xs text-slate-500 font-medium mt-1">
             Manage dynamic compliance examination questions & answer keys stored in Supabase database.
@@ -296,11 +294,10 @@ export default function AdminExamQuestions() {
             <button
               key={t}
               onClick={() => setSelectedTopic(t)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer ${
-                selectedTopic === t
-                  ? 'bg-[#0b132b] text-white shadow'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer ${selectedTopic === t
+                ? 'bg-[#0b132b] text-white shadow'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
             >
               {t}
             </button>
@@ -369,16 +366,14 @@ export default function AdminExamQuestions() {
                   return (
                     <div
                       key={oIdx}
-                      className={`p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between gap-3 transition-all ${
-                        isCorrect
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 ring-1 ring-emerald-300'
-                          : 'bg-slate-50/70 border-slate-200/80 text-slate-700'
-                      }`}
+                      className={`p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between gap-3 transition-all ${isCorrect
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900 ring-1 ring-emerald-300'
+                        : 'bg-slate-50/70 border-slate-200/80 text-slate-700'
+                        }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={`w-5 h-5 rounded-lg text-[10px] font-extrabold flex items-center justify-center shrink-0 ${
-                          isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
-                        }`}>
+                        <span className={`w-5 h-5 rounded-lg text-[10px] font-extrabold flex items-center justify-center shrink-0 ${isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
+                          }`}>
                           {String.fromCharCode(65 + oIdx)}
                         </span>
                         <span className="truncate">{opt}</span>

@@ -1,11 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Menu, X, LogOut, LayoutDashboard, GraduationCap, Bell, Users, Crown, Sparkles } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { pathname, hash } = useLocation();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setUnreadCount(0);
+      return;
+    }
+
+    async function loadUnreadCount() {
+      try {
+        const { count, error } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('unread', true)
+          .or(`user_id.eq.${currentUser.id},user_id.is.null`);
+
+        if (!error) {
+          setUnreadCount(count || 0);
+        }
+      } catch (err) {
+        console.warn("Could not load unread notifications count:", err);
+      }
+    }
+
+    loadUnreadCount();
+
+    // Check periodically every 15 seconds
+    const interval = setInterval(loadUnreadCount, 15000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // Controls visibility of optional nav links (set to false/hidden)
   const showBuyRoute = false;
@@ -128,7 +159,11 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
                   className="relative p-2.5 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                 >
                   <Bell className="w-4 h-4" />
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-rose-600 text-[8px] font-extrabold text-white flex items-center justify-center ring-2 ring-white animate-pulse">3</span>
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-rose-600 text-[8px] font-extrabold text-white flex items-center justify-center ring-2 ring-white animate-pulse">
+                      {unreadCount}
+                    </span>
+                  )}
                 </Link>
 
                 {/* User Avatar Circle with Hover Dropdown */}

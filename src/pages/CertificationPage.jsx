@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { jsPDF } from "jspdf";
-import { supabase, recordDriverCertification } from "../lib/supabase";
+import { supabase, recordDriverCertification, createNotification } from "../lib/supabase";
 import {
   Award,
   CheckCircle2,
@@ -31,6 +31,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
   const [pdfError, setPdfError] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [hasProcessed, setHasProcessed] = useState(false);
+  const processingRef = useRef(false);
 
   // Self-healing database insert helper for transactions
   async function safeInsertTransaction(payload) {
@@ -65,7 +66,8 @@ export default function CertificationPage({ currentUser, onLogout }) {
     const queryParams = new URLSearchParams(window.location.search);
     const sessionIdFromUrl = queryParams.get('session_id');
 
-    if (sessionIdFromUrl && !hasProcessed) {
+    if (sessionIdFromUrl && !processingRef.current) {
+      processingRef.current = true;
       setHasProcessed(true);
       
       async function processSuccessfulPayment() {
@@ -100,6 +102,21 @@ export default function CertificationPage({ currentUser, onLogout }) {
             });
           } catch (cErr) {
             console.warn("Could not record driver certification in Supabase:", cErr);
+          }
+
+          // Create notification
+          try {
+            await createNotification({
+              userId: currentUser.id,
+              title: 'Certification Unlocked',
+              message: 'Congratulations! Your official HIPAA & Bloodborne Pathogens Certificate is now unlocked and available to download.',
+              category: 'Certification',
+              important: true,
+              actionUrl: '/dashboard',
+              actionText: 'Download PDF'
+            });
+          } catch (notifErr) {
+            console.warn("Could not save HIPAA certification notification:", notifErr);
           }
         }
         
@@ -426,6 +443,21 @@ export default function CertificationPage({ currentUser, onLogout }) {
         });
       } catch (cErr) {
         console.warn("Could not record certification:", cErr);
+      }
+
+      // Create notification
+      try {
+        await createNotification({
+          userId: currentUser.id,
+          title: 'Certification Unlocked',
+          message: 'Congratulations! Your official HIPAA & Bloodborne Pathogens Certificate is now unlocked and available to download.',
+          category: 'Certification',
+          important: true,
+          actionUrl: '/dashboard',
+          actionText: 'Download PDF'
+        });
+      } catch (notifErr) {
+        console.warn("Could not save HIPAA certification notification:", notifErr);
       }
     }
   };

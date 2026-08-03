@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, Truck, ArrowRight, Lock, Mail, User, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck, Info } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
 
 export default function SignupPage({ onSignup }) {
@@ -56,7 +56,24 @@ export default function SignupPage({ onSignup }) {
     setError(null);
 
     const cleanEmail = email.trim().toLowerCase();
-    const nameToSave = fullName.trim() || cleanEmail.split('@')[0] || 'User';
+    let nameToSave = fullName.trim();
+
+    // Company Validation
+    if (signupRole === 'company') {
+      if (!nameToSave || nameToSave.length < 3) {
+        setError("Please enter a valid Company Name (at least 3 characters).");
+        setLoading(false);
+        return;
+      }
+      if (/^\d+$/.test(nameToSave)) {
+        setError("Company Name cannot consist of numbers only.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Fallback name
+    nameToSave = nameToSave || cleanEmail.split('@')[0] || 'User';
 
     // Password Validation for Non-Technical Users
     if (password.length < 8) {
@@ -131,19 +148,37 @@ export default function SignupPage({ onSignup }) {
       const userId = data.user?.id;
       if (userId) {
         // Single source of truth profile record in profiles table
+        const { error: upsertErr } = await supabase.from('profiles').upsert({
+          id: userId,
+          full_name: nameToSave,
+          email: cleanEmail,
+          role: signupRole,
+          vehicle: vehicleType,
+          city: cleanCity,
+          state_code: cleanState,
+          created_at: new Date().toISOString()
+        });
+
+        if (upsertErr) {
+          if (upsertErr.code === '23503' || upsertErr.message?.includes('foreign key')) {
+            throw new Error(`An account with email "${cleanEmail}" already exists. Please log in instead.`);
+          }
+          throw upsertErr;
+        }
+
+        // Create welcome notification
         try {
-          await supabase.from('profiles').upsert({
-            id: userId,
-            full_name: nameToSave,
-            email: cleanEmail,
-            role: signupRole,
-            vehicle: vehicleType,
-            city: cleanCity,
-            state_code: cleanState,
-            created_at: new Date().toISOString()
+          await createNotification({
+            userId,
+            title: `Welcome to Route K9!`,
+            message: `Hello ${nameToSave}! Welcome to RouteK9. Your ${signupRole === 'driver' ? 'driver profile' : 'dispatch company account'} has been successfully registered. Complete compliance training to get verified.`,
+            category: 'System',
+            important: true,
+            actionUrl: '/dashboard',
+            actionText: 'Get Started'
           });
-        } catch (pErr) {
-          console.warn("profiles signup upsert notice:", pErr);
+        } catch (notifErr) {
+          console.warn("Could not save welcome notification:", notifErr);
         }
       }
 
@@ -522,7 +557,7 @@ export default function SignupPage({ onSignup }) {
                 </div>
               </div>
 
-              {/* Primary Vehicle Select & Location (Visible for driver) */}
+              {/* Primary Vehicle Select (Visible for driver) */}
               {signupRole === 'driver' && (
                 <div className="space-y-3 animate-fadeIn">
                   <div className="space-y-1.5">
@@ -541,35 +576,6 @@ export default function SignupPage({ onSignup }) {
                       <option value="16ft Box Truck">16ft Box Truck</option>
                       <option value="26ft Box Truck">26ft Box Truck</option>
                     </select>
-                  </div>
-
-                  {/* City & State Fields */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-2 space-y-1.5">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                        City / Market
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Houston"
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                        State
-                      </label>
-                      <input
-                        type="text"
-                        maxLength="2"
-                        placeholder="TX"
-                        value={stateCode}
-                        onChange={(e) => setStateCode(e.target.value.toUpperCase())}
-                        className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all text-center uppercase"
-                      />
-                    </div>
                   </div>
                 </div>
               )}

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { INITIAL_NOTIFICATIONS } from '../data/mockNotifications';
+import { fetchNotifications, markNotificationRead, markAllNotificationsRead, deleteNotificationRecord } from '../lib/supabase';
 import {
   Bell,
   BellRing,
@@ -22,44 +22,137 @@ import {
 } from 'lucide-react';
 
 export default function NotificationsPage({ currentUser, onLogout }) {
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
   const [activeCategory, setActiveCategory] = useState('All');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  useEffect(() => {
+    async function loadNotifications() {
+      setLoading(true);
+      try {
+        const dbNotifs = await fetchNotifications(currentUser?.id);
+        
+        // Map database fields to front-end keys
+        const mappedDb = (dbNotifs || []).map((n) => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          category: n.category || 'System',
+          time: new Date(n.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          date: new Date(n.created_at).toLocaleDateString('en-US'),
+          unread: n.unread,
+          important: n.important,
+          actionUrl: n.action_url,
+          actionText: n.action_text,
+          badgeColor: n.category === 'Certification' ? 'indigo' : n.category === 'Earnings' ? 'emerald' : 'slate',
+          isDbRecord: true
+        }));
+        
+        setNotifications(mappedDb);
+      } catch (err) {
+        console.warn("Could not load database notifications:", err);
+        setNotifications([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    loadNotifications();
+  }, [currentUser]);
+
   const categories = ['All', 'Route Match', 'SAM Bids', 'Earnings', 'Dispatch Alert', 'Certification', 'System'];
 
-  const handleMarkAsRead = (id) => {
+  const handleMarkAsRead = async (id) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, unread: false } : n))
     );
+
+    const target = notifications.find(n => n.id === id);
+    if (target?.isDbRecord) {
+      try {
+        await markNotificationRead(id, false);
+      } catch (err) {
+        console.warn("Could not update notification in DB:", err);
+      }
+    }
     showToast('Notification marked as read');
   };
 
-  const handleToggleRead = (id) => {
+  const handleToggleRead = async (id) => {
+    const target = notifications.find(n => n.id === id);
+    const nextUnread = !target?.unread;
+
     setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, unread: !n.unread } : n))
+      prev.map((n) => (n.id === id ? { ...n, unread: nextUnread } : n))
     );
+
+    if (target?.isDbRecord) {
+      try {
+        await markNotificationRead(id, nextUnread);
+      } catch (err) {
+        console.warn("Could not toggle notification in DB:", err);
+      }
+    }
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+
+    const target = notifications.find(n => n.id === id);
+    if (target?.isDbRecord) {
+      try {
+        await deleteNotificationRecord(id);
+      } catch (err) {
+        console.warn("Could not delete notification from DB:", err);
+      }
+    }
     showToast('Notification removed');
   };
 
-  const handleMarkAllAsRead = () => {
+  const handleMarkAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+
+    try {
+      await markAllNotificationsRead(currentUser?.id);
+    } catch (err) {
+      console.warn("Could not mark all notifications as read in DB:", err);
+    }
     showToast('All notifications marked as read');
   };
 
-  const handleResetNotifications = () => {
-    setNotifications(INITIAL_NOTIFICATIONS);
-    showToast('Reset to initial notifications');
+  const handleResetNotifications = async () => {
+    setLoading(true);
+    try {
+      const dbNotifs = await fetchNotifications(currentUser?.id);
+      const mappedDb = (dbNotifs || []).map((n) => ({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        category: n.category || 'System',
+        time: new Date(n.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        date: new Date(n.created_at).toLocaleDateString('en-US'),
+        unread: n.unread,
+        important: n.important,
+        actionUrl: n.action_url,
+        actionText: n.action_text,
+        badgeColor: n.category === 'Certification' ? 'indigo' : n.category === 'Earnings' ? 'emerald' : 'slate',
+        isDbRecord: true
+      }));
+      setNotifications(mappedDb);
+      showToast('Notifications refreshed from database');
+    } catch (err) {
+      console.warn("Could not reload database notifications:", err);
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredNotifications = notifications.filter((n) => {

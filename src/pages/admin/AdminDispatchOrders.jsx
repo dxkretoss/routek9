@@ -285,17 +285,14 @@ export default function AdminDispatchOrders() {
   const completedCount = orders.filter(o => o.status === 'COMPLETED').length;
 
   return (
-    <div className="p-6 lg:p-10 max-w-7xl mx-auto space-y-8 animate-fadeIn">
+    <div className="max-w-7xl mx-auto space-y-8 animate-fadeIn">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
           <div className="flex items-center gap-2.5">
-            <span className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600">
-              <Package className="w-5 h-5" />
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight">
               Dispatch Orders & Marketplace Monitor
-            </h1>
+            </h2>
           </div>
           <p className="text-xs text-slate-500 font-medium mt-1">
             Real-time administrative view of placed courier dispatches, customer posters, assigned drivers, and live fulfillment statuses.
@@ -307,7 +304,6 @@ export default function AdminDispatchOrders() {
           disabled={loading}
           className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
         >
-          <Loader2 className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Live Orders</span>
         </button>
       </div>
@@ -384,8 +380,8 @@ export default function AdminDispatchOrders() {
               key={st}
               onClick={() => setStatusFilter(st)}
               className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer ${statusFilter === st
-                  ? 'bg-[#0b132b] text-white shadow'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-[#0b132b] text-white shadow'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
             >
               {st.replace('_', ' ')}
@@ -499,9 +495,9 @@ export default function AdminDispatchOrders() {
                             value={order.status}
                             onChange={e => handleStatusChange(order.id, e.target.value)}
                             className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none ${isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                isInTransit ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                  isAccepted ? 'bg-amber-50  text-amber-700  border-amber-200' :
-                                    'bg-sky-50    text-sky-700    border-sky-200'
+                              isInTransit ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                isAccepted ? 'bg-amber-50  text-amber-700  border-amber-200' :
+                                  'bg-sky-50    text-sky-700    border-sky-200'
                               }`}
                           >
                             <option value="AVAILABLE">AVAILABLE</option>
