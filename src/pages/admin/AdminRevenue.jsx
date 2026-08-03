@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { RecentTransactionsTable } from './components/AdminComponents';
 
+const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export default function AdminRevenue() {
   const [filterPeriod, setFilterPeriod] = useState('30d');
   const [txSearch, setTxSearch] = useState('');
@@ -20,6 +22,22 @@ export default function AdminRevenue() {
   const [courseSales, setCourseSales] = useState(0);
   const [avgOrderValue, setAvgOrderValue] = useState(0);
   const [proSubscriptionsCount, setProSubscriptionsCount] = useState(0);
+
+  const getInitialMonthlyData = () => {
+    const list = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      list.push({
+        month: monthNames[d.getMonth()],
+        amount: 0,
+        height: '5%'
+      });
+    }
+    return list;
+  };
+
+  const [monthlyRevenueData, setMonthlyRevenueData] = useState(getInitialMonthlyData);
 
   useEffect(() => {
     async function loadRevenueStats() {
@@ -33,6 +51,14 @@ export default function AdminRevenue() {
           let revSum = 0;
           let courseSum = 0;
           let subCount = 0;
+
+          const monthlyDataMap = {};
+          for (let i = 5; i >= 0; i--) {
+            const d = new Date();
+            d.setMonth(d.getMonth() - i);
+            const mName = monthNames[d.getMonth()];
+            monthlyDataMap[mName] = 0;
+          }
 
           succeededTx.forEach(tx => {
             const val = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
@@ -51,13 +77,31 @@ export default function AdminRevenue() {
               } else {
                 subCount += 1;
               }
+
+              const txDate = tx.created_at ? new Date(tx.created_at) : new Date();
+              const mName = monthNames[txDate.getMonth()];
+              if (monthlyDataMap.hasOwnProperty(mName)) {
+                monthlyDataMap[mName] += val;
+              }
             }
           });
 
           setTotalRevenue(revSum);
           setCourseSales(courseSum);
           setProSubscriptionsCount(subCount);
-          setAvgOrderValue(data.length > 0 ? revSum / data.length : 0);
+          setAvgOrderValue(succeededTx.length > 0 ? revSum / succeededTx.length : 0);
+
+          const maxVal = Math.max(...Object.values(monthlyDataMap), 1);
+          const chartData = Object.keys(monthlyDataMap).map(m => {
+            const amt = monthlyDataMap[m];
+            const pct = Math.round((amt / maxVal) * 100);
+            return {
+              month: m,
+              amount: amt,
+              height: `${Math.max(pct, 5)}%`
+            };
+          });
+          setMonthlyRevenueData(chartData);
         }
       } catch (err) {
         console.warn("Failed to load revenue stats from database:", err);
@@ -71,6 +115,16 @@ export default function AdminRevenue() {
   const displayAvgOrderValue = avgOrderValue;
   const displayProCount = proSubscriptionsCount;
   const displayMRR = totalRevenue - courseSales;
+
+  const currentMonthRevenue = monthlyRevenueData[5]?.amount || 0;
+  const previousMonthRevenue = monthlyRevenueData[4]?.amount || 0;
+
+  let growthPct = 0;
+  if (previousMonthRevenue > 0) {
+    growthPct = ((currentMonthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100;
+  } else if (currentMonthRevenue > 0) {
+    growthPct = 100;
+  }
 
   const handleExportCSV = () => {
     setExportNotice("Financial statement CSV report exported successfully!");
@@ -125,9 +179,9 @@ export default function AdminRevenue() {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-[#0b132b]">${displayTotalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-          <div className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-            <ArrowUpRight className="w-3 h-3" />
-            <span>+24.5% vs previous period</span>
+          <div className={`text-[10px] font-bold flex items-center gap-1 ${growthPct >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            <ArrowUpRight className={`w-3 h-3 ${growthPct >= 0 ? '' : 'rotate-90 text-rose-600'}`} />
+            <span>{growthPct >= 0 ? '+' : ''}{growthPct.toFixed(1)}% vs previous month</span>
           </div>
         </div>
 
@@ -178,18 +232,10 @@ export default function AdminRevenue() {
         </div>
 
         <div className="h-56 bg-slate-50 rounded-2xl p-5 flex items-end justify-between gap-3 border border-slate-100">
-          {[
-            { month: 'Jan', amount: 1450, height: '35%' },
-            { month: 'Feb', amount: 2100, height: '48%' },
-            { month: 'Mar', amount: 2800, height: '58%' },
-            { month: 'Apr', amount: 3400, height: '68%' },
-            { month: 'May', amount: 4200, height: '78%' },
-            { month: 'Jun', amount: 4900, height: '88%' },
-            { month: 'Jul', amount: 5600, height: '98%' },
-          ].map((item, idx) => (
+          {monthlyRevenueData.map((item, idx) => (
             <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
               <div className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded shadow-2xs border border-slate-200 opacity-0 group-hover:opacity-100 transition-opacity">
-                ${item.amount}
+                ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div
                 className="w-full bg-gradient-to-t from-rose-600 to-rose-500 group-hover:from-rose-500 group-hover:to-rose-400 rounded-t-xl transition-all shadow-md shadow-rose-500/20"
