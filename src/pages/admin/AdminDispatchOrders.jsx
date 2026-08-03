@@ -383,11 +383,10 @@ export default function AdminDispatchOrders() {
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer ${
-                statusFilter === st
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer ${statusFilter === st
                   ? 'bg-[#0b132b] text-white shadow'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+                }`}
             >
               {st.replace('_', ' ')}
             </button>
@@ -499,12 +498,11 @@ export default function AdminDispatchOrders() {
                           <select
                             value={order.status}
                             onChange={e => handleStatusChange(order.id, e.target.value)}
-                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none ${
-                              isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              isInTransit ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                              isAccepted  ? 'bg-amber-50  text-amber-700  border-amber-200'  :
-                                            'bg-sky-50    text-sky-700    border-sky-200'
-                            }`}
+                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none ${isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                isInTransit ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                  isAccepted ? 'bg-amber-50  text-amber-700  border-amber-200' :
+                                    'bg-sky-50    text-sky-700    border-sky-200'
+                              }`}
                           >
                             <option value="AVAILABLE">AVAILABLE</option>
                             <option value="ACCEPTED">ACCEPTED</option>
@@ -655,12 +653,12 @@ export default function AdminDispatchOrders() {
                 <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
                 <span>Open Route in Google Maps</span>
               </a>
-              <button
+              {/* <button
                 onClick={() => setSelectedOrder(null)}
                 className="px-5 py-2.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs transition-colors cursor-pointer"
               >
                 Close Details
-              </button>
+              </button> */}
             </div>
           </div>
         </div>

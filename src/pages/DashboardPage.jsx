@@ -5,7 +5,7 @@ import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
-import { COURSES_DATA } from '../data/coursesData';
+import { getCourses } from '../lib/courses';
 import { supabase } from '../lib/supabase';
 import {
   Award,
@@ -209,7 +209,15 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     }
   }, [currentUser]);
 
-  const enrolledCourses = COURSES_DATA.filter((c) => purchasedCourses.includes(c.id));
+  const [enrolledCourses, setEnrolledCourses] = useState([]);
+
+  useEffect(() => {
+    async function loadEnrolled() {
+      const data = await getCourses();
+      setEnrolledCourses((data || []).filter((c) => purchasedCourses.includes(c.id)));
+    }
+    loadEnrolled();
+  }, [purchasedCourses]);
 
   const handleDownloadCertificate = (courseTitle) => {
     setDownloadToast(`📜 Downloading RouteK9 Completion Certificate for "${courseTitle}"`);
@@ -675,9 +683,18 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stops List:</span>
                             <ul className="space-y-1 max-h-28 overflow-y-auto">
                               {route.stops.map((s, idx) => (
-                                <li key={idx} className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60">
-                                  <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
-                                  <span className="truncate">{s.label}</span>
+                                <li key={idx} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
+                                    <span className="truncate" title={s.label}>{s.label}</span>
+                                  </div>
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${
+                                    s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                    'bg-slate-100 text-slate-600 border-slate-200'
+                                  }`}>
+                                    {s.status || 'pending'}
+                                  </span>
                                 </li>
                               ))}
                             </ul>

@@ -16,6 +16,7 @@ import {
   Loader2,
   FileText
 } from "lucide-react";
+import StripeEmbeddedCheckout from '../components/StripeEmbeddedCheckout';
 
 const PRICE_CENTS = 2500;
 
@@ -68,15 +69,8 @@ export default function CertificationPage({ currentUser, onLogout }) {
     }
     loadDynamicQuestions();
   }, []);
-  
-  // Mock Checkout state
-  const [cardForm, setCardForm] = useState({
-    number: "",
-    expiry: "",
-    cvc: "",
-    zip: ""
-  });
-  const [checkoutBusy, setCheckoutBusy] = useState(false);
+
+
   const autoDownloadStarted = useRef(false);
 
   const passingScore = useMemo(
@@ -163,7 +157,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
     doc.setLineWidth(0.4);
     doc.line(w / 2 - 200, 90, w / 2 - 20, 90);
     doc.line(w / 2 + 20, 90, w / 2 + 200, 90);
-    
+
     // small diamond
     doc.setFillColor(...gold);
     doc.triangle(w / 2 - 6, 90, w / 2 + 6, 90, w / 2, 84, "F");
@@ -238,7 +232,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
     doc.setDrawColor(...navy);
     doc.setLineWidth(1);
     doc.circle(sealCx, sealCy, 26);
-    
+
     // ribbon tails
     doc.setFillColor(...navy);
     doc.triangle(sealCx - 14, sealCy + 24, sealCx - 2, sealCy + 24, sealCx - 8, sealCy + 46, "F");
@@ -316,13 +310,8 @@ export default function CertificationPage({ currentUser, onLogout }) {
   }, [buildCertificatePdf, setCertificatePreview]);
 
   // Handle mock payment submit
-  const handleMockPay = (e) => {
-    e.preventDefault();
-    setCheckoutBusy(true);
-    setTimeout(() => {
-      setCheckoutBusy(false);
-      setStage("paid");
-    }, 1500);
+  const handlePaymentSuccess = () => {
+    setStage("paid");
   };
 
   useEffect(() => {
@@ -347,11 +336,11 @@ export default function CertificationPage({ currentUser, onLogout }) {
             <Award className="w-4 h-4 text-rose-600 shrink-0" />
             <span>Driver Credentials</span>
           </div>
-          
+
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
             HIPAA & Bloodborne Pathogens Certification
           </h1>
-          
+
           <p className="mx-auto max-w-2xl text-xs sm:text-sm text-slate-500 leading-relaxed font-medium">
             Essential compliance credentialing for medical couriers. Answer {questionsList.length} questions covering patient privacy safeguards and OSHA universal precautions, score at least {passingScore}/{questionsList.length}, and instantly unlock your official printable certificate for ${(PRICE_CENTS / 100).toFixed(0)}.
           </p>
@@ -442,7 +431,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
                   >
                     Start the {questionsList.length}-Question Exam &rarr;
                   </button>
-                  
+
                   {fullName.length > 0 && fullName.trim().length < 2 && (
                     <p className="text-xs text-rose-600 font-semibold">
                       Please enter your full name (minimum 2 characters).
@@ -467,11 +456,10 @@ export default function CertificationPage({ currentUser, onLogout }) {
                         return (
                           <label
                             key={oi}
-                            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
-                              selected
-                                ? "border-rose-600 bg-rose-50/50 text-[#0b132b]"
-                                : "border-slate-200 bg-slate-50 text-slate-700 hover:border-rose-300"
-                            }`}
+                            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-xs font-semibold transition ${selected
+                              ? "border-rose-600 bg-rose-50/50 text-[#0b132b]"
+                              : "border-slate-200 bg-slate-50 text-slate-700 hover:border-rose-300"
+                              }`}
                           >
                             <input
                               type="radio"
@@ -507,215 +495,122 @@ export default function CertificationPage({ currentUser, onLogout }) {
               </section>
             )}
 
-        {/* STAGE 3: RESULTS */}
-        {stage === "results" && (
-          <section className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-8 text-center space-y-6">
-            <div className="space-y-1">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Your Exam Score</div>
-              <div className={`text-6xl font-extrabold tracking-tight ${passed ? "text-emerald-600" : "text-rose-600"}`}>
-                {score} / {questionsList.length}
-              </div>
-            </div>
-
-            {passed ? (
-              <div className="space-y-6 max-w-md mx-auto">
-                <div className="space-y-2">
-                  <h2 className="text-xl font-bold text-[#0b132b] font-serif-heading">Congratulations, you passed!</h2>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Complete the secure checkout process to instantly generate, unlock, and download your official HIPAA & Bloodborne Pathogens certificate.
-                  </p>
-                </div>
-
-                <div className="space-y-3 pt-2">
-                  <button
-                    onClick={() => setStage("checkout")}
-                    className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span>Pay ${(PRICE_CENTS / 100).toFixed(2)} &amp; Unlock Certificate</span>
-                  </button>
-                  <p className="text-[10px] text-slate-400 font-semibold">
-                    One-time payment &middot; Fully secure SSL checkout &middot; Direct PDF download
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6 max-w-md mx-auto">
-                <div className="space-y-2">
-                  <h2 className="text-xl font-bold text-[#0b132b] font-serif-heading">Exam Not Passed</h2>
-                  <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                    A minimum score of {PASSING_SCORE}/{QUESTIONS.length} is required. Review medical courier privacy standards and retry the exam. Retakes are 100% free.
-                  </p>
-                </div>
-
-                <button
-                  onClick={resetTest}
-                  className="px-8 py-3 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-                >
-                  Retake Exam
-                </button>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* STAGE 4: MOCK CHECKOUT */}
-        {stage === "checkout" && (
-          <section className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 max-w-md mx-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h2 className="text-base font-bold text-[#0b132b] font-serif-heading">Secure Checkout</h2>
-                <div className="text-[11px] text-slate-500 font-semibold">
-                  Name: <span className="text-slate-800 font-bold">{fullName}</span>
-                </div>
-              </div>
-              <button
-                onClick={() => setStage("results")}
-                className="text-xs font-bold text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                &larr; Back
-              </button>
-            </div>
-
-            <form onSubmit={handleMockPay} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Card Number</label>
-                <div className="relative">
-                  <CreditCard className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    required
-                    type="text"
-                    pattern="\d*"
-                    maxLength={19}
-                    placeholder="4111 2222 3333 4444"
-                    value={cardForm.number}
-                    onChange={(e) => setCardForm({ ...cardForm, number: e.target.value.replace(/\s?/g, '').replace(/(\d{4})/g, '$1 ').trim() })}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            {/* STAGE 3: RESULTS */}
+            {stage === "results" && (
+              <section className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-8 text-center space-y-6">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Expiration</label>
-                  <input
-                    required
-                    type="text"
-                    maxLength={5}
-                    placeholder="MM/YY"
-                    value={cardForm.expiry}
-                    onChange={(e) => setCardForm({ ...cardForm, expiry: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">CVC Code</label>
-                  <input
-                    required
-                    type="text"
-                    pattern="\d*"
-                    maxLength={4}
-                    placeholder="123"
-                    value={cardForm.cvc}
-                    onChange={(e) => setCardForm({ ...cardForm, cvc: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">ZIP Code</label>
-                <input
-                  required
-                  type="text"
-                  maxLength={5}
-                  placeholder="90210"
-                  value={cardForm.zip}
-                  onChange={(e) => setCardForm({ ...cardForm, zip: e.target.value })}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={checkoutBusy}
-                className="w-full py-3.5 mt-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-70"
-              >
-                {checkoutBusy ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Processing Secure Payment...</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>Authorize &amp; Pay ${(PRICE_CENTS / 100).toFixed(2)}</span>
-                  </>
-                )}
-              </button>
-
-              <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <span>Standard Demo Sandboxed Gateway</span>
-              </div>
-            </form>
-          </section>
-        )}
-
-        {/* STAGE 5: PAID & DOWNLOAD */}
-        {stage === "paid" && (
-          <section className="bg-white rounded-3xl border border-emerald-500/30 shadow-sm p-6 sm:p-8 text-center space-y-6">
-            <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 mx-auto">
-              <CheckCircle2 className="w-6 h-6" />
-            </div>
-
-            <div className="space-y-2 max-w-md mx-auto">
-              <h2 className="text-xl font-bold text-[#0b132b] font-serif-heading">Payment Received!</h2>
-              <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                Your HIPAA &amp; Bloodborne Pathogens certificate for <strong className="text-slate-800">{fullName}</strong> is ready. Open or download the PDF below to save your credentials.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-              <button
-                onClick={downloadCertificate}
-                disabled={generating}
-                className="px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>{generating ? "Generating..." : "Download Certificate PDF"}</span>
-              </button>
-              {pdfUrl && (
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-6 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
-                >
-                  <ExternalLink className="w-4 h-4 text-slate-400" />
-                  <span>Open in New Tab</span>
-                </a>
-              )}
-            </div>
-
-            {pdfUrl && (
-              <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-1">
-                <object
-                  data={pdfUrl}
-                  type="application/pdf"
-                  title="Certificate preview"
-                  className="h-[60vh] w-full rounded-xl"
-                >
-                  <div className="p-12 text-xs text-slate-400 font-semibold bg-white rounded-xl">
-                    PDF ready! Click "Download Certificate PDF" to save it directly to your device downloads folder.
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Your Exam Score</div>
+                  <div className={`text-6xl font-extrabold tracking-tight ${passed ? "text-emerald-600" : "text-rose-600"}`}>
+                    {score} / {questionsList.length}
                   </div>
-                </object>
-              </div>
+                </div>
+
+                {passed ? (
+                  <div className="space-y-6 max-w-md mx-auto">
+                    <div className="space-y-2">
+                      <h2 className="text-xl font-bold text-[#0b132b] font-serif-heading">Congratulations, you passed!</h2>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Complete the secure checkout process to instantly generate, unlock, and download your official HIPAA & Bloodborne Pathogens certificate.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      <button
+                        onClick={() => setStage("checkout")}
+                        className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        <span>Pay ${(PRICE_CENTS / 100).toFixed(2)} &amp; Unlock Certificate</span>
+                      </button>
+                      <p className="text-[10px] text-slate-400 font-semibold">
+                        One-time payment &middot; Fully secure SSL checkout &middot; Direct PDF download
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6 max-w-md mx-auto">
+                    <div className="space-y-2">
+                      <h2 className="text-xl font-bold text-[#0b132b] font-serif-heading">Exam Not Passed</h2>
+                      <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                        A minimum score of {PASSING_SCORE}/{QUESTIONS.length} is required. Review medical courier privacy standards and retry the exam. Retakes are 100% free.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={resetTest}
+                      className="px-8 py-3 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                    >
+                      Retake Exam
+                    </button>
+                  </div>
+                )}
+              </section>
             )}
-          </section>
+
+            {/* STAGE 4: MOCK CHECKOUT */}
+            {stage === "checkout" && (
+              <StripeEmbeddedCheckout
+                priceId="hipaa_certificate"
+                fullName={fullName}
+                returnUrl={window.location.href}
+                onSuccess={handlePaymentSuccess}
+              />
+            )}
+
+            {/* STAGE 5: PAID & DOWNLOAD */}
+            {stage === "paid" && (
+              <section className="bg-white rounded-3xl border border-emerald-500/30 shadow-sm p-6 sm:p-8 text-center space-y-6">
+                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+
+                <div className="space-y-2 max-w-md mx-auto">
+                  <h2 className="text-xl font-bold text-[#0b132b] font-serif-heading">Payment Received!</h2>
+                  <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                    Your HIPAA &amp; Bloodborne Pathogens certificate for <strong className="text-slate-800">{fullName}</strong> is ready. Open or download the PDF below to save your credentials.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                  <button
+                    onClick={downloadCertificate}
+                    disabled={generating}
+                    className="px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{generating ? "Generating..." : "Download Certificate PDF"}</span>
+                  </button>
+                  {pdfUrl && (
+                    <a
+                      href={pdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-6 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="w-4 h-4 text-slate-400" />
+                      <span>Open in New Tab</span>
+                    </a>
+                  )}
+                </div>
+
+                {pdfUrl && (
+                  <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-1">
+                    <object
+                      data={pdfUrl}
+                      type="application/pdf"
+                      title="Certificate preview"
+                      className="h-[60vh] w-full rounded-xl"
+                    >
+                      <div className="p-12 text-xs text-slate-400 font-semibold bg-white rounded-xl">
+                        PDF ready! Click "Download Certificate PDF" to save it directly to your device downloads folder.
+                      </div>
+                    </object>
+                  </div>
+                )}
+              </section>
+            )}
+          </>
         )}
-        </>
-      )}
 
         {/* Lower credential sections info */}
         <section className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6">

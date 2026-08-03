@@ -264,13 +264,13 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
         setRouteHistory(normalized);
 
-        // Build stopStatuses with 'pending' default for any unseen stop
+        // Build stopStatuses with stop status or 'pending' default for any unseen stop
         setStopStatuses(prev => {
           const merged = { ...prev };
           normalized.forEach(route => {
-            (route.stops || []).forEach((_, idx) => {
+            (route.stops || []).forEach((stop, idx) => {
               const key = `${route.id}_${idx}`;
-              if (!merged[key]) merged[key] = 'pending';
+              if (!merged[key]) merged[key] = stop.status || 'pending';
             });
           });
           return merged;
@@ -282,6 +282,74 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
       setLoadingHistory(false);
     }
   }, [currentUser?.id]);
+
+  const handleStopStatusChange = async (routeId, stopIdx, newStatus) => {
+    const key = `${routeId}_${stopIdx}`;
+    // 1. Update stopStatuses state
+    setStopStatuses(prev => ({ ...prev, [key]: newStatus }));
+
+    // 2. Find route in history
+    const route = routeHistory.find(r => r.id === routeId);
+    if (!route) return;
+
+    // 3. Update the specific stop's status in stops array
+    const updatedStops = (route.stops || []).map((stop, idx) => {
+      if (idx === stopIdx) {
+        return { ...stop, status: newStatus };
+      }
+      return stop;
+    });
+
+    // 4. Update in Supabase
+    try {
+      const { error } = await supabase
+        .from('routes')
+        .update({ stops_data: updatedStops })
+        .eq('id', routeId);
+
+      if (error) {
+        console.warn("Error updating stop status in DB:", error.message || error);
+      } else {
+        // Update local routeHistory state
+        setRouteHistory(prev => prev.map(r => r.id === routeId ? { ...r, stops: updatedStops } : r));
+      }
+    } catch (err) {
+      console.warn("Error updating stop status:", err);
+    }
+  };
+
+  const handleBatchStopStatusChange = async (routeId, newStatus) => {
+    // 1. Find route
+    const route = routeHistory.find(r => r.id === routeId);
+    if (!route) return;
+
+    // 2. Update all stops in stops array
+    const updatedStops = (route.stops || []).map(stop => ({ ...stop, status: newStatus }));
+
+    // 3. Update stopStatuses state
+    const updates = {};
+    updatedStops.forEach((_, idx) => {
+      updates[`${routeId}_${idx}`] = newStatus;
+    });
+    setStopStatuses(prev => ({ ...prev, ...updates }));
+
+    // 4. Update in Supabase
+    try {
+      const { error } = await supabase
+        .from('routes')
+        .update({ stops_data: updatedStops })
+        .eq('id', routeId);
+
+      if (error) {
+        console.warn("Error updating stop statuses in DB:", error.message || error);
+      } else {
+        // Update local routeHistory state
+        setRouteHistory(prev => prev.map(r => r.id === routeId ? { ...r, stops: updatedStops } : r));
+      }
+    } catch (err) {
+      console.warn("Error updating stop statuses:", err);
+    }
+  };
 
   // Load on mount and whenever the logged-in user changes
   useEffect(() => {
@@ -324,7 +392,8 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         label: s.label,
         lat: s.lat,
         lon: s.lon,
-        zoneId: s.zoneId || null
+        zoneId: s.zoneId || null,
+        status: 'pending'
       })),
       distanceMiles: Number(distMi.toFixed(1)),
       durationMinutes: Math.round(durMin),
@@ -1235,1358 +1304,1352 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           </div>
         </div>
       ) : (
-      <>
-      <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-6">
-        {/* Left: controls + list */}
-        <div className="min-w-0 space-y-4">
-          {/* Header */}
-          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.5 6H14a4 4 0 0 1 0 8h-4a4 4 0 0 0 0 8h5.5" /></svg>
-                </div>
-                <div className="min-w-0">
-                  <div className="font-display text-lg sm:text-2xl font-bold leading-tight text-primary">
-                    Plan your route
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    We auto-optimize for the fastest path using live traffic.
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={requestClearAll}
-                disabled={!stops.length}
-                className="flex flex-shrink-0 items-center gap-1 rounded-full border border-rose-600/40 bg-white hover:bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition disabled:opacity-40 cursor-pointer"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 3v6h6" /></svg>
-                Erase
-              </button>
-            </div>
-          </div>
-
-          {/* Guided Wizard Step Navigation Header */}
-          <div className="rounded-3xl border border-border bg-card p-3.5 shadow-xs space-y-2.5">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-rose-600">
-                Step {wizardStep} of 4: {wizardStep === 1 ? 'Add Stops' : wizardStep === 2 ? 'Optimize Route' : wizardStep === 3 ? 'Zones & Dispatch' : 'GPS & Support'}
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowAllPanels(!showAllPanels)}
-                className="text-[10px] font-bold text-slate-500 hover:text-rose-600 transition underline cursor-pointer"
-              >
-                {showAllPanels ? "Switch to Guided Wizard" : "Show All Panels (Pro View)"}
-              </button>
-            </div>
-
-            {!showAllPanels && (
-              <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/90 rounded-2xl border border-slate-200/60">
-                {[
-                  { step: 1, label: "1. Stops" },
-                  { step: 2, label: "2. Optimize" },
-                  { step: 3, label: "3. Dispatch" },
-                  { step: 4, label: "4. GPS" },
-                ].map((s) => (
-                  <button
-                    key={s.step}
-                    type="button"
-                    onClick={() => setWizardStep(s.step)}
-                    className={`rounded-xl py-2 px-1 text-[11px] font-bold transition text-center cursor-pointer whitespace-nowrap ${wizardStep === s.step
-                      ? "bg-rose-600 text-white shadow-xs"
-                      : "text-slate-600 hover:bg-white/80 hover:text-slate-900"
-                      }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* STEP 1: Add Stop & Address Search */}
-          {(showAllPanels || wizardStep === 1) && (
-            <div className="space-y-4">
-              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <label
-                      htmlFor="rk9-add-stop"
-                      className="text-[10px] font-bold uppercase tracking-wider text-rose-600"
-                    >
-                      Add stop
-                    </label>
-                    <span className="rounded-full border border-border bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                      US only
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className="tabular-nums font-semibold text-primary">
-                      {stops.length}/400
-                    </span>
-                    {locStatus === "ok" && userLoc ? (
-                      <button
-                        type="button"
-                        onClick={requestUserLocation}
-                        className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 transition hover:bg-emerald-100 cursor-pointer"
-                        title="Address search is biased to your area. Tap to refresh."
-                      >
-                        <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span className="max-w-[140px] truncate">
-                          Near {userLoc.city ? `${userLoc.city}, ` : ""}
-                          {userLoc.state ?? "you"}
-                        </span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={requestUserLocation}
-                        className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50 cursor-pointer"
-                      >
-                        <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
-                        {locStatus === "asking"
-                          ? "Locating…"
-                          : locStatus === "denied"
-                            ? "Enable location"
-                            : "Use my location"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="relative mt-2">
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-                    </span>
-                    <input
-                      id="rk9-add-stop"
-                      type="text"
-                      autoComplete="off"
-                      inputMode="search"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onFocus={() => {
-                        if (suggestions.length) setShowSug(true);
-                      }}
-                      onBlur={() => {
-                        setTimeout(() => setShowSug(false), 120);
-                      }}
-                      onKeyDown={(e) => {
-                        const list = suggestions.filter(
-                          (s) => filter === "all" || s.category === filter,
-                        );
-                        if (e.key === "ArrowDown") {
-                          e.preventDefault();
-                          setShowSug(true);
-                          setActiveIdx((i) => Math.min(i + 1, list.length - 1));
-                        } else if (e.key === "ArrowUp") {
-                          e.preventDefault();
-                          setActiveIdx((i) => Math.max(i - 1, 0));
-                        } else if (e.key === "Enter") {
-                          e.preventDefault();
-                          if (activeIdx >= 0 && list[activeIdx]) addStop(list[activeIdx]);
-                          else if (query.trim()) addFromText(query);
-                        } else if (e.key === "Escape") {
-                          setShowSug(false);
-                        }
-                      }}
-                      placeholder="Search US addresses, businesses, or ZIP codes…"
-                      className="w-full rounded-xl border border-border bg-white py-3 pl-9 pr-24 text-sm text-primary placeholder:text-muted-foreground focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                    />
-                    <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
-                      {searching && (
-                        <span className="h-3 w-3 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
-                      )}
-                      {query && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQuery("");
-                            setSuggestions([]);
-                            setShowSug(false);
-                          }}
-                          className="rounded-md px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-150 cursor-pointer"
-                          aria-label="Clear"
-                        >
-                          ✕
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => query.trim() && addFromText(query)}
-                        disabled={!query.trim()}
-                        className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-rose-700 disabled:opacity-40 cursor-pointer"
-                      >
-                        Add
-                      </button>
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-6">
+            {/* Left: controls + list */}
+            <div className="min-w-0 space-y-4">
+              {/* Header */}
+              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.5 6H14a4 4 0 0 1 0 8h-4a4 4 0 0 0 0 8h5.5" /></svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-display text-lg sm:text-2xl font-bold leading-tight text-primary">
+                        Plan your route
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        We auto-optimize for the fastest path using live traffic.
+                      </div>
                     </div>
                   </div>
-
-                  {/* Filter chips */}
-                  <div className="mt-2 flex gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {FILTERS.map((f) => {
-                      const active = filter === f.key;
-                      const IconComp = f.icon;
-                      return (
-                        <button
-                          key={f.key}
-                          type="button"
-                          onClick={() => setFilter(f.key)}
-                          className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${active
-                            ? "border-rose-600 bg-rose-600 text-white"
-                            : "border-border bg-white text-primary/70 hover:bg-slate-50"
-                            }`}
-                        >
-                          <IconComp className="w-3.5 h-3.5" />
-                          {f.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Suggestions dropdown */}
-                  {showSug && (suggestions.length > 0 || searching) && (
-                    <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
-                      {(() => {
-                        const list = suggestions.filter(
-                          (s) => filter === "all" || s.category === filter,
-                        );
-                        if (!list.length) {
-                          return (
-                            <div className="px-3 py-3 text-xs text-muted-foreground">
-                              {searching
-                                ? "Searching US addresses…"
-                                : "No US matches found. Try a different address or filter."}
-                            </div>
-                          );
-                        }
-                        return list.map((s, i) => {
-                          const active = i === activeIdx;
-                          const meta = FILTERS.find((f) => f.key === s.category);
-                          const IconComp = meta?.icon ?? MapPin;
-                          return (
-                            <button
-                              key={String(s.place_id)}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                addStop(s);
-                              }}
-                              onMouseEnter={() => setActiveIdx(i)}
-                              className={`flex w-full items-start gap-2 border-b border-border/50 px-3 py-2 text-left text-xs transition last:border-b-0 cursor-pointer ${active ? "bg-rose-50" : "hover:bg-slate-50"
-                                }`}
-                            >
-                              <IconComp className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                              <span className="flex-1 leading-snug text-primary font-medium">
-                                {s.display_name}
-                              </span>
-                            </button>
-                          );
-                        });
-                      })()}
-                    </div>
-                  )}
-                </div>
-
-                {/* Recent + import */}
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-                  {recent.slice(0, 4).map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => addFromText(r)}
-                      className="max-w-[180px] truncate rounded-full border border-border bg-white px-2 py-0.5 text-primary/70 transition hover:bg-slate-50 cursor-pointer flex items-center"
-                      title={r}
-                    >
-                      <History className="w-3 h-3 mr-1 text-slate-400 shrink-0" />
-                      <span className="truncate">{r}</span>
-                    </button>
-                  ))}
-                  <label className="ml-auto cursor-pointer rounded-full border border-border bg-white px-2.5 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50">
-                    Import CSV
-                    <input
-                      type="file"
-                      accept=".csv,text/csv"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) importCsv(f);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {stops.length > 0 && (
-                <div className="mt-4 rounded-3xl border border-border bg-card shadow-sm">
-                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                    <div className="text-sm font-bold text-primary">Stops</div>
-                    <button
-                      type="button"
-                      onClick={exportCsv}
-                      className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
-                    >
-                      Export CSV
-                    </button>
-                  </div>
-                  <ol className="max-h-[420px] divide-y divide-border overflow-auto">
-                    {stops.map((s, i) => (
-                      <li key={s.id} className="flex items-center gap-2 px-4 py-2.5 bg-white">
-                        <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white">
-                          {i + 1}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-semibold text-primary" title={s.label}>
-                            {s.label}
-                          </div>
-                          {zones.length > 0 && (
-                            <div className="mt-1 flex items-center gap-1.5">
-                              <select
-                                value={s.zoneId ?? ""}
-                                onChange={(e) => assignStopZone(s.id, e.target.value || undefined)}
-                                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700 focus:bg-white focus:outline-none transition cursor-pointer"
-                                style={
-                                  s.zoneId && zones.find((z) => z.id === s.zoneId)
-                                    ? {
-                                      backgroundColor: `${zones.find((z) => z.id === s.zoneId).color}20`,
-                                      borderColor: zones.find((z) => z.id === s.zoneId).color,
-                                      color: zones.find((z) => z.id === s.zoneId).color,
-                                    }
-                                    : {}
-                                }
-                              >
-                                <option value="">— Unzoned —</option>
-                                {zones.map((z) => (
-                                  <option key={z.id} value={z.id}>
-                                    {z.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex flex-shrink-0 items-center gap-0.5">
-                          <IconBtn onClick={() => move(s.id, -1)} title="Move up">
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </IconBtn>
-                          <IconBtn onClick={() => move(s.id, 1)} title="Move down">
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </IconBtn>
-                          <IconBtn
-                            onClick={() => toggleLock(s.id)}
-                            title={s.locked ? "Unlock" : "Lock"}
-                          >
-                            {s.locked ? (
-                              <Lock className="w-3.5 h-3.5 text-slate-500" />
-                            ) : (
-                              <Unlock className="w-3.5 h-3.5 text-slate-400" />
-                            )}
-                          </IconBtn>
-                          <IconBtn onClick={() => removeStop(s.id)} title="Remove">
-                            <X className="w-3.5 h-3.5 text-rose-500" />
-                          </IconBtn>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-
-              {!showAllPanels && wizardStep === 1 && (
-                <button
-                  type="button"
-                  onClick={() => setWizardStep(2)}
-                  disabled={stops.length < 2}
-                  className="mt-4 w-full rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs py-3.5 shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>Next: Step 2 — Select Goal & Optimize</span>
-                  <span>→</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* STEP 2: Optimization Goal & Summary Metrics */}
-          {(showAllPanels || wizardStep === 2) && (
-            <div className="space-y-4">
-              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                    Optimization goal
-                  </label>
-                </div>
-                <div className="grid grid-cols-3 gap-1 rounded-lg border border-border p-1 bg-white">
-                  {["fastest", "shortest", "balanced"].map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => {
-                        setGoal(g);
-                        if (stops.length >= 2) optimize(g);
-                      }}
-                      className={`rounded-md px-2 py-1.5 text-xs font-semibold capitalize transition cursor-pointer ${goal === g ? "bg-rose-600 text-white" : "text-primary/70 hover:bg-slate-50"
-                        }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={optimize}
-                    disabled={optimizing || stops.length < 2}
-                    className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-3 text-sm font-bold tracking-wide text-white shadow-xs transition disabled:opacity-50 cursor-pointer"
-                  >
-                    {optimizing ? "Optimizing…" : "Optimize route"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={reverse}
-                    disabled={stops.length < 2}
-                    className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
-                  >
-                    Reverse
-                  </button>
                   <button
                     type="button"
                     onClick={requestClearAll}
                     disabled={!stops.length}
-                    className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
+                    className="flex flex-shrink-0 items-center gap-1 rounded-full border border-rose-600/40 bg-white hover:bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition disabled:opacity-40 cursor-pointer"
                   >
-                    Clear
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 3v6h6" /></svg>
+                    Erase
                   </button>
                 </div>
-                {error && (
-                  <div className="rounded-md border border-rose-500/20 bg-rose-50 px-3 py-2 text-xs text-rose-600 font-medium">
-                    {error}
-                  </div>
-                )}
               </div>
 
-              {(distMi > 0 || durMin > 0) && (
-                <div className="grid grid-cols-3 gap-2 rounded-3xl border border-rose-600 bg-rose-600 p-5 text-white shadow-md">
-                  <Stat label="Miles" value={distMi.toFixed(1)} />
-                  <Stat label="Drive time" value={formatDur(durMin)} />
-                  <Stat label="Est fuel" value={`$${fuelCost.toFixed(2)}`} />
-                </div>
-              )}
-
-              {!showAllPanels && wizardStep === 2 && (
-                <button
-                  type="button"
-                  onClick={() => setWizardStep(3)}
-                  className="w-full rounded-2xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs py-3.5 shadow-md transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>Next: Step 3 — Zones & Driver Dispatch</span>
-                  <span>→</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* STEP 3: Zones & Driver Dispatch */}
-          {(showAllPanels || wizardStep === 3) && (
-            <div className="space-y-4">
-              {stops.length > 0 && (
-                <>
-                  {isDriver ? (
-                    <div className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-sm space-y-3">
-                      <button
-                        type="button"
-                        onClick={handleSaveRouteToDashboardAndAdmin}
-                        disabled={savingRoute || stops.length < 2}
-                        className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Save className="w-4 h-4" />
-                        <span>{savingRoute ? 'Saving Route...' : 'Save Route'}</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-4">
-                      {/* Save Route Button for Admin/Dispatcher */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-xs font-extrabold text-[#0b132b]">Save & Dispatch Route</div>
-                          <div className="text-[10px] text-slate-500 font-medium">Save complete route data to Admin Panel & Driver Dashboard</div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleSaveRouteToDashboardAndAdmin}
-                          disabled={savingRoute || stops.length < 2}
-                          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
-                        >
-                          <Save className="w-3.5 h-3.5" />
-                          <span>{savingRoute ? 'Saving...' : 'Save Route'}</span>
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setZonesOpen((o) => !o)}
-                        className="flex w-full items-center justify-between gap-3 text-left cursor-pointer pt-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-rose-600">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></svg>
-                          </span>
-                          <span className="text-base font-bold text-primary">Zones</span>
-                          {zones.length > 0 && (
-                            <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px] font-bold text-rose-600">
-                              {zones.length}
-                            </span>
-                          )}
-                        </div>
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className={`text-primary/60 transition-transform ${zonesOpen ? "rotate-180" : ""}`}
-                        >
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </button>
-                      {zonesOpen && (
-                        <>
-                          <div className="mt-3 text-xs text-slate-500 font-medium">
-                            Section off addresses that are close to each other and hand each zone to a different driver.
-                          </div>
-                          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-slate-50 p-2">
-                            <label className="text-[11px] font-semibold text-primary/80">Auto-group into</label>
-                            <input
-                              type="number"
-                              min={2}
-                              max={ZONE_COLORS.length}
-                              value={autoZoneCount}
-                              onChange={(e) => setAutoZoneCount(Math.max(2, Math.min(ZONE_COLORS.length, parseInt(e.target.value) || 2)))}
-                              className="w-14 rounded border border-border bg-white px-2 py-1 text-xs"
-                            />
-                            <span className="text-[11px] text-muted-foreground font-semibold">zones by proximity</span>
-                            <button
-                              type="button"
-                              onClick={autoGroupZones}
-                              className="ml-auto rounded-md bg-[#0b132b] text-white px-3 py-1.5 text-xs font-bold hover:bg-[#1a264a] cursor-pointer"
-                            >
-                              Auto-group
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => addZone()}
-                            className="mt-2 rounded-lg border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 cursor-pointer"
-                          >
-                            + Add zone
-                          </button>
-                          {zones.length === 0 && (
-                            <div className="mt-3 rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
-                              No zones yet. Add one manually or auto-group by proximity.
-                            </div>
-                          )}
-                          <div className="mt-3 space-y-3">
-                            {zones.map((z) => {
-                              const zStops = stopsInZone(z.id);
-                              const over = zStops.length > GOOGLE_ZONE_LIMIT;
-                              return (
-                                <div
-                                  key={z.id}
-                                  className="rounded-lg border border-border bg-white p-3"
-                                  style={{ borderLeft: `4px solid ${z.color}` }}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className="inline-block h-4 w-4 flex-shrink-0 rounded-full border border-white shadow"
-                                      style={{ background: z.color }}
-                                    />
-                                    <input
-                                      value={z.name}
-                                      onChange={(e) => updateZone(z.id, { name: e.target.value })}
-                                      className="min-w-0 flex-1 rounded border border-border bg-white px-2 py-1 text-sm font-semibold text-primary"
-                                    />
-                                    <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
-                                      {zStops.length} stop{zStops.length === 1 ? "" : "s"}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeZone(z.id)}
-                                      className="rounded p-1 text-xs text-slate-400 hover:text-rose-600 cursor-pointer flex items-center justify-center"
-                                      title="Delete zone"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                  <div className="mt-2.5 space-y-2">
-                                    {spares.length > 0 && (
-                                      <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                          Assign Driver
-                                        </label>
-                                        <select
-                                          value={z.driverPhone ?? ""}
-                                          onChange={(e) => {
-                                            const selected = spares.find((d) => d.phone === e.target.value);
-                                            if (selected) {
-                                              updateZone(z.id, {
-                                                driverName: `${selected.first_name} ${selected.last_name}`,
-                                                driverPhone: selected.phone,
-                                              });
-                                            }
-                                          }}
-                                          className="w-full rounded border border-border bg-slate-50 px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white"
-                                        >
-                                          <option value="">— Select Registered Driver —</option>
-                                          {spares.map((d) => (
-                                            <option key={d.id} value={d.phone}>
-                                              {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    )}
-
-                                    <div className="grid grid-cols-2 gap-2">
-                                      <input
-                                        placeholder="Driver name"
-                                        value={z.driverName ?? ""}
-                                        onChange={(e) => updateZone(z.id, { driverName: e.target.value })}
-                                        className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
-                                      />
-                                      <input
-                                        type="tel"
-                                        placeholder="Driver phone"
-                                        value={z.driverPhone ?? ""}
-                                        onChange={(e) => updateZone(z.id, { driverPhone: e.target.value })}
-                                        className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
-                                      />
-                                    </div>
-
-                                    {z.driverName && z.driverPhone && !spares.some((d) => d.phone === z.driverPhone) && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const parts = z.driverName.trim().split(" ");
-                                          const newDriver = {
-                                            id: uid(),
-                                            first_name: parts[0] || "Driver",
-                                            last_name: parts.slice(1).join(" ") || "",
-                                            phone: z.driverPhone.trim(),
-                                            city: userLoc?.city || "Local",
-                                            state: userLoc?.state || "US",
-                                          };
-                                          setSpares((prev) => [newDriver, ...prev]);
-                                        }}
-                                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1 mt-1"
-                                      >
-                                        + Save "{z.driverName}" to registered drivers list
-                                      </button>
-                                    )}
-
-                                    {/* Assigned Stops in this Zone */}
-                                    <div className="mt-2.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 space-y-1.5">
-                                      <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                                        <span>Stops in {z.name} ({zStops.length})</span>
-                                      </div>
-                                      {zStops.length === 0 ? (
-                                        <div className="text-[11px] text-slate-400 italic font-medium py-1">
-                                          No stops assigned to this zone yet.
-                                        </div>
-                                      ) : (
-                                        <ul className="space-y-1 max-h-36 overflow-y-auto">
-                                          {zStops.map((s) => (
-                                            <li key={s.id} className="flex items-center justify-between gap-1 text-[11px] font-medium text-slate-700 bg-white px-2 py-1 rounded border border-slate-200/80 shadow-2xs">
-                                              <span className="truncate flex items-center gap-1">
-                                                <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
-                                                <span className="truncate">{s.label}</span>
-                                              </span>
-                                              <button
-                                                type="button"
-                                                onClick={() => assignStopZone(s.id, undefined)}
-                                                className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 shrink-0"
-                                                title="Remove stop from zone"
-                                              >
-                                                <X className="w-3 h-3" />
-                                              </button>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      )}
-
-                                      {/* Quick add stop dropdown */}
-                                      {stops.length > 0 && (
-                                        <select
-                                          value=""
-                                          onChange={(e) => {
-                                            if (e.target.value) assignStopZone(e.target.value, z.id);
-                                          }}
-                                          className="w-full mt-1.5 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 focus:outline-none focus:border-rose-500"
-                                        >
-                                          <option value="">+ Assign a stop to {z.name}…</option>
-                                          {stops.map((s) => (
-                                            <option key={s.id} value={s.id}>
-                                              {s.zoneId === z.id ? `✓ (Already in ${z.name}) ` : s.zoneId ? `[In ${zones.find((zn) => zn.id === s.zoneId)?.name || 'Other Zone'}] ` : '[Unzoned] '}
-                                              {s.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {over && (
-                                    <div className="mt-2 rounded border border-rose-500/20 bg-rose-50 px-2 py-1 text-[11px] text-rose-600 font-semibold">
-                                      {zStops.length}/{GOOGLE_ZONE_LIMIT} — over Google's optimization limit. Split before planning.
-                                    </div>
-                                  )}
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => planZone(z.id)}
-                                      disabled={zStops.length < 2 || over || optimizing}
-                                      className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-xs font-bold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
-                                    >
-                                      Plan zone
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => sendZoneToDriver(z)}
-                                      disabled={zStops.length === 0 || !z.driverPhone}
-                                      className="rounded-md border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-                                    >
-                                      <Send className="w-3.5 h-3.5" />
-                                      <span>Send to driver</span>
-                                    </button>
-                                    {zStops.length >= 2 && (
-                                      <a
-                                        href={zoneGoogleLink(z.id)}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:border-rose-600 flex items-center justify-center bg-white"
-                                      >
-                                        Open in Maps
-                                      </a>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {stops.length >= 2 && (
-                <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                    Send to navigation
-                  </div>
-                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {googleLinks.length > 0 && (
-                      <a
-                        href={googleLinks[0]}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
-                      >
-                        Google Maps
-                      </a>
-                    )}
-                    <a
-                      href={appleLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
-                    >
-                      Apple Maps
-                    </a>
-                    <a
-                      href={wazeLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
-                    >
-                      Waze
-                    </a>
-                  </div>
-                </div>
-              )}
-
-              {!showAllPanels && wizardStep === 3 && (
-                <button
-                  type="button"
-                  onClick={() => setWizardStep(4)}
-                  className="w-full rounded-2xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs py-3.5 shadow-md transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>Next: Step 4 — Live GPS & Spare Drivers</span>
-                  <span>→</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* STEP 4: Live GPS, Driver Contact & Spare Directory */}
-          {(showAllPanels || wizardStep === 4) && (
-            <div className="space-y-4">
-              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
-                      Live tracking
-                    </div>
-                    <div className="text-xs text-slate-500 font-medium">
-                      Follow your position in real time on the map.
-                    </div>
-                  </div>
+              {/* Guided Wizard Step Navigation Header */}
+              <div className="rounded-3xl border border-border bg-card p-3.5 shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-rose-600">
+                    Step {wizardStep} of 4: {wizardStep === 1 ? 'Add Stops' : wizardStep === 2 ? 'Optimize Route' : wizardStep === 3 ? 'Zones & Dispatch' : 'GPS & Support'}
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setTracking((t) => !t)}
-                    className={`rounded-lg px-3 py-2 text-xs font-bold transition cursor-pointer ${tracking
-                      ? "bg-rose-600 text-white"
-                      : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100"
-                      }`}
+                    onClick={() => setShowAllPanels(!showAllPanels)}
+                    className="text-[10px] font-bold text-slate-500 hover:text-rose-600 transition underline cursor-pointer"
                   >
-                    {tracking ? "Stop" : "Start"}
+                    {showAllPanels ? "Switch to Guided Wizard" : "Show All Panels (Pro View)"}
                   </button>
                 </div>
-                {tracking && (
-                  <div className="mt-3 rounded-lg border border-border bg-slate-50 p-3 text-xs">
-                    {myPos ? (
-                      <>
-                        <div className="flex items-center gap-2 font-semibold text-primary">
-                          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-600" />
-                          Tracking live · {myPos.lat.toFixed(4)}, {myPos.lon.toFixed(4)}
-                        </div>
-                        {nextStop && (
-                          <div className="mt-1 text-slate-500">
-                            Nearest stop: <b className="text-primary">#{nextStop.index + 1}</b> ·{" "}
-                            {nextStop.milesAway.toFixed(1)} mi away
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="text-slate-400 font-medium">Waiting for GPS signal…</div>
-                    )}
-                  </div>
-                )}
-                {stops.length >= 2 && (
-                  <button
-                    type="button"
-                    onClick={launchOnPhone}
-                    className="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-700 px-3 py-3 text-sm font-bold text-white shadow-xs cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    <span>{isMobile ? "Open in phone GPS now" : "Send route to phone GPS"}</span>
-                  </button>
-                )}
-              </div>
 
-              {/* Need help / Spare drivers */}
-              <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setContactOpen((o) => !o)}
-                  className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-rose-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-                    </span>
-                    <span className="text-base font-bold text-primary">Driver contact</span>
-                    <span className="text-xs text-slate-400">(optional)</span>
-                  </div>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className={`text-primary/60 transition-transform ${contactOpen ? "rotate-180" : ""}`}
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </button>
-                {contactOpen && (
-                  <div className="mt-3">
-                    <div className="text-xs text-slate-500 font-medium">
-                      So a replacement driver can reach you if you need help. We never share this publicly.
-                    </div>
-                    <form onSubmit={submitJoin} className="mt-3 grid gap-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          required
-                          placeholder="First name"
-                          value={joinForm.first_name}
-                          onChange={(e) => setJoinForm((f) => ({ ...f, first_name: e.target.value }))}
-                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                        />
-                        <input
-                          required
-                          placeholder="Last name"
-                          value={joinForm.last_name}
-                          onChange={(e) => setJoinForm((f) => ({ ...f, last_name: e.target.value }))}
-                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                        />
-                      </div>
-                      <PhoneInput
-                        country={'us'}
-                        value={joinForm.phone}
-                        onChange={(val) => setJoinForm((f) => ({ ...f, phone: val }))}
-                        inputStyle={{
-                          width: '100%',
-                          height: '38px',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          backgroundColor: '#f8fafc',
-                          borderColor: '#e2e8f0',
-                          borderRadius: '0.75rem',
-                          paddingLeft: '44px',
-                          color: '#1e293b'
-                        }}
-                        buttonStyle={{
-                          backgroundColor: '#f8fafc',
-                          borderColor: '#e2e8f0',
-                          borderTopLeftRadius: '0.75rem',
-                          borderBottomLeftRadius: '0.75rem',
-                          paddingLeft: '2px'
-                        }}
-                        dropdownStyle={{
-                          borderRadius: '0.75rem',
-                          zIndex: 1000
-                        }}
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          required
-                          placeholder="City"
-                          value={joinForm.city}
-                          onChange={(e) => setJoinForm((f) => ({ ...f, city: e.target.value }))}
-                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                        />
-                        <input
-                          required
-                          placeholder="State"
-                          maxLength={20}
-                          value={joinForm.state}
-                          onChange={(e) => setJoinForm((f) => ({ ...f, state: e.target.value }))}
-                          className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                        />
-                      </div>
-                      <label className="flex items-center gap-2 text-[11px] text-slate-500 font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={joinForm.share_gps}
-                          onChange={(e) => setJoinForm((f) => ({ ...f, share_gps: e.target.checked }))}
-                        />
-                        Share my current GPS so drivers can find me faster
-                      </label>
+                {!showAllPanels && (
+                  <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/90 rounded-2xl border border-slate-200/60">
+                    {[
+                      { step: 1, label: "1. Stops" },
+                      { step: 2, label: "2. Optimize" },
+                      { step: 3, label: "3. Dispatch" },
+                      { step: 4, label: "4. GPS" },
+                    ].map((s) => (
                       <button
-                        type="submit"
-                        disabled={joinBusy}
-                        className="mt-1 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white px-4 py-2.5 text-xs font-bold shadow-xs disabled:opacity-60 cursor-pointer"
+                        key={s.step}
+                        type="button"
+                        onClick={() => setWizardStep(s.step)}
+                        className={`rounded-xl py-2 px-1 text-[11px] font-bold transition text-center cursor-pointer whitespace-nowrap ${wizardStep === s.step
+                          ? "bg-rose-600 text-white shadow-xs"
+                          : "text-slate-600 hover:bg-white/80 hover:text-slate-900"
+                          }`}
                       >
-                        {joinBusy ? "Submitting…" : "Save my contact info"}
+                        {s.label}
                       </button>
-                      {joinMsg && (
-                        <div className="rounded-md border border-border bg-slate-50 px-3 py-2 text-[11px] text-slate-700 font-semibold">
-                          {joinMsg}
-                        </div>
-                      )}
-                    </form>
-                  </div>
-                )}
-              </div>
-
-              {/* Big "Need help — call a spare driver" CTA */}
-              <button
-                type="button"
-                onClick={() => setHelpOpen((o) => !o)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-600 bg-rose-50 hover:bg-rose-100 px-5 py-3.5 text-sm font-bold text-rose-600 shadow-sm transition cursor-pointer"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M4.93 4.93l4.24 4.24" /><path d="M14.83 9.17l4.24-4.24" /><path d="M14.83 14.83l4.24 4.24" /><path d="M9.17 14.83l-4.24 4.24" /><circle cx="12" cy="12" r="4" /></svg>
-                {helpOpen ? "Close spare driver list" : "Need help — call a spare driver"}
-              </button>
-
-              {helpOpen && (
-                <div className="rounded-3xl border border-rose-200 bg-card p-5 shadow-sm">
-                  <div className="mt-3 space-y-2">
-                    {nearbySpares.length === 0 && (
-                      <div className="rounded-md border border-border bg-slate-50 p-3 text-xs text-muted-foreground">
-                        No spare drivers listed yet in your area. Ask a fellow driver to sign up below.
-                      </div>
-                    )}
-                    {nearbySpares.map((d) => (
-                      <div
-                        key={d.id}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-border bg-white p-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-bold text-[#0b132b]">
-                            {d.first_name} {d.last_name}
-                          </div>
-                          <div className="truncate text-[11px] text-slate-500 font-semibold">
-                            {d.city}, {d.state}
-                            {d.distance != null && ` · ${d.distance.toFixed(1)} mi`}
-                          </div>
-                        </div>
-                        <a
-                          href={`tel:${d.phone.replace(/[^+\d]/g, "")}`}
-                          className="rounded-md bg-rose-600 text-white px-3 py-2 text-xs font-bold hover:bg-rose-700 flex items-center gap-1.5"
-                        >
-                          <Phone className="w-3 h-3" />
-                          <span>Call</span>
-                        </a>
-                      </div>
                     ))}
                   </div>
+                )}
+              </div>
+
+              {/* STEP 1: Add Stop & Address Search */}
+              {(showAllPanels || wizardStep === 1) && (
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor="rk9-add-stop"
+                          className="text-[10px] font-bold uppercase tracking-wider text-rose-600"
+                        >
+                          Add stop
+                        </label>
+                        <span className="rounded-full border border-border bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                          US only
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span className="tabular-nums font-semibold text-primary">
+                          {stops.length}/400
+                        </span>
+                        {locStatus === "ok" && userLoc ? (
+                          <button
+                            type="button"
+                            onClick={requestUserLocation}
+                            className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 transition hover:bg-emerald-100 cursor-pointer"
+                            title="Address search is biased to your area. Tap to refresh."
+                          >
+                            <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span className="max-w-[140px] truncate">
+                              Near {userLoc.city ? `${userLoc.city}, ` : ""}
+                              {userLoc.state ?? "you"}
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={requestUserLocation}
+                            className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50 cursor-pointer"
+                          >
+                            <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                            {locStatus === "asking"
+                              ? "Locating…"
+                              : locStatus === "denied"
+                                ? "Enable location"
+                                : "Use my location"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="relative mt-2">
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                        </span>
+                        <input
+                          id="rk9-add-stop"
+                          type="text"
+                          autoComplete="off"
+                          inputMode="search"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          onFocus={() => {
+                            if (suggestions.length) setShowSug(true);
+                          }}
+                          onBlur={() => {
+                            setTimeout(() => setShowSug(false), 120);
+                          }}
+                          onKeyDown={(e) => {
+                            const list = suggestions.filter(
+                              (s) => filter === "all" || s.category === filter,
+                            );
+                            if (e.key === "ArrowDown") {
+                              e.preventDefault();
+                              setShowSug(true);
+                              setActiveIdx((i) => Math.min(i + 1, list.length - 1));
+                            } else if (e.key === "ArrowUp") {
+                              e.preventDefault();
+                              setActiveIdx((i) => Math.max(i - 1, 0));
+                            } else if (e.key === "Enter") {
+                              e.preventDefault();
+                              if (activeIdx >= 0 && list[activeIdx]) addStop(list[activeIdx]);
+                              else if (query.trim()) addFromText(query);
+                            } else if (e.key === "Escape") {
+                              setShowSug(false);
+                            }
+                          }}
+                          placeholder="Search US addresses, businesses, or ZIP codes…"
+                          className="w-full rounded-xl border border-border bg-white py-3 pl-9 pr-24 text-sm text-primary placeholder:text-muted-foreground focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                        />
+                        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                          {searching && (
+                            <span className="h-3 w-3 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
+                          )}
+                          {query && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuery("");
+                                setSuggestions([]);
+                                setShowSug(false);
+                              }}
+                              className="rounded-md px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-150 cursor-pointer"
+                              aria-label="Clear"
+                            >
+                              ✕
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => query.trim() && addFromText(query)}
+                            disabled={!query.trim()}
+                            className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-rose-700 disabled:opacity-40 cursor-pointer"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Filter chips */}
+                      <div className="mt-2 flex gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {FILTERS.map((f) => {
+                          const active = filter === f.key;
+                          const IconComp = f.icon;
+                          return (
+                            <button
+                              key={f.key}
+                              type="button"
+                              onClick={() => setFilter(f.key)}
+                              className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${active
+                                ? "border-rose-600 bg-rose-600 text-white"
+                                : "border-border bg-white text-primary/70 hover:bg-slate-50"
+                                }`}
+                            >
+                              <IconComp className="w-3.5 h-3.5" />
+                              {f.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Suggestions dropdown */}
+                      {showSug && (suggestions.length > 0 || searching) && (
+                        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+                          {(() => {
+                            const list = suggestions.filter(
+                              (s) => filter === "all" || s.category === filter,
+                            );
+                            if (!list.length) {
+                              return (
+                                <div className="px-3 py-3 text-xs text-muted-foreground">
+                                  {searching
+                                    ? "Searching US addresses…"
+                                    : "No US matches found. Try a different address or filter."}
+                                </div>
+                              );
+                            }
+                            return list.map((s, i) => {
+                              const active = i === activeIdx;
+                              const meta = FILTERS.find((f) => f.key === s.category);
+                              const IconComp = meta?.icon ?? MapPin;
+                              return (
+                                <button
+                                  key={String(s.place_id)}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    addStop(s);
+                                  }}
+                                  onMouseEnter={() => setActiveIdx(i)}
+                                  className={`flex w-full items-start gap-2 border-b border-border/50 px-3 py-2 text-left text-xs transition last:border-b-0 cursor-pointer ${active ? "bg-rose-50" : "hover:bg-slate-50"
+                                    }`}
+                                >
+                                  <IconComp className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                  <span className="flex-1 leading-snug text-primary font-medium">
+                                    {s.display_name}
+                                  </span>
+                                </button>
+                              );
+                            });
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Recent + import */}
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                      {recent.slice(0, 4).map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => addFromText(r)}
+                          className="max-w-[180px] truncate rounded-full border border-border bg-white px-2 py-0.5 text-primary/70 transition hover:bg-slate-50 cursor-pointer flex items-center"
+                          title={r}
+                        >
+                          <History className="w-3 h-3 mr-1 text-slate-400 shrink-0" />
+                          <span className="truncate">{r}</span>
+                        </button>
+                      ))}
+                      <label className="ml-auto cursor-pointer rounded-full border border-border bg-white px-2.5 py-0.5 font-semibold text-primary/70 transition hover:bg-slate-50">
+                        Import CSV
+                        <input
+                          type="file"
+                          accept=".csv,text/csv"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) importCsv(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {stops.length > 0 && (
+                    <div className="mt-4 rounded-3xl border border-border bg-card shadow-sm">
+                      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                        <div className="text-sm font-bold text-primary">Stops</div>
+                        <button
+                          type="button"
+                          onClick={exportCsv}
+                          className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
+                        >
+                          Export CSV
+                        </button>
+                      </div>
+                      <ol className="max-h-[420px] divide-y divide-border overflow-auto">
+                        {stops.map((s, i) => (
+                          <li key={s.id} className="flex items-center gap-2 px-4 py-2.5 bg-white">
+                            <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white">
+                              {i + 1}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-xs font-semibold text-primary" title={s.label}>
+                                {s.label}
+                              </div>
+                              {zones.length > 0 && (
+                                <div className="mt-1 flex items-center gap-1.5">
+                                  <select
+                                    value={s.zoneId ?? ""}
+                                    onChange={(e) => assignStopZone(s.id, e.target.value || undefined)}
+                                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700 focus:bg-white focus:outline-none transition cursor-pointer"
+                                    style={
+                                      s.zoneId && zones.find((z) => z.id === s.zoneId)
+                                        ? {
+                                          backgroundColor: `${zones.find((z) => z.id === s.zoneId).color}20`,
+                                          borderColor: zones.find((z) => z.id === s.zoneId).color,
+                                          color: zones.find((z) => z.id === s.zoneId).color,
+                                        }
+                                        : {}
+                                    }
+                                  >
+                                    <option value="">— Unzoned —</option>
+                                    {zones.map((z) => (
+                                      <option key={z.id} value={z.id}>
+                                        {z.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-shrink-0 items-center gap-0.5">
+                              <IconBtn onClick={() => move(s.id, -1)} title="Move up">
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </IconBtn>
+                              <IconBtn onClick={() => move(s.id, 1)} title="Move down">
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </IconBtn>
+                              <IconBtn
+                                onClick={() => toggleLock(s.id)}
+                                title={s.locked ? "Unlock" : "Lock"}
+                              >
+                                {s.locked ? (
+                                  <Lock className="w-3.5 h-3.5 text-slate-500" />
+                                ) : (
+                                  <Unlock className="w-3.5 h-3.5 text-slate-400" />
+                                )}
+                              </IconBtn>
+                              <IconBtn onClick={() => removeStop(s.id)} title="Remove">
+                                <X className="w-3.5 h-3.5 text-rose-500" />
+                              </IconBtn>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+
+                  {!showAllPanels && wizardStep === 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(2)}
+                      disabled={stops.length < 2}
+                      className="mt-4 w-full rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs py-3.5 shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>Next: Step 2 — Select Goal & Optimize</span>
+                      <span>→</span>
+                    </button>
+                  )}
                 </div>
               )}
-            </div>
-          )}
-        </div>
 
-        {/* Right: map */}
-        <div className="relative min-w-0 min-h-[340px] sm:min-h-[460px] overflow-hidden rounded-3xl border border-border bg-card shadow-sm lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)]">
-          <div ref={mapRef} className="h-full w-full min-h-[340px] sm:min-h-[460px]" />
-          {stops.length === 0 && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-xs">
-              <div className="max-w-sm rounded-2xl bg-white/95 p-6 text-center border border-slate-200 shadow-lg">
-                <div className="font-display text-xl sm:text-2xl font-bold text-[#0b132b] font-serif-heading">Add your first stop</div>
-                <p className="mt-1.5 text-xs text-slate-500 font-medium">
-                  Type an address, ZIP, business name, or paste GPS coordinates.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+              {/* STEP 2: Optimization Goal & Summary Metrics */}
+              {(showAllPanels || wizardStep === 2) && (
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                        Optimization goal
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 rounded-lg border border-border p-1 bg-white">
+                      {["fastest", "shortest", "balanced"].map((g) => (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => {
+                            setGoal(g);
+                            if (stops.length >= 2) optimize(g);
+                          }}
+                          className={`rounded-md px-2 py-1.5 text-xs font-semibold capitalize transition cursor-pointer ${goal === g ? "bg-rose-600 text-white" : "text-primary/70 hover:bg-slate-50"
+                            }`}
+                        >
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={optimize}
+                        disabled={optimizing || stops.length < 2}
+                        className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-3 text-sm font-bold tracking-wide text-white shadow-xs transition disabled:opacity-50 cursor-pointer"
+                      >
+                        {optimizing ? "Optimizing…" : "Optimize route"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={reverse}
+                        disabled={stops.length < 2}
+                        className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
+                      >
+                        Reverse
+                      </button>
+                      <button
+                        type="button"
+                        onClick={requestClearAll}
+                        disabled={!stops.length}
+                        className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary hover:border-rose-600 disabled:opacity-50 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {error && (
+                      <div className="rounded-md border border-rose-500/20 bg-rose-50 px-3 py-2 text-xs text-rose-600 font-medium">
+                        {error}
+                      </div>
+                    )}
+                  </div>
 
-      {/* Custom Modal for Clear All Confirmation */}
-      {confirmModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex items-center gap-3.5">
-              <div className="h-12 w-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                <Trash2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-extrabold text-[#0b132b]">Clear All Route Stops?</h3>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Are you sure you want to clear all stops and start over? This action cannot be undone.
-                </p>
-              </div>
-            </div>
+                  {(distMi > 0 || durMin > 0) && (
+                    <div className="grid grid-cols-3 gap-2 rounded-3xl border border-rose-600 bg-rose-600 p-5 text-white shadow-md">
+                      <Stat label="Miles" value={distMi.toFixed(1)} />
+                      <Stat label="Drive time" value={formatDur(durMin)} />
+                      <Stat label="Est fuel" value={`$${fuelCost.toFixed(2)}`} />
+                    </div>
+                  )}
 
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setConfirmModalOpen(false)}
-                className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-5 py-2.5 text-xs font-bold text-slate-700 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmClearAll}
-                className="rounded-xl bg-rose-600 hover:bg-rose-700 px-5 py-2.5 text-xs font-extrabold text-white shadow-md shadow-rose-600/20 cursor-pointer"
-              >
-                Yes, Clear All
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Custom Modal for Route Saved Success */}
-      {routeSavedModal.isOpen && routeSavedModal.route && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6">
-            <div className="text-center space-y-3">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
-                <CheckCircle2 className="w-8 h-8 text-emerald-600 animate-bounce" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-[#0b132b] font-serif-heading">
-                  Route Saved Successfully!
-                </h3>
-                <p className="text-xs text-slate-500 font-medium mt-1">
-                  Saved live dispatch records to Admin Panel and synced to Driver Dashboard.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3 text-xs">
-              <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
-                <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Route ID</span>
-                  <div className="font-extrabold text-rose-600 text-sm">{routeSavedModal.route.id}</div>
+                  {!showAllPanels && wizardStep === 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(3)}
+                      className="w-full rounded-2xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs py-3.5 shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>Next: Step 3 — Zones & Driver Dispatch</span>
+                      <span>→</span>
+                    </button>
+                  )}
                 </div>
-                <div className="text-right">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Total Distance</span>
-                  <div className="font-black text-slate-900 text-base">{routeSavedModal.route.distanceMiles} mi ({routeSavedModal.route.durationMinutes} min)</div>
-                </div>
-              </div>
+              )}
 
-              <div className="space-y-1.5">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">Stops ({routeSavedModal.route.stopsCount} stops):</div>
-                <ul className="space-y-1 max-h-32 overflow-y-auto">
-                  {routeSavedModal.route.stops.map((s, idx) => (
-                    <li key={idx} className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60">
-                      <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{s.step}</span>
-                      <span className="truncate">{s.label}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+              {/* STEP 3: Zones & Driver Dispatch */}
+              {(showAllPanels || wizardStep === 3) && (
+                <div className="space-y-4">
+                  {stops.length > 0 && (
+                    <>
+                      {isDriver ? (
+                        <div className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-sm space-y-3">
+                          <button
+                            type="button"
+                            onClick={handleSaveRouteToDashboardAndAdmin}
+                            disabled={savingRoute || stops.length < 2}
+                            className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <Save className="w-4 h-4" />
+                            <span>{savingRoute ? 'Saving Route...' : 'Save Route'}</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-4">
+                          {/* Save Route Button for Admin/Dispatcher */}
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-extrabold text-[#0b132b]">Save & Dispatch Route</div>
+                              <div className="text-[10px] text-slate-500 font-medium">Save complete route data to Admin Panel & Driver Dashboard</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleSaveRouteToDashboardAndAdmin}
+                              disabled={savingRoute || stops.length < 2}
+                              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>{savingRoute ? 'Saving...' : 'Save Route'}</span>
+                            </button>
+                          </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-              <a
-                href="/dashboard?tab=routes"
-                className="w-full sm:flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer text-center"
-              >
-                <Truck className="w-4 h-4" />
-                <span>Track in Driver Dashboard →</span>
-              </a>
-
-              <button
-                type="button"
-                onClick={() => setRouteSavedModal({ isOpen: false, route: null })}
-                className="w-full sm:w-auto px-5 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-all cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== ROUTE PLAN HISTORY (from Supabase API) ===== */}
-      <div className="mt-10 space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Route Plan History</h3>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">Loaded from database — click to reload into planner or manage stop statuses</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {routeHistory.length > 0 && (
-              <span className="px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold">{routeHistory.length} route{routeHistory.length !== 1 ? 's' : ''}</span>
-            )}
-            <button
-              type="button"
-              onClick={fetchRoutesFromDB}
-              disabled={loadingHistory}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${loadingHistory ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        {/* Loading state */}
-        {loadingHistory && (
-          <div className="flex items-center justify-center py-10 gap-3 text-slate-400">
-            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-            <span className="text-sm font-semibold">Loading routes from database…</span>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loadingHistory && routeHistory.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-400 bg-slate-50 rounded-3xl border border-slate-200">
-            <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"/></svg>
-            <p className="text-sm font-bold">No saved routes yet</p>
-            <p className="text-xs">Plan a route above and click "Save Route" to see it here</p>
-          </div>
-        )}
-
-        {/* ── TABLE ── */}
-        {!loadingHistory && routeHistory.length > 0 && (
-          <div className="bg-white rounded-md border border-slate-200 shadow-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[#0b132b] text-white text-[11px] font-extrabold uppercase tracking-wider">
-                    <th className="px-4 py-3 text-left rounded-tl-md">Route ID</th>
-                    <th className="px-4 py-3 text-left">Title</th>
-                    <th className="px-4 py-3 text-center">Stops</th>
-                    <th className="px-4 py-3 text-center">Distance</th>
-                    <th className="px-4 py-3 text-center">Drive Time</th>
-                    <th className="px-4 py-3 text-center">Progress</th>
-                    <th className="px-4 py-3 text-center">Status</th>
-                    <th className="px-4 py-3 text-center">Saved</th>
-                    <th className="px-4 py-3 text-center rounded-tr-md">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {routeHistory.map((route, rowIdx) => {
-                    const isExpanded = expandedHistoryId === route.id;
-                    const isSelected = selectedHistoryId === route.id;
-                    const routeStops = route.stops || [];
-                    const completedCount = routeStops.filter((_, idx) => stopStatuses[`${route.id}_${idx}`] === 'complete').length;
-                    const ongoingCount = routeStops.filter((_, idx) => stopStatuses[`${route.id}_${idx}`] === 'ongoing').length;
-                    const allComplete = routeStops.length > 0 && completedCount === routeStops.length;
-                    const anyOngoing = ongoingCount > 0;
-                    const overallStatus = allComplete ? 'complete' : anyOngoing ? 'ongoing' : 'pending';
-                    const pct = routeStops.length === 0 ? 0 : Math.round((completedCount / routeStops.length) * 100);
-
-                    return (
-                      <React.Fragment key={route.id}>
-                        {/* Main row */}
-                        <tr className={`transition-colors ${isSelected ? 'bg-rose-50' : rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-rose-50/60`}>
-                          <td className="px-4 py-3.5">
-                            <span className="font-mono text-xs font-bold text-rose-600">{route.id}</span>
-                          </td>
-                          <td className="px-4 py-3.5 max-w-[200px]">
-                            <span className="font-semibold text-slate-800 text-xs line-clamp-1">{route.title}</span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <span className="font-bold text-slate-700 text-xs">{route.stopsCount}</span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <span className="font-bold text-slate-700 text-xs">{route.distanceMiles} mi</span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <span className="font-bold text-slate-700 text-xs">{route.durationMinutes} min</span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center min-w-[100px]">
-                            <div className="flex items-center gap-1.5">
-                              <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-700 ${allComplete ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                                  style={{ width: `${pct}%` }}
-                                />
+                          <button
+                            type="button"
+                            onClick={() => setZonesOpen((o) => !o)}
+                            className="flex w-full items-center justify-between gap-3 text-left cursor-pointer pt-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-rose-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></svg>
+                              </span>
+                              <span className="text-base font-bold text-primary">Zones</span>
+                              {zones.length > 0 && (
+                                <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px] font-bold text-rose-600">
+                                  {zones.length}
+                                </span>
+                              )}
+                            </div>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.4"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={`text-primary/60 transition-transform ${zonesOpen ? "rotate-180" : ""}`}
+                            >
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          </button>
+                          {zonesOpen && (
+                            <>
+                              <div className="mt-3 text-xs text-slate-500 font-medium">
+                                Section off addresses that are close to each other and hand each zone to a different driver.
                               </div>
-                              <span className="text-[10px] font-bold text-slate-400 w-7 text-right">{pct}%</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
-                              overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              overallStatus === 'ongoing'  ? 'bg-amber-50  text-amber-700  border-amber-200'  :
-                                                            'bg-slate-100 text-slate-600  border-slate-200'
-                            }`}>{overallStatus}</span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <span className="text-[10px] text-slate-400 font-medium">
-                              {new Date(route.savedAt).toLocaleDateString()}<br/>
-                              <span className="text-[9px]">{new Date(route.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
+                              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-slate-50 p-2">
+                                <label className="text-[11px] font-semibold text-primary/80">Auto-group into</label>
+                                <input
+                                  type="number"
+                                  min={2}
+                                  max={ZONE_COLORS.length}
+                                  value={autoZoneCount}
+                                  onChange={(e) => setAutoZoneCount(Math.max(2, Math.min(ZONE_COLORS.length, parseInt(e.target.value) || 2)))}
+                                  className="w-14 rounded border border-border bg-white px-2 py-1 text-xs"
+                                />
+                                <span className="text-[11px] text-muted-foreground font-semibold">zones by proximity</span>
+                                <button
+                                  type="button"
+                                  onClick={autoGroupZones}
+                                  className="ml-auto rounded-md bg-[#0b132b] text-white px-3 py-1.5 text-xs font-bold hover:bg-[#1a264a] cursor-pointer"
+                                >
+                                  Auto-group
+                                </button>
+                              </div>
                               <button
                                 type="button"
-                                title="Load this route into the planner"
-                                onClick={() => {
-                                  setStops(route.stops.map(s => ({ label: s.label, lat: s.lat, lon: s.lon, zoneId: null })));
-                                  setSelectedHistoryId(route.id);
-                                  setWizardStep(1);
-                                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-[10px] shadow transition-colors cursor-pointer flex items-center gap-1"
+                                onClick={() => addZone()}
+                                className="mt-2 rounded-lg border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 cursor-pointer"
                               >
-                                <Truck className="w-3 h-3" />
-                                Load
+                                + Add zone
                               </button>
-                              <button
-                                type="button"
-                                title="Manage stop statuses"
-                                onClick={() => setExpandedHistoryId(isExpanded ? null : route.id)}
-                                className="p-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-                              >
-                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {/* Expanded stop status row */}
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={9} className="px-6 pb-4 pt-2 bg-slate-50 border-t border-slate-100">
-                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Stop-by-Stop Status</div>
-                              <div className="space-y-1.5">
-                                {routeStops.map((stop, idx) => {
-                                  const key = `${route.id}_${idx}`;
-                                  const status = stopStatuses[key] || 'pending';
+                              {zones.length === 0 && (
+                                <div className="mt-3 rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                                  No zones yet. Add one manually or auto-group by proximity.
+                                </div>
+                              )}
+                              <div className="mt-3 space-y-3">
+                                {zones.map((z) => {
+                                  const zStops = stopsInZone(z.id);
+                                  const over = zStops.length > GOOGLE_ZONE_LIMIT;
                                   return (
-                                    <div key={idx} className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-xs">
-                                      <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
-                                        status === 'complete' ? 'bg-emerald-600 text-white' :
-                                        status === 'ongoing'  ? 'bg-amber-500 text-white'   :
-                                                                'bg-slate-200 text-slate-600'
-                                      }`}>{idx + 1}</span>
-                                      <span className="flex-1 text-xs font-medium text-slate-700 truncate">{stop.label}</span>
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        {(['pending', 'ongoing', 'complete']).map(s => (
+                                    <div
+                                      key={z.id}
+                                      className="rounded-lg border border-border bg-white p-3"
+                                      style={{ borderLeft: `4px solid ${z.color}` }}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className="inline-block h-4 w-4 flex-shrink-0 rounded-full border border-white shadow"
+                                          style={{ background: z.color }}
+                                        />
+                                        <input
+                                          value={z.name}
+                                          onChange={(e) => updateZone(z.id, { name: e.target.value })}
+                                          className="min-w-0 flex-1 rounded border border-border bg-white px-2 py-1 text-sm font-semibold text-primary"
+                                        />
+                                        <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
+                                          {zStops.length} stop{zStops.length === 1 ? "" : "s"}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeZone(z.id)}
+                                          className="rounded p-1 text-xs text-slate-400 hover:text-rose-600 cursor-pointer flex items-center justify-center"
+                                          title="Delete zone"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                      <div className="mt-2.5 space-y-2">
+                                        {spares.length > 0 && (
+                                          <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                              Assign Driver
+                                            </label>
+                                            <select
+                                              value={z.driverPhone ?? ""}
+                                              onChange={(e) => {
+                                                const selected = spares.find((d) => d.phone === e.target.value);
+                                                if (selected) {
+                                                  updateZone(z.id, {
+                                                    driverName: `${selected.first_name} ${selected.last_name}`,
+                                                    driverPhone: selected.phone,
+                                                  });
+                                                }
+                                              }}
+                                              className="w-full rounded border border-border bg-slate-50 px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white"
+                                            >
+                                              <option value="">— Select Registered Driver —</option>
+                                              {spares.map((d) => (
+                                                <option key={d.id} value={d.phone}>
+                                                  {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        )}
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <input
+                                            placeholder="Driver name"
+                                            value={z.driverName ?? ""}
+                                            onChange={(e) => updateZone(z.id, { driverName: e.target.value })}
+                                            className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
+                                          />
+                                          <input
+                                            type="tel"
+                                            placeholder="Driver phone"
+                                            value={z.driverPhone ?? ""}
+                                            onChange={(e) => updateZone(z.id, { driverPhone: e.target.value })}
+                                            className="rounded border border-border bg-slate-50 px-2 py-1.5 text-xs focus:bg-white focus:outline-none font-medium"
+                                          />
+                                        </div>
+
+                                        {z.driverName && z.driverPhone && !spares.some((d) => d.phone === z.driverPhone) && (
                                           <button
-                                            key={s}
                                             type="button"
-                                            onClick={() => setStopStatuses(prev => ({ ...prev, [key]: s }))}
-                                            className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase cursor-pointer border transition-all ${
-                                              status === s
-                                                ? s === 'complete' ? 'bg-emerald-600 text-white border-emerald-600'
-                                                  : s === 'ongoing' ? 'bg-amber-500 text-white border-amber-500'
-                                                  : 'bg-slate-700 text-white border-slate-700'
-                                                : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'
-                                            }`}
-                                          >{s}</button>
-                                        ))}
+                                            onClick={() => {
+                                              const parts = z.driverName.trim().split(" ");
+                                              const newDriver = {
+                                                id: uid(),
+                                                first_name: parts[0] || "Driver",
+                                                last_name: parts.slice(1).join(" ") || "",
+                                                phone: z.driverPhone.trim(),
+                                                city: userLoc?.city || "Local",
+                                                state: userLoc?.state || "US",
+                                              };
+                                              setSpares((prev) => [newDriver, ...prev]);
+                                            }}
+                                            className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1 mt-1"
+                                          >
+                                            + Save "{z.driverName}" to registered drivers list
+                                          </button>
+                                        )}
+
+                                        {/* Assigned Stops in this Zone */}
+                                        <div className="mt-2.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 space-y-1.5">
+                                          <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                                            <span>Stops in {z.name} ({zStops.length})</span>
+                                          </div>
+                                          {zStops.length === 0 ? (
+                                            <div className="text-[11px] text-slate-400 italic font-medium py-1">
+                                              No stops assigned to this zone yet.
+                                            </div>
+                                          ) : (
+                                            <ul className="space-y-1 max-h-36 overflow-y-auto">
+                                              {zStops.map((s) => (
+                                                <li key={s.id} className="flex items-center justify-between gap-1 text-[11px] font-medium text-slate-700 bg-white px-2 py-1 rounded border border-slate-200/80 shadow-2xs">
+                                                  <span className="truncate flex items-center gap-1">
+                                                    <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                                                    <span className="truncate">{s.label}</span>
+                                                  </span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => assignStopZone(s.id, undefined)}
+                                                    className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 shrink-0"
+                                                    title="Remove stop from zone"
+                                                  >
+                                                    <X className="w-3 h-3" />
+                                                  </button>
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          )}
+
+                                          {/* Quick add stop dropdown */}
+                                          {stops.length > 0 && (
+                                            <select
+                                              value=""
+                                              onChange={(e) => {
+                                                if (e.target.value) assignStopZone(e.target.value, z.id);
+                                              }}
+                                              className="w-full mt-1.5 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 focus:outline-none focus:border-rose-500"
+                                            >
+                                              <option value="">+ Assign a stop to {z.name}…</option>
+                                              {stops.map((s) => (
+                                                <option key={s.id} value={s.id}>
+                                                  {s.zoneId === z.id ? `✓ (Already in ${z.name}) ` : s.zoneId ? `[In ${zones.find((zn) => zn.id === s.zoneId)?.name || 'Other Zone'}] ` : '[Unzoned] '}
+                                                  {s.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {over && (
+                                        <div className="mt-2 rounded border border-rose-500/20 bg-rose-50 px-2 py-1 text-[11px] text-rose-600 font-semibold">
+                                          {zStops.length}/{GOOGLE_ZONE_LIMIT} — over Google's optimization limit. Split before planning.
+                                        </div>
+                                      )}
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => planZone(z.id)}
+                                          disabled={zStops.length < 2 || over || optimizing}
+                                          className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-xs font-bold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+                                        >
+                                          Plan zone
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => sendZoneToDriver(z)}
+                                          disabled={zStops.length === 0 || !z.driverPhone}
+                                          className="rounded-md border border-rose-600 text-rose-600 px-3 py-1.5 text-xs font-bold hover:bg-rose-50 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                                        >
+                                          <Send className="w-3.5 h-3.5" />
+                                          <span>Send to driver</span>
+                                        </button>
+                                        {zStops.length >= 2 && (
+                                          <a
+                                            href={zoneGoogleLink(z.id)}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:border-rose-600 flex items-center justify-center bg-white"
+                                          >
+                                            Open in Maps
+                                          </a>
+                                        )}
                                       </div>
                                     </div>
                                   );
                                 })}
                               </div>
-                              <div className="flex justify-end gap-2 mt-3">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const u = {};
-                                    routeStops.forEach((_, idx) => { u[`${route.id}_${idx}`] = 'pending'; });
-                                    setStopStatuses(prev => ({ ...prev, ...u }));
-                                  }}
-                                  className="px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 font-bold text-[9px] hover:bg-slate-50 cursor-pointer"
-                                >Reset All</button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const u = {};
-                                    routeStops.forEach((_, idx) => { u[`${route.id}_${idx}`] = 'complete'; });
-                                    setStopStatuses(prev => ({ ...prev, ...u }));
-                                  }}
-                                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9px] cursor-pointer"
-                                >✓ Mark All Complete</button>
-                              </div>
-                            </td>
-                          </tr>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {stops.length >= 2 && (
+                    <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                        Send to navigation
+                      </div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {googleLinks.length > 0 && (
+                          <a
+                            href={googleLinks[0]}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
+                          >
+                            Google Maps
+                          </a>
                         )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        <a
+                          href={appleLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
+                        >
+                          Apple Maps
+                        </a>
+                        <a
+                          href={wazeLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg bg-[#0b132b] px-3 py-2.5 text-center text-xs font-bold text-white shadow-xs hover:bg-[#1a264a]"
+                        >
+                          Waze
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {!showAllPanels && wizardStep === 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(4)}
+                      className="w-full rounded-2xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs py-3.5 shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>Next: Step 4 — Live GPS & Spare Drivers</span>
+                      <span>→</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 4: Live GPS, Driver Contact & Spare Directory */}
+              {(showAllPanels || wizardStep === 4) && (
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                          Live tracking
+                        </div>
+                        <div className="text-xs text-slate-500 font-medium">
+                          Follow your position in real time on the map.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTracking((t) => !t)}
+                        className={`rounded-lg px-3 py-2 text-xs font-bold transition cursor-pointer ${tracking
+                          ? "bg-rose-600 text-white"
+                          : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100"
+                          }`}
+                      >
+                        {tracking ? "Stop" : "Start"}
+                      </button>
+                    </div>
+                    {tracking && (
+                      <div className="mt-3 rounded-lg border border-border bg-slate-50 p-3 text-xs">
+                        {myPos ? (
+                          <>
+                            <div className="flex items-center gap-2 font-semibold text-primary">
+                              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-600" />
+                              Tracking live · {myPos.lat.toFixed(4)}, {myPos.lon.toFixed(4)}
+                            </div>
+                            {nextStop && (
+                              <div className="mt-1 text-slate-500">
+                                Nearest stop: <b className="text-primary">#{nextStop.index + 1}</b> ·{" "}
+                                {nextStop.milesAway.toFixed(1)} mi away
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-slate-400 font-medium">Waiting for GPS signal…</div>
+                        )}
+                      </div>
+                    )}
+                    {stops.length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={launchOnPhone}
+                        className="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-700 px-3 py-3 text-sm font-bold text-white shadow-xs cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <Smartphone className="w-4 h-4" />
+                        <span>{isMobile ? "Open in phone GPS now" : "Send route to phone GPS"}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Need help / Spare drivers */}
+                  <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setContactOpen((o) => !o)}
+                      className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-rose-600">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+                        </span>
+                        <span className="text-base font-bold text-primary">Driver contact</span>
+                        <span className="text-xs text-slate-400">(optional)</span>
+                      </div>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={`text-primary/60 transition-transform ${contactOpen ? "rotate-180" : ""}`}
+                      >
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </button>
+                    {contactOpen && (
+                      <div className="mt-3">
+                        <div className="text-xs text-slate-500 font-medium">
+                          So a replacement driver can reach you if you need help. We never share this publicly.
+                        </div>
+                        <form onSubmit={submitJoin} className="mt-3 grid gap-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              required
+                              placeholder="First name"
+                              value={joinForm.first_name}
+                              onChange={(e) => setJoinForm((f) => ({ ...f, first_name: e.target.value }))}
+                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                            />
+                            <input
+                              required
+                              placeholder="Last name"
+                              value={joinForm.last_name}
+                              onChange={(e) => setJoinForm((f) => ({ ...f, last_name: e.target.value }))}
+                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                            />
+                          </div>
+                          <PhoneInput
+                            country={'us'}
+                            value={joinForm.phone}
+                            onChange={(val) => setJoinForm((f) => ({ ...f, phone: val }))}
+                            inputStyle={{
+                              width: '100%',
+                              height: '38px',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              backgroundColor: '#f8fafc',
+                              borderColor: '#e2e8f0',
+                              borderRadius: '0.75rem',
+                              paddingLeft: '44px',
+                              color: '#1e293b'
+                            }}
+                            buttonStyle={{
+                              backgroundColor: '#f8fafc',
+                              borderColor: '#e2e8f0',
+                              borderTopLeftRadius: '0.75rem',
+                              borderBottomLeftRadius: '0.75rem',
+                              paddingLeft: '2px'
+                            }}
+                            dropdownStyle={{
+                              borderRadius: '0.75rem',
+                              zIndex: 1000
+                            }}
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              required
+                              placeholder="City"
+                              value={joinForm.city}
+                              onChange={(e) => setJoinForm((f) => ({ ...f, city: e.target.value }))}
+                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                            />
+                            <input
+                              required
+                              placeholder="State"
+                              maxLength={20}
+                              value={joinForm.state}
+                              onChange={(e) => setJoinForm((f) => ({ ...f, state: e.target.value }))}
+                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                            />
+                          </div>
+                          <label className="flex items-center gap-2 text-[11px] text-slate-500 font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={joinForm.share_gps}
+                              onChange={(e) => setJoinForm((f) => ({ ...f, share_gps: e.target.checked }))}
+                            />
+                            Share my current GPS so drivers can find me faster
+                          </label>
+                          <button
+                            type="submit"
+                            disabled={joinBusy}
+                            className="mt-1 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white px-4 py-2.5 text-xs font-bold shadow-xs disabled:opacity-60 cursor-pointer"
+                          >
+                            {joinBusy ? "Submitting…" : "Save my contact info"}
+                          </button>
+                          {joinMsg && (
+                            <div className="rounded-md border border-border bg-slate-50 px-3 py-2 text-[11px] text-slate-700 font-semibold">
+                              {joinMsg}
+                            </div>
+                          )}
+                        </form>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Big "Need help — call a spare driver" CTA */}
+                  <button
+                    type="button"
+                    onClick={() => setHelpOpen((o) => !o)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-600 bg-rose-50 hover:bg-rose-100 px-5 py-3.5 text-sm font-bold text-rose-600 shadow-sm transition cursor-pointer"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M4.93 4.93l4.24 4.24" /><path d="M14.83 9.17l4.24-4.24" /><path d="M14.83 14.83l4.24 4.24" /><path d="M9.17 14.83l-4.24 4.24" /><circle cx="12" cy="12" r="4" /></svg>
+                    {helpOpen ? "Close spare driver list" : "Need help — call a spare driver"}
+                  </button>
+
+                  {helpOpen && (
+                    <div className="rounded-3xl border border-rose-200 bg-card p-5 shadow-sm">
+                      <div className="mt-3 space-y-2">
+                        {nearbySpares.length === 0 && (
+                          <div className="rounded-md border border-border bg-slate-50 p-3 text-xs text-muted-foreground">
+                            No spare drivers listed yet in your area. Ask a fellow driver to sign up below.
+                          </div>
+                        )}
+                        {nearbySpares.map((d) => (
+                          <div
+                            key={d.id}
+                            className="flex items-center justify-between gap-2 rounded-lg border border-border bg-white p-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-bold text-[#0b132b]">
+                                {d.first_name} {d.last_name}
+                              </div>
+                              <div className="truncate text-[11px] text-slate-500 font-semibold">
+                                {d.city}, {d.state}
+                                {d.distance != null && ` · ${d.distance.toFixed(1)} mi`}
+                              </div>
+                            </div>
+                            <a
+                              href={`tel:${d.phone.replace(/[^+\d]/g, "")}`}
+                              className="rounded-md bg-rose-600 text-white px-3 py-2 text-xs font-bold hover:bg-rose-700 flex items-center gap-1.5"
+                            >
+                              <Phone className="w-3 h-3" />
+                              <span>Call</span>
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Right: map */}
+            <div className="relative min-w-0 min-h-[340px] sm:min-h-[460px] overflow-hidden rounded-3xl border border-border bg-card shadow-sm lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)]">
+              <div ref={mapRef} className="h-full w-full min-h-[340px] sm:min-h-[460px]" />
+              {stops.length === 0 && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-xs">
+                  <div className="max-w-sm rounded-2xl bg-white/95 p-6 text-center border border-slate-200 shadow-lg">
+                    <div className="font-display text-xl sm:text-2xl font-bold text-[#0b132b] font-serif-heading">Add your first stop</div>
+                    <p className="mt-1.5 text-xs text-slate-500 font-medium">
+                      Type an address, ZIP, business name, or paste GPS coordinates.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
 
-      </div>
+          {/* Custom Modal for Clear All Confirmation */}
+          {confirmModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
+              <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5">
+                <div className="flex items-center gap-3.5">
+                  <div className="h-12 w-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-[#0b132b]">Clear All Route Stops?</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Are you sure you want to clear all stops and start over? This action cannot be undone.
+                    </p>
+                  </div>
+                </div>
 
-      </>) /* end currentUser ternary */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmModalOpen(false)}
+                    className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-5 py-2.5 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmClearAll}
+                    className="rounded-xl bg-rose-600 hover:bg-rose-700 px-5 py-2.5 text-xs font-extrabold text-white shadow-md shadow-rose-600/20 cursor-pointer"
+                  >
+                    Yes, Clear All
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Custom Modal for Route Saved Success */}
+          {routeSavedModal.isOpen && routeSavedModal.route && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+              <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6">
+                <div className="text-center space-y-3">
+                  <div className="w-16 h-16 rounded-3xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-600 animate-bounce" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-[#0b132b] font-serif-heading">
+                      Route Saved Successfully!
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      Saved live dispatch records to Admin Panel and synced to Driver Dashboard.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3 text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Route ID</span>
+                      <div className="font-extrabold text-rose-600 text-sm">{routeSavedModal.route.id}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Total Distance</span>
+                      <div className="font-black text-slate-900 text-base">{routeSavedModal.route.distanceMiles} mi ({routeSavedModal.route.durationMinutes} min)</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Stops ({routeSavedModal.route.stopsCount} stops):</div>
+                    <ul className="space-y-1 max-h-32 overflow-y-auto">
+                      {routeSavedModal.route.stops.map((s, idx) => (
+                        <li key={idx} className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60">
+                          <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{s.step}</span>
+                          <span className="truncate">{s.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                  <a
+                    href="/dashboard?tab=routes"
+                    className="w-full sm:flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer text-center"
+                  >
+                    <Truck className="w-4 h-4" />
+                    <span>Track in Driver Dashboard →</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => setRouteSavedModal({ isOpen: false, route: null })}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== ROUTE PLAN HISTORY (from Supabase API) ===== */}
+          <div className="mt-10 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Route Plan History</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Loaded from database — click to reload into planner or manage stop statuses</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {routeHistory.length > 0 && (
+                  <span className="px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold">{routeHistory.length} route{routeHistory.length !== 1 ? 's' : ''}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={fetchRoutesFromDB}
+                  disabled={loadingHistory}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loadingHistory ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Loading state */}
+            {loadingHistory && (
+              <div className="flex items-center justify-center py-10 gap-3 text-slate-400">
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+                <span className="text-sm font-semibold">Loading routes from database…</span>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!loadingHistory && routeHistory.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-400 bg-slate-50 rounded-3xl border border-slate-200">
+                <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" /></svg>
+                <p className="text-sm font-bold">No saved routes yet</p>
+                <p className="text-xs">Plan a route above and click "Save Route" to see it here</p>
+              </div>
+            )}
+
+            {/* ── TABLE ── */}
+            {!loadingHistory && routeHistory.length > 0 && (
+              <div className="bg-white rounded-md border border-slate-200 shadow-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#0b132b] text-white text-[11px] font-extrabold uppercase tracking-wider">
+                        <th className="px-4 py-3 text-left rounded-tl-md">Route ID</th>
+                        <th className="px-4 py-3 text-left">Title</th>
+                        <th className="px-4 py-3 text-center">Stops</th>
+                        <th className="px-4 py-3 text-center">Distance</th>
+                        <th className="px-4 py-3 text-center">Drive Time</th>
+                        <th className="px-4 py-3 text-center">Progress</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                        <th className="px-4 py-3 text-center">Saved</th>
+                        <th className="px-4 py-3 text-center rounded-tr-md">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {routeHistory.map((route, rowIdx) => {
+                        const isExpanded = expandedHistoryId === route.id;
+                        const isSelected = selectedHistoryId === route.id;
+                        const routeStops = route.stops || [];
+                        const completedCount = routeStops.filter((_, idx) => stopStatuses[`${route.id}_${idx}`] === 'complete').length;
+                        const ongoingCount = routeStops.filter((_, idx) => stopStatuses[`${route.id}_${idx}`] === 'ongoing').length;
+                        const allComplete = routeStops.length > 0 && completedCount === routeStops.length;
+                        const anyOngoing = ongoingCount > 0;
+                        const overallStatus = allComplete ? 'complete' : anyOngoing ? 'ongoing' : 'pending';
+                        const pct = routeStops.length === 0 ? 0 : Math.round((completedCount / routeStops.length) * 100);
+
+                        return (
+                          <React.Fragment key={route.id}>
+                            {/* Main row */}
+                            <tr className={`transition-colors ${isSelected ? 'bg-rose-50' : rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-rose-50/60`}>
+                              <td className="px-4 py-3.5">
+                                <span className="font-mono text-xs font-bold text-rose-600">{route.id}</span>
+                              </td>
+                              <td className="px-4 py-3.5 max-w-[200px]">
+                                <span className="font-semibold text-slate-800 text-xs line-clamp-1">{route.title}</span>
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <span className="font-bold text-slate-700 text-xs">{route.stopsCount}</span>
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <span className="font-bold text-slate-700 text-xs">{route.distanceMiles} mi</span>
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <span className="font-bold text-slate-700 text-xs">{route.durationMinutes} min</span>
+                              </td>
+                              <td className="px-4 py-3.5 text-center min-w-[100px]">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-700 ${allComplete ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] font-bold text-slate-400 w-7 text-right">{pct}%</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                  overallStatus === 'ongoing' ? 'bg-amber-50  text-amber-700  border-amber-200' :
+                                    'bg-slate-100 text-slate-600  border-slate-200'
+                                  }`}>{overallStatus}</span>
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  {new Date(route.savedAt).toLocaleDateString()}<br />
+                                  <span className="text-[9px]">{new Date(route.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </span>
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    title="Load this route into the planner"
+                                    onClick={() => {
+                                      setStops(route.stops.map(s => ({ label: s.label, lat: s.lat, lon: s.lon, zoneId: null })));
+                                      setSelectedHistoryId(route.id);
+                                      setWizardStep(1);
+                                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-lg bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-[10px] shadow transition-colors cursor-pointer flex items-center gap-1"
+                                  >
+                                    <Truck className="w-3 h-3" />
+                                    Load
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Manage stop statuses"
+                                    onClick={() => setExpandedHistoryId(isExpanded ? null : route.id)}
+                                    className="p-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                                  >
+                                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+
+                            {/* Expanded stop status row */}
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={9} className="px-6 pb-4 pt-2 bg-slate-50 border-t border-slate-100">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Stop-by-Stop Status</div>
+                                  <div className="space-y-1.5">
+                                    {routeStops.map((stop, idx) => {
+                                      const key = `${route.id}_${idx}`;
+                                      const status = stopStatuses[key] || 'pending';
+                                      return (
+                                        <div key={idx} className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-xs">
+                                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${status === 'complete' ? 'bg-emerald-600 text-white' :
+                                            status === 'ongoing' ? 'bg-amber-500 text-white' :
+                                              'bg-slate-200 text-slate-600'
+                                            }`}>{idx + 1}</span>
+                                          <span className="flex-1 text-xs font-medium text-slate-700 truncate">{stop.label}</span>
+                                          <div className="relative inline-block shrink-0">
+                                            <select
+                                              value={status}
+                                              onChange={(e) => handleStopStatusChange(route.id, idx, e.target.value)}
+                                              className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
+                                                status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                                status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                                'bg-slate-50 text-slate-600 border-slate-300'
+                                              }`}
+                                            >
+                                              <option value="pending">PENDING</option>
+                                              <option value="ongoing">ONGOING</option>
+                                              <option value="complete">COMPLETE</option>
+                                            </select>
+                                            <ChevronDown className={`w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${
+                                              status === 'complete' ? 'text-emerald-600' :
+                                              status === 'ongoing' ? 'text-amber-600' :
+                                              'text-slate-500'
+                                            }`} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className="flex justify-end gap-2 mt-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleBatchStopStatusChange(route.id, 'pending')}
+                                      className="px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 font-bold text-[9px] hover:bg-slate-50 cursor-pointer"
+                                    >Reset All</button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleBatchStopStatusChange(route.id, 'complete')}
+                                      className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9px] cursor-pointer"
+                                    >✓ Mark All Complete</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+        </>) /* end currentUser ternary */}
 
     </section>
   );

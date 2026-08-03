@@ -1,7 +1,7 @@
 import StripeEmbeddedCheckout from '../components/StripeEmbeddedCheckout';
 import { useParams, useLocation, useNavigate, Link } from 'react-router-dom';
 import PaymentTestModeBanner from '../components/PaymentTestModeBanner';
-import { COURSES_DATA } from '../data/coursesData';
+
 import {
   ArrowLeft,
   CreditCard,
@@ -27,13 +27,20 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
   useEffect(() => {
     async function load() {
       const allCourses = await getCourses();
-      const match = allCourses.find((c) => c.id === courseId) || allCourses[0] || COURSES_DATA[0];
+      const activeCourses = (allCourses || []).filter(c => c.status !== 'INACTIVE');
+      const match = activeCourses.find((c) => c.id === courseId) || activeCourses[0] || null;
       setCourse(match);
     }
     load();
   }, [courseId]);
 
-  const activeCourse = course || COURSES_DATA.find((c) => c.id === courseId) || COURSES_DATA[0];
+  const activeCourse = course || {
+    id: courseId,
+    title: 'Loading course...',
+    price: 49,
+    projectedPay: '$50,000 – $150,000+ / year',
+    access: 'One-time • Lifetime access • Certificate on completion'
+  };
   const certName = location.state?.fullName || currentUser?.name || 'Driver Professional';
 
   const [currency, setCurrency] = useState('USD');

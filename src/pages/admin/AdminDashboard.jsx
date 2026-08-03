@@ -218,22 +218,35 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {adminSavedRoutes.map(r => (
-                    <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-rose-600">{r.id}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">{r.driverName}</td>
-                      <td className="py-3 px-4">{r.vehicle}</td>
-                      <td className="py-3 px-4 font-bold">{r.stopsCount} stops</td>
-                      <td className="py-3 px-4">{r.distanceMiles} mi</td>
-                      <td className="py-3 px-4">{r.durationMinutes} min</td>
-                      <td className="py-3 px-4">
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase">
-                          {r.status || 'ACTIVE'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-400">{new Date(r.createdAt).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
+                  {adminSavedRoutes.map(r => {
+                    const routeStops = r.stops || [];
+                    const completedCount = routeStops.filter(s => s.status === 'complete').length;
+                    const ongoingCount = routeStops.filter(s => s.status === 'ongoing').length;
+                    const allComplete = routeStops.length > 0 && completedCount === routeStops.length;
+                    const anyOngoing = ongoingCount > 0 || completedCount > 0;
+                    const overallStatus = allComplete ? 'complete' : anyOngoing ? 'ongoing' : 'pending';
+
+                    return (
+                      <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 font-mono font-bold text-rose-600">{r.id}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900">{r.driverName}</td>
+                        <td className="py-3 px-4">{r.vehicle}</td>
+                        <td className="py-3 px-4 font-bold">{r.stopsCount} stops</td>
+                        <td className="py-3 px-4">{r.distanceMiles} mi</td>
+                        <td className="py-3 px-4">{r.durationMinutes} min</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                            overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            overallStatus === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}>
+                            {overallStatus}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-400">{new Date(r.createdAt).toLocaleDateString()}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

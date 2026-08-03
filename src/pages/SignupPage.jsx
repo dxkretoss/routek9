@@ -89,6 +89,17 @@ export default function SignupPage({ onSignup }) {
       const cleanCity = city.trim() || 'Houston';
       const cleanState = stateCode.trim().toUpperCase() || 'TX';
 
+      // 0. Pre-Signup Validation: Ensure email is unique in the database
+      const { data: existingProfiles, error: checkError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', cleanEmail)
+        .limit(1);
+
+      if (existingProfiles && existingProfiles.length > 0) {
+        throw new Error(`An account with email "${cleanEmail}" already exists. Please log in instead.`);
+      }
+
       // 1. Supabase Auth Registration
       const { data, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
@@ -124,6 +135,7 @@ export default function SignupPage({ onSignup }) {
           await supabase.from('profiles').upsert({
             id: userId,
             full_name: nameToSave,
+            email: cleanEmail,
             role: signupRole,
             vehicle: vehicleType,
             city: cleanCity,

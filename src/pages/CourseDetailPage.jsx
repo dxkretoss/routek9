@@ -25,7 +25,8 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
   useEffect(() => {
     async function load() {
       const allCourses = await getCourses();
-      const match = allCourses.find((c) => c.id === courseId) || allCourses[0] || COURSES_DATA[0];
+      const activeCourses = (allCourses || []).filter(c => c.status !== 'INACTIVE');
+      const match = activeCourses.find((c) => c.id === courseId) || activeCourses[0] || null;
       setCourse(match);
       setLoading(false);
     }

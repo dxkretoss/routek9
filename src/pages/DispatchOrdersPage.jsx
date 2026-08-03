@@ -423,8 +423,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
             <button
               onClick={() => setActiveTab('marketplace')}
               className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'marketplace'
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
             >
               <Package className="w-4 h-4" />
@@ -434,8 +434,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
             <button
               onClick={() => setActiveTab('accepted')}
               className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'accepted'
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
             >
               <CheckCircle2 className="w-4 h-4" />
@@ -445,8 +445,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
             <button
               onClick={() => setActiveTab('create')}
               className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'create'
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
             >
               <Plus className="w-4 h-4 text-rose-500" />
@@ -647,7 +647,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                           </span>
                           <span className="text-xs font-extrabold text-[#0b132b]">{order.deliveryType}</span>
                         </div>
-                        <p className="text-[11px] text-slate-500 font-medium mt-1">Assigned Driver: <strong className="text-slate-800 font-bold">{order.assignedDriver}</strong></p>
+                        <p className="text-[11px] text-slate-500 font-medium mt-1">Assigned Driver: <strong className="text-slate-800 font-bold">{order?.assignedDriver?.name}</strong></p>
                       </div>
 
                       <div className="flex items-center gap-3">
@@ -763,8 +763,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                     type="button"
                     onClick={() => setFormCategory('Business')}
                     className={`px-6 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${formCategory === 'Business'
-                        ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                   >
                     <Building2 className="w-4 h-4" />
@@ -774,8 +774,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                     type="button"
                     onClick={() => setFormCategory('Personal')}
                     className={`px-6 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${formCategory === 'Personal'
-                        ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                   >
                     <Package className="w-4 h-4" />
@@ -816,8 +816,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                         type="button"
                         onClick={() => setFormVehicle(key)}
                         className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${isSelected
-                            ? 'bg-rose-50/60 border-rose-600 ring-2 ring-rose-600/30'
-                            : 'bg-white border-slate-200 hover:border-slate-300'
+                          ? 'bg-rose-50/60 border-rose-600 ring-2 ring-rose-600/30'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
                           }`}
                       >
                         <div>
@@ -849,8 +849,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                       type="button"
                       onClick={() => setFormUrgency(item.key)}
                       className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${formUrgency === item.key
-                          ? 'bg-rose-50/60 border-rose-600 ring-2 ring-rose-600/30'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
+                        ? 'bg-rose-50/60 border-rose-600 ring-2 ring-rose-600/30'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
                         }`}
                     >
                       <div className="font-extrabold text-xs text-[#0b132b]">{item.title}</div>
@@ -873,8 +873,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                         type="button"
                         onClick={() => setFormTripType(t)}
                         className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${formTripType === t
-                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                            : 'bg-slate-50 text-slate-700 border-slate-200'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                          : 'bg-slate-50 text-slate-700 border-slate-200'
                           }`}
                       >
                         {t}
@@ -898,8 +898,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                         type="button"
                         onClick={() => setFormSpeed(s.key)}
                         className={`flex-1 py-2 px-2 rounded-xl border text-center transition-all cursor-pointer ${formSpeed === s.key
-                            ? 'bg-blue-50 border-blue-600 text-blue-700 font-extrabold ring-2 ring-blue-600/20'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 font-bold'
+                          ? 'bg-blue-50 border-blue-600 text-blue-700 font-extrabold ring-2 ring-blue-600/20'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 font-bold'
                           }`}
                       >
                         <div className="text-xs">{s.key}</div>

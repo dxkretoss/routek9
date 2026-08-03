@@ -12,7 +12,8 @@ import {
   ShieldCheck,
   Package,
   AlertTriangle,
-  Loader2
+  Loader2,
+  ChevronDown
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -202,9 +203,8 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                       {/* Company Name & Email */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-full font-extrabold flex items-center justify-center text-xs shadow-xs ${
-                            isInactive ? 'bg-rose-600 text-white' : 'bg-rose-600 text-white'
-                          }`}>
+                          <div className={`w-9 h-9 rounded-full font-extrabold flex items-center justify-center text-xs shadow-xs ${isInactive ? 'bg-rose-600 text-white' : 'bg-rose-600 text-white'
+                            }`}>
                             <Building2 className="w-4 h-4" />
                           </div>
                           <div>
@@ -239,15 +239,15 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                           <select
                             value={comp.status || 'ACTIVE'}
                             onChange={(e) => handleAccountStatusChange(comp.id, comp.email, e.target.value)}
-                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
-                              isInactive
-                                ? 'bg-rose-50 text-rose-700 border-rose-300 font-black'
-                                : 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                            }`}
+                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${isInactive
+                              ? 'bg-rose-50 text-rose-700 border-rose-300 font-black'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                              }`}
                           >
                             <option value="ACTIVE">ACTIVE</option>
                             <option value="INACTIVE">DEACTIVATED</option>
                           </select>
+                          <ChevronDown className="w-2.5 h-2.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-current" />
                         </div>
                       </td>
 
@@ -255,7 +255,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                       <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => setSelectedCompanyModal(comp)}
-                          className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-rose-600 text-white text-[11px] font-extrabold transition-all inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>View Details</span>
@@ -274,7 +274,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
       {selectedCompanyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
           <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Modal Header */}
             <div className="p-6 bg-slate-900 text-white flex justify-between items-start">
               <div className="flex items-center gap-3.5">
@@ -303,7 +303,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
 
             {/* Modal Content */}
             <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700">
-              
+
               {/* Account Status Control Card */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
                 <div>
@@ -381,14 +381,14 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            {/* <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
               <button
                 onClick={() => setSelectedCompanyModal(null)}
                 className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer shadow-2xs"
               >
                 Done / Close
               </button>
-            </div>
+            </div> */}
 
           </div>
         </div>

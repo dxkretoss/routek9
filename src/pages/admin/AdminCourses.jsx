@@ -10,7 +10,8 @@ import {
   X,
   Image as ImageIcon,
   Layers,
-  Upload
+  Upload,
+  ChevronDown
 } from 'lucide-react';
 import { CourseCard, ConfirmModal } from './components/AdminComponents';
 import { getCourses, createCourse, updateCourse, deleteCourse, DEFAULT_COURSE_IMAGES } from '../../lib/courses';
@@ -36,6 +37,7 @@ export default function AdminCourses() {
   const [newOutline, setNewOutline] = useState([
     { moduleNumber: 1, moduleTitle: 'Foundations & Overview', lessons: ['Lesson 1: Introduction to course concepts', 'Lesson 2: Setting up initial route requirements'] }
   ]);
+  const [newStatus, setNewStatus] = useState('ACTIVE');
   const [submitting, setSubmitting] = useState(false);
 
   // Edit Course Form State
@@ -47,6 +49,7 @@ export default function AdminCourses() {
   const [editImageUrl, setEditImageUrl] = useState('');
   const [editOutcomes, setEditOutcomes] = useState([]);
   const [editOutline, setEditOutline] = useState([]);
+  const [editStatus, setEditStatus] = useState('ACTIVE');
   const [updating, setUpdating] = useState(false);
 
   const PRESET_IMAGES = [
@@ -65,9 +68,137 @@ export default function AdminCourses() {
     setLoading(false);
   };
 
+  const handleCourseStatusChange = async (courseId, newStatus, currentCourse) => {
+    try {
+      // 1. Optimistic update
+      setCourses(prev => prev.map(c => c.id === courseId ? { ...c, status: newStatus } : c));
+
+      // 2. Save in database
+      await updateCourse(courseId, {
+        ...currentCourse,
+        status: newStatus
+      });
+    } catch (err) {
+      console.warn("Failed to update course status:", err);
+    }
+  };
+
   useEffect(() => {
     fetchDynamicCourses();
   }, []);
+
+  const handleAddOutcome = (isEdit = false) => {
+    if (isEdit) {
+      setEditOutcomes(prev => [...prev, '']);
+    } else {
+      setNewOutcomes(prev => [...prev, '']);
+    }
+  };
+
+  const handleOutcomeChange = (index, value, isEdit = false) => {
+    if (isEdit) {
+      setEditOutcomes(prev => {
+        const next = [...prev];
+        next[index] = value;
+        return next;
+      });
+    } else {
+      setNewOutcomes(prev => {
+        const next = [...prev];
+        next[index] = value;
+        return next;
+      });
+    }
+  };
+
+  const handleRemoveOutcome = (index, isEdit = false) => {
+    if (isEdit) {
+      setEditOutcomes(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setNewOutcomes(prev => prev.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleAddModule = (isEdit = false) => {
+    const nextMod = {
+      moduleNumber: isEdit ? editOutline.length + 1 : newOutline.length + 1,
+      moduleTitle: '',
+      lessons: ['']
+    };
+    if (isEdit) {
+      setEditOutline(prev => [...prev, nextMod]);
+    } else {
+      setNewOutline(prev => [...prev, nextMod]);
+    }
+  };
+
+  const handleModuleTitleChange = (modIdx, val, isEdit = false) => {
+    if (isEdit) {
+      setEditOutline(prev => prev.map((m, idx) => idx === modIdx ? { ...m, moduleTitle: val } : m));
+    } else {
+      setNewOutline(prev => prev.map((m, idx) => idx === modIdx ? { ...m, moduleTitle: val } : m));
+    }
+  };
+
+  const handleRemoveModule = (modIdx, isEdit = false) => {
+    const updateFn = prev => {
+      const filtered = prev.filter((_, idx) => idx !== modIdx);
+      return filtered.map((m, idx) => ({ ...m, moduleNumber: idx + 1 }));
+    };
+    if (isEdit) {
+      setEditOutline(updateFn);
+    } else {
+      setNewOutline(updateFn);
+    }
+  };
+
+  const handleAddLesson = (modIdx, isEdit = false) => {
+    if (isEdit) {
+      setEditOutline(prev => prev.map((m, idx) => idx === modIdx ? { ...m, lessons: [...m.lessons, ''] } : m));
+    } else {
+      setNewOutline(prev => prev.map((m, idx) => idx === modIdx ? { ...m, lessons: [...m.lessons, ''] } : m));
+    }
+  };
+
+  const handleLessonChange = (modIdx, lesIdx, val, isEdit = false) => {
+    if (isEdit) {
+      setEditOutline(prev => prev.map((m, idx) => {
+        if (idx === modIdx) {
+          const nextLessons = [...m.lessons];
+          nextLessons[lesIdx] = val;
+          return { ...m, lessons: nextLessons };
+        }
+        return m;
+      }));
+    } else {
+      setNewOutline(prev => prev.map((m, idx) => {
+        if (idx === modIdx) {
+          const nextLessons = [...m.lessons];
+          nextLessons[lesIdx] = val;
+          return { ...m, lessons: nextLessons };
+        }
+        return m;
+      }));
+    }
+  };
+
+  const handleRemoveLesson = (modIdx, lesIdx, isEdit = false) => {
+    if (isEdit) {
+      setEditOutline(prev => prev.map((m, idx) => {
+        if (idx === modIdx) {
+          return { ...m, lessons: m.lessons.filter((_, li) => li !== lesIdx) };
+        }
+        return m;
+      }));
+    } else {
+      setNewOutline(prev => prev.map((m, idx) => {
+        if (idx === modIdx) {
+          return { ...m, lessons: m.lessons.filter((_, li) => li !== lesIdx) };
+        }
+        return m;
+      }));
+    }
+  };
 
   const handleImageFileUpload = (e, setFn) => {
     const file = e.target.files && e.target.files[0];
@@ -104,7 +235,8 @@ export default function AdminCourses() {
       image: newImageUrl.trim() || PRESET_IMAGES[0].url,
       image_url: newImageUrl.trim() || PRESET_IMAGES[0].url,
       outcomes: outcomes.length ? outcomes : ['Master core route logistics', 'Earn official certificate of completion'],
-      outline: newOutline
+      outline: newOutline,
+      status: newStatus
     };
 
     const created = await createCourse(payload);
@@ -120,6 +252,7 @@ export default function AdminCourses() {
     setNewOutline([
       { moduleNumber: 1, moduleTitle: 'Foundations & Overview', lessons: ['Lesson 1: Introduction to course concepts', 'Lesson 2: Setting up initial route requirements'] }
     ]);
+    setNewStatus('ACTIVE');
     setSubmitting(false);
     setShowAddModal(false);
 
@@ -138,6 +271,7 @@ export default function AdminCourses() {
     setEditOutline(course.outline && course.outline.length ? [...course.outline] : [
       { moduleNumber: 1, moduleTitle: 'Module 1 Overview', lessons: ['Lesson 1'] }
     ]);
+    setEditStatus(course.status || 'ACTIVE');
     setShowEditModal(true);
   };
 
@@ -157,7 +291,8 @@ export default function AdminCourses() {
       image: editImageUrl.trim(),
       image_url: editImageUrl.trim(),
       outcomes: outcomes.length ? outcomes : ['Master core route logistics'],
-      outline: editOutline
+      outline: editOutline,
+      status: editStatus
     };
 
     await updateCourse(editingCourseId, payload);
@@ -260,6 +395,27 @@ export default function AdminCourses() {
                       <span className="text-[10px] font-extrabold text-slate-400 uppercase">
                         {course.outline ? course.outline.length : 0} Modules
                       </span>
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-slate-100/50 flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                        Course Status
+                      </span>
+                      <div className="relative">
+                        <select
+                          value={course.status || 'ACTIVE'}
+                          onChange={(e) => handleCourseStatusChange(course.id, e.target.value, course)}
+                          className={`appearance-none pl-3 pr-7 py-0.5 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
+                            course.status === 'INACTIVE'
+                              ? 'bg-rose-50 text-rose-700 border-rose-300'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                          }`}
+                        >
+                          <option value="ACTIVE">ACTIVE</option>
+                          <option value="INACTIVE">INACTIVE</option>
+                        </select>
+                        <ChevronDown className="w-2.5 h-2.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-current" />
+                      </div>
                     </div>
                   </div>
 
@@ -409,7 +565,7 @@ export default function AdminCourses() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-slate-700">Price (USD $) *</label>
                   <input
@@ -433,9 +589,21 @@ export default function AdminCourses() {
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                   />
                 </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700">Initial Status</label>
+                  <select
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="INACTIVE">INACTIVE</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 text-left">
                 <label className="block text-xs font-semibold text-slate-700">Subtitle / Description</label>
                 <textarea
                   rows="2"
@@ -444,6 +612,126 @@ export default function AdminCourses() {
                   onChange={(e) => setNewSubtitle(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                 />
+              </div>
+
+              {/* outcomes Section */}
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-left">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-800">
+                    What You'll Be Able to Do (Outcomes)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleAddOutcome(false)}
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-[10px] rounded-lg border border-rose-200 cursor-pointer"
+                  >
+                    + Add Outcome
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {newOutcomes.map((outcome, oIdx) => (
+                    <div key={oIdx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder={`Outcome #${oIdx + 1}`}
+                        value={outcome}
+                        onChange={(e) => handleOutcomeChange(oIdx, e.target.value, false)}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                      {newOutcomes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOutcome(oIdx, false)}
+                          className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Outline / Syllabus Section */}
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-left">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-800">
+                    Course Outline & Syllabus Modules
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleAddModule(false)}
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-[10px] rounded-lg border border-rose-200 cursor-pointer"
+                  >
+                    + Add Module
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {newOutline.map((mod, mIdx) => (
+                    <div key={mIdx} className="p-4 rounded-xl bg-white border border-slate-200/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold text-rose-600 bg-rose-50 px-2 py-0.5 rounded uppercase tracking-wider">
+                          Module {mod.moduleNumber || mIdx + 1}
+                        </span>
+                        {newOutline.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveModule(mIdx, false)}
+                            className="text-slate-400 hover:text-rose-600 text-[10px] font-bold cursor-pointer"
+                          >
+                            Remove Module
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Module Title</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Setting up USDOT & Authority"
+                          value={mod.moduleTitle}
+                          onChange={(e) => handleModuleTitleChange(mIdx, e.target.value, false)}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Lessons</label>
+                          <button
+                            type="button"
+                            onClick={() => handleAddLesson(mIdx, false)}
+                            className="text-[10px] text-rose-600 hover:underline font-bold cursor-pointer"
+                          >
+                            + Add Lesson
+                          </button>
+                        </div>
+                        <div className="space-y-1.5">
+                          {mod.lessons.map((lesson, lIdx) => (
+                            <div key={lIdx} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                required
+                                placeholder={`Lesson #${lIdx + 1}`}
+                                value={lesson}
+                                onChange={(e) => handleLessonChange(mIdx, lIdx, e.target.value, false)}
+                                className="flex-1 px-3 py-1.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                              />
+                              {mod.lessons.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLesson(mIdx, lIdx, false)}
+                                  className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
@@ -585,7 +873,7 @@ export default function AdminCourses() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-slate-700">Price (USD $) *</label>
                   <input
@@ -607,9 +895,21 @@ export default function AdminCourses() {
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700">Course Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="INACTIVE">INACTIVE</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 text-left">
                 <label className="block text-xs font-semibold text-slate-700">Subtitle / Description</label>
                 <textarea
                   rows="2"
@@ -617,6 +917,126 @@ export default function AdminCourses() {
                   onChange={(e) => setEditSubtitle(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
+              </div>
+
+              {/* Outcomes Section */}
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-left">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-800">
+                    What You'll Be Able to Do (Outcomes)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleAddOutcome(true)}
+                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[10px] rounded-lg border border-indigo-200 cursor-pointer"
+                  >
+                    + Add Outcome
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {editOutcomes.map((outcome, oIdx) => (
+                    <div key={oIdx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder={`Outcome #${oIdx + 1}`}
+                        value={outcome}
+                        onChange={(e) => handleOutcomeChange(oIdx, e.target.value, true)}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
+                      {editOutcomes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOutcome(oIdx, true)}
+                          className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Outline / Syllabus Section */}
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-left">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-800">
+                    Course Outline & Syllabus Modules
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleAddModule(true)}
+                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[10px] rounded-lg border border-indigo-200 cursor-pointer"
+                  >
+                    + Add Module
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {editOutline.map((mod, mIdx) => (
+                    <div key={mIdx} className="p-4 rounded-xl bg-white border border-slate-200/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider">
+                          Module {mod.moduleNumber || mIdx + 1}
+                        </span>
+                        {editOutline.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveModule(mIdx, true)}
+                            className="text-slate-400 hover:text-rose-600 text-[10px] font-bold cursor-pointer"
+                          >
+                            Remove Module
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Module Title</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Setting up USDOT & Authority"
+                          value={mod.moduleTitle}
+                          onChange={(e) => handleModuleTitleChange(mIdx, e.target.value, true)}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Lessons</label>
+                          <button
+                            type="button"
+                            onClick={() => handleAddLesson(mIdx, true)}
+                            className="text-[10px] text-indigo-600 hover:underline font-bold cursor-pointer"
+                          >
+                            + Add Lesson
+                          </button>
+                        </div>
+                        <div className="space-y-1.5">
+                          {mod.lessons.map((lesson, lIdx) => (
+                            <div key={lIdx} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                required
+                                placeholder={`Lesson #${lIdx + 1}`}
+                                value={lesson}
+                                onChange={(e) => handleLessonChange(mIdx, lIdx, e.target.value, true)}
+                                className="flex-1 px-3 py-1.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                              />
+                              {mod.lessons.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLesson(mIdx, lIdx, true)}
+                                  className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">

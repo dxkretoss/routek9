@@ -97,6 +97,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
         if (routesData) {
           setRoutes(routesData.map(r => ({
             id: r.id,
+            user_id: r.user_id,
             title: r.title || 'Saved Courier Route',
             driverName: r.driver_name || 'Solo Driver',
             vehicle: 'Cargo Van',
@@ -222,8 +223,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
   const filteredDrivers = drivers.filter((d) => {
     const matchesSearch = searchQuery
       ? d.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.city?.toLowerCase().includes(searchQuery.toLowerCase())
+      d.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.city?.toLowerCase().includes(searchQuery.toLowerCase())
       : true;
 
     const matchesVehicle = vehicleFilter === 'all' || d.vehicle?.toLowerCase().includes(vehicleFilter.toLowerCase());
@@ -238,25 +239,22 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
         <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
           <button
             onClick={() => setActiveTab('drivers')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-              activeTab === 'drivers' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'drivers' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
           >
             Driver Directory ({drivers.length})
           </button>
           <button
             onClick={() => setActiveTab('routes')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-              activeTab === 'routes' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'routes' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
           >
             Saved Routes ({routes.length})
           </button>
           <button
             onClick={() => setActiveTab('bids')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-              activeTab === 'bids' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'bids' ? 'bg-[#0b132b] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
           >
             Route Bids ({bids.length})
           </button>
@@ -270,8 +268,16 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
             placeholder="Search drivers or location..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500"
+            className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
@@ -313,9 +319,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                     <tr key={driver.id} className={`hover:bg-slate-50/60 transition-colors ${isInactive ? 'bg-rose-50/20' : ''}`}>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-full font-extrabold flex items-center justify-center text-xs shadow-xs ${
-                            isInactive ? 'bg-rose-600 text-white' : 'bg-slate-900 text-white'
-                          }`}>
+                          <div className={`w-9 h-9 rounded-full font-extrabold flex items-center justify-center text-xs shadow-xs ${isInactive ? 'bg-rose-600 text-white' : 'bg-slate-900 text-white'
+                            }`}>
                             {(driver.full_name || driver.email || 'D').charAt(0).toUpperCase()}
                           </div>
                           <div>
@@ -351,11 +356,10 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                           <select
                             value={driver.status || 'ACTIVE'}
                             onChange={(e) => handleAccountStatusChange(driver.id, driver.email, e.target.value)}
-                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
-                              isInactive
-                                ? 'bg-rose-50 text-rose-700 border-rose-300 font-black'
-                                : 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                            }`}
+                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${isInactive
+                              ? 'bg-rose-50 text-rose-700 border-rose-300 font-black'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                              }`}
                           >
                             <option value="ACTIVE">ACTIVE</option>
                             <option value="INACTIVE">DEACTIVATED</option>
@@ -367,6 +371,23 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                       {/* Admin Actions */}
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {/* View Route Button if driver set a route */}
+                          {(() => {
+                            const driverRoute = routes.find(r => r.user_id === driver.id || r.driverName?.toLowerCase() === driver.full_name?.toLowerCase());
+                            return driverRoute && (
+                              <button
+                                onClick={() => {
+                                  setSearchQuery('');
+                                  setSelectedRouteModal(driverRoute);
+                                  setActiveTab('routes');
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <Truck className="w-3.5 h-3.5 text-white" />
+                                <span>View Route</span>
+                              </button>
+                            );
+                          })()}
                           {/* View Details Button */}
                           <button
                             onClick={() => setSelectedDriverModal(driver)}
@@ -419,42 +440,54 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
-                  {routes.map((route) => (
-                    <tr key={route.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-6 py-4 font-mono font-bold text-rose-600">
-                        {route.id}
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-900">
-                        {route.driverName}
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-700">
-                        {route.stopsCount} stops
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-800">
-                        {route.distanceMiles} mi
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-800">
-                        {route.durationMinutes} min
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
-                          {route.status || 'ACTIVE'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-slate-400">
-                        {new Date(route.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedRouteModal(route)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer shadow-xs"
-                        >
-                          View Stops Detail →
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {routes.map((route) => {
+                    const routeStops = route.stops || [];
+                    const completedCount = routeStops.filter(s => s.status === 'complete').length;
+                    const ongoingCount = routeStops.filter(s => s.status === 'ongoing').length;
+                    const allComplete = routeStops.length > 0 && completedCount === routeStops.length;
+                    const anyOngoing = ongoingCount > 0 || completedCount > 0;
+                    const overallStatus = allComplete ? 'complete' : anyOngoing ? 'ongoing' : 'pending';
+
+                    return (
+                      <tr key={route.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="px-6 py-4 font-mono font-bold text-rose-600">
+                          {route.id}
+                        </td>
+                        <td className="px-6 py-4 font-bold text-slate-900">
+                          {route.driverName}
+                        </td>
+                        <td className="px-6 py-4 font-bold text-slate-700">
+                          {route.stopsCount} stops
+                        </td>
+                        <td className="px-6 py-4 font-bold text-slate-800">
+                          {route.distanceMiles} mi
+                        </td>
+                        <td className="px-6 py-4 font-bold text-slate-800">
+                          {route.durationMinutes} min
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              overallStatus === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
+                            {overallStatus}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-400">
+                          {new Date(route.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRouteModal(route)}
+                            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer shadow-xs"
+                          >
+                            View Stops Detail →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -496,10 +529,10 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${bid.status === 'approved'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : bid.status === 'rejected'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : bid.status === 'rejected'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
                         }`}>
                         {bid.status || 'Pending'}
                       </span>
@@ -569,16 +602,24 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stop Addresses ({selectedRouteModal.stops.length} stops):</span>
                 <ul className="space-y-1.5 max-h-48 overflow-y-auto">
                   {selectedRouteModal.stops.map((s, idx) => (
-                    <li key={idx} className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
-                      <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
-                      <span className="truncate">{s.label}</span>
+                    <li key={idx} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">{s.step || idx + 1}</span>
+                        <span className="truncate" title={s.label}>{s.label}</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}>
+                        {s.status || 'pending'}
+                      </span>
                     </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            <div className="pt-2 flex justify-end">
+            {/* <div className="pt-2 flex justify-end">
               <button
                 type="button"
                 onClick={() => setSelectedRouteModal(null)}
@@ -586,7 +627,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
               >
                 Close Details
               </button>
-            </div>
+            </div> */}
           </div>
         </div>
       )}
@@ -598,9 +639,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl font-extrabold flex items-center justify-center text-base shadow-sm ${
-                  selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600 text-white' : 'bg-[#0b132b] text-white'
-                }`}>
+                <div className={`w-12 h-12 rounded-2xl font-extrabold flex items-center justify-center text-base shadow-sm ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600 text-white' : 'bg-[#0b132b] text-white'
+                  }`}>
                   {(selectedDriverModal.full_name || selectedDriverModal.email || 'D').charAt(0).toUpperCase()}
                 </div>
                 <div>
@@ -612,9 +652,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs text-slate-400 font-semibold">{selectedDriverModal.email}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                      selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
-                    }`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
                       {selectedDriverModal.status || 'ACTIVE'}
                     </span>
                   </div>
@@ -643,11 +682,10 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
               <select
                 value={selectedDriverModal.status || 'ACTIVE'}
                 onChange={(e) => handleAccountStatusChange(selectedDriverModal.id, selectedDriverModal.email, e.target.value)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold uppercase border cursor-pointer focus:outline-none ${
-                  selectedDriverModal.status === 'INACTIVE'
-                    ? 'bg-rose-600 text-white border-rose-700'
-                    : 'bg-emerald-600 text-white border-emerald-700'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold uppercase border cursor-pointer focus:outline-none ${selectedDriverModal.status === 'INACTIVE'
+                  ? 'bg-rose-600 text-white border-rose-700'
+                  : 'bg-emerald-600 text-white border-emerald-700'
+                  }`}
               >
                 <option value="ACTIVE">ACTIVE</option>
                 <option value="INACTIVE">DEACTIVATED</option>
@@ -716,17 +754,6 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                   No compliance certifications recorded in database for this driver profile.
                 </div>
               )}
-            </div>
-
-            {/* Footer Actions */}
-            <div className="flex items-center justify-end pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setSelectedDriverModal(null)}
-                className="px-5 py-2.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-xs transition-colors cursor-pointer"
-              >
-                Close Profile
-              </button>
             </div>
           </div>
         </div>

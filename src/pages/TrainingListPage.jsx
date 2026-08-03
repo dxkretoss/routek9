@@ -19,7 +19,8 @@ export default function TrainingListPage({ currentUser, onLogout }) {
   useEffect(() => {
     async function load() {
       const data = await getCourses();
-      setCourses(data);
+      const activeCourses = (data || []).filter(c => c.status !== 'INACTIVE');
+      setCourses(activeCourses);
       setLoading(false);
     }
     load();
