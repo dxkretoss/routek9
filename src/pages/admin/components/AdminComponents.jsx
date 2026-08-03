@@ -245,7 +245,7 @@ export function CourseCard({ course, detailed = false }) {
   );
 }
 
-export function RecentTransactionsTable() {
+export function RecentTransactionsTable({ searchQuery = '' }) {
   const [dbTransactions, setDbTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -276,7 +276,15 @@ export function RecentTransactionsTable() {
     { id: 'tx_104', email: 'alex.trans@gmail.com', description: 'Route K9 PRO Membership (Yearly)', amount: '$299.00', created_at: '2026-07-28T12:00:00Z', status: 'Succeeded' },
   ];
 
-  const transactions = dbTransactions.length > 0 ? dbTransactions : mockTransactions;
+  let transactions = dbTransactions.length > 0 ? dbTransactions : mockTransactions;
+
+  if (searchQuery.trim().length > 0) {
+    const query = searchQuery.toLowerCase().trim();
+    transactions = transactions.filter(tx => 
+      tx.email.toLowerCase().includes(query) ||
+      (tx.description || tx.desc || '').toLowerCase().includes(query)
+    );
+  }
 
   if (loading && dbTransactions.length === 0) {
     return (

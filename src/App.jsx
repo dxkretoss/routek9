@@ -213,7 +213,31 @@ export default function App() {
   const navigate = useNavigate();
   // Read initial user from session cookie (DEFAULT IS NULL - LOGGED OUT!)
   const [currentUser, setCurrentUser] = useState(() => getCookie(SESSION_COOKIE_NAME) || null);
-  const [purchasedCourses, setPurchasedCourses] = useState(() => getCookie(COURSES_COOKIE_NAME) || []);
+  const [purchasedCourses, setPurchasedCourses] = useState([]);
+
+  useEffect(() => {
+    async function loadPurchasedCourses() {
+      if (currentUser?.id) {
+        try {
+          const { data, error } = await supabase
+            .from('transactions')
+            .select('course_id')
+            .eq('user_id', currentUser.id)
+            .eq('status', 'Succeeded');
+
+          if (data) {
+            const courseIds = data.map(tx => tx.course_id);
+            setPurchasedCourses(courseIds);
+            return;
+          }
+        } catch (err) {
+          console.warn("Error loading purchased courses from DB:", err);
+        }
+      }
+      setPurchasedCourses([]);
+    }
+    loadPurchasedCourses();
+  }, [currentUser]);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const [savedUserRoutes, setSavedUserRoutes] = useState([]);
 
@@ -408,9 +432,7 @@ export default function App() {
   };
 
   const handleCompletePurchase = (courseId, certName) => {
-    const updated = Array.from(new Set([...purchasedCourses, courseId]));
-    setPurchasedCourses(updated);
-    setCookie(COURSES_COOKIE_NAME, updated, 60);
+    setPurchasedCourses(prev => Array.from(new Set([...prev, courseId])));
 
     if (currentUser) {
       const updatedUser = { ...currentUser, name: certName || currentUser.name };

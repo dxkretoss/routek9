@@ -23,6 +23,8 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [adminSavedRoutes, setAdminSavedRoutes] = useState([]);
 
+  const [totalRevenue, setTotalRevenue] = useState(0);
+
   useEffect(() => {
     async function loadDashboardCourses() {
       try {
@@ -63,8 +65,27 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
         console.warn("Could not fetch Supabase admin routes:", err);
       }
     }
+    async function fetchRevenue() {
+      try {
+        const { data } = await supabase
+          .from('transactions')
+          .select('amount')
+          .eq('status', 'Succeeded');
+
+        if (data && data.length > 0) {
+          const sum = data.reduce((acc, tx) => {
+            const num = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
+            return acc + (isNaN(num) ? 0 : num);
+          }, 0);
+          setTotalRevenue(sum);
+        }
+      } catch (err) {
+        console.warn("Failed to calculate total revenue:", err);
+      }
+    }
     loadDashboardCourses();
     loadSupabaseAdminRoutes();
+    fetchRevenue();
   }, []);
 
   const totalDrivers = drivers.length;
@@ -112,7 +133,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
             />
             <StatCard
               label="Total Revenue"
-              value="$18,450 USD"
+              value={totalRevenue > 0 ? `$${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD` : "$18,450.00 USD"}
               subtext="Course & subscription sales"
               icon={DollarSign}
               color="rose"

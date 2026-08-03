@@ -71,6 +71,8 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
           if (!existing || existing.length === 0) {
             await supabase.from('transactions').insert([{
               id: sessionId,
+              user_id: currentUser?.id || null,
+              course_id: course.id,
               email: currentUser?.email || 'guest@routek9.com',
               description: course.title || `Route K9 Course Purchase`,
               amount: `$${course.price || 49}.00`,

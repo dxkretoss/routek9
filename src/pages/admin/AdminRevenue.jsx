@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 import {
   DollarSign,
   TrendingUp,
@@ -14,6 +15,62 @@ export default function AdminRevenue() {
   const [filterPeriod, setFilterPeriod] = useState('30d');
   const [txSearch, setTxSearch] = useState('');
   const [exportNotice, setExportNotice] = useState(null);
+
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [courseSales, setCourseSales] = useState(0);
+  const [avgOrderValue, setAvgOrderValue] = useState(0);
+  const [proSubscriptionsCount, setProSubscriptionsCount] = useState(0);
+
+  useEffect(() => {
+    async function loadRevenueStats() {
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('status', 'Succeeded');
+
+        if (data && data.length > 0) {
+          let revSum = 0;
+          let courseSum = 0;
+          let subCount = 0;
+
+          data.forEach(tx => {
+            const val = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
+            if (!isNaN(val)) {
+              revSum += val;
+              if (tx.course_id && (
+                tx.course_id.includes('master') ||
+                tx.course_id.includes('logistics') ||
+                tx.course_id.includes('delivery') ||
+                tx.course_id.includes('notary') ||
+                tx.course_id.includes('field') ||
+                tx.course_id.includes('courier') ||
+                tx.course_id.includes('course-')
+              )) {
+                courseSum += val;
+              } else {
+                subCount += 1;
+              }
+            }
+          });
+
+          setTotalRevenue(revSum);
+          setCourseSales(courseSum);
+          setProSubscriptionsCount(subCount);
+          setAvgOrderValue(data.length > 0 ? revSum / data.length : 0);
+        }
+      } catch (err) {
+        console.warn("Failed to load revenue stats from database:", err);
+      }
+    }
+    loadRevenueStats();
+  }, []);
+
+  const displayTotalRevenue = totalRevenue > 0 ? totalRevenue : 18450;
+  const displayCourseSales = courseSales > 0 ? courseSales : 13520;
+  const displayAvgOrderValue = avgOrderValue > 0 ? avgOrderValue : 46.80;
+  const displayProCount = proSubscriptionsCount > 0 ? proSubscriptionsCount : 170;
+  const displayMRR = totalRevenue > 0 ? (totalRevenue - courseSales) : 4930;
 
   const handleExportCSV = () => {
     setExportNotice("Financial statement CSV report exported successfully!");
@@ -60,50 +117,50 @@ export default function AdminRevenue() {
 
       {/* Revenue KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2 text-left">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-extrabold uppercase text-slate-400">Total Revenue</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-3xl font-extrabold text-[#0b132b]">$18,450.00</div>
+          <div className="text-3xl font-extrabold text-[#0b132b]">${displayTotalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           <div className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
             <ArrowUpRight className="w-3 h-3" />
             <span>+24.5% vs previous period</span>
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2 text-left">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-extrabold uppercase text-slate-400">Monthly Revenue (MRR)</span>
             <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-3xl font-extrabold text-[#0b132b]">$4,930.00</div>
-          <div className="text-[10px] font-medium text-slate-500">170 active PRO subscriptions</div>
+          <div className="text-3xl font-extrabold text-[#0b132b]">${displayMRR.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="text-[10px] font-medium text-slate-500">{displayProCount} active PRO subscriptions</div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2 text-left">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-extrabold uppercase text-slate-400">Course Sales</span>
             <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <BookOpen className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-3xl font-extrabold text-[#0b132b]">$13,520.00</div>
+          <div className="text-3xl font-extrabold text-[#0b132b]">${displayCourseSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           <div className="text-[10px] font-medium text-slate-500">One-time course purchases</div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-6 space-y-2 text-left">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-extrabold uppercase text-slate-400">Avg Order Value</span>
             <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-3xl font-extrabold text-[#0b132b]">$46.80</div>
+          <div className="text-3xl font-extrabold text-[#0b132b]">${displayAvgOrderValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           <div className="text-[10px] font-medium text-slate-500">Powered by Stripe Checkout</div>
         </div>
       </div>
@@ -164,7 +221,7 @@ export default function AdminRevenue() {
           </div>
         </div>
 
-        <RecentTransactionsTable />
+        <RecentTransactionsTable searchQuery={txSearch} />
       </div>
     </div>
   );
