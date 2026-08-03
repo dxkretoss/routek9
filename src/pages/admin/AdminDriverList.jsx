@@ -81,7 +81,63 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
         };
       });
 
-      setDrivers(combinedDrivers);
+      // 2.5 Fetch transactions table
+      let rawTxs = [];
+      try {
+        const { data: txsData } = await supabase.from('transactions').select('*');
+        rawTxs = txsData || [];
+      } catch (txErr) {
+        console.warn("Could not load transactions in AdminDriverList:", txErr);
+      }
+
+      const getSubscriptionDetails = (userId, email) => {
+        const userSubs = rawTxs.filter(tx => 
+          tx.status === 'Succeeded' &&
+          (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
+          ((tx.user_id && String(tx.user_id) === String(userId)) || (tx.email && email && tx.email.toLowerCase() === email.toLowerCase()))
+        );
+
+        if (userSubs.length > 0) {
+          userSubs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          const latestSub = userSubs[0];
+          const createdTime = new Date(latestSub.created_at).getTime();
+          const isYearly = latestSub.course_id === 'pro-yearly' || latestSub.description?.toLowerCase().includes('yearly') || latestSub.amount?.includes('299');
+          const validityPeriod = isYearly ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+          const msLeft = createdTime + validityPeriod - Date.now();
+          const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+
+          if (msLeft > 0) {
+            return {
+              isPro: true,
+              plan: isYearly ? 'Pro (Yearly)' : 'Pro (Monthly)',
+              subscribedAt: new Date(createdTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              nextRenewal: new Date(createdTime + validityPeriod).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              daysLeft,
+              amountPaid: latestSub.amount || (isYearly ? '$299.00' : '$29.00')
+            };
+          }
+        }
+
+        return {
+          isPro: false,
+          plan: 'Free',
+          subscribedAt: null,
+          nextRenewal: null,
+          daysLeft: 0,
+          amountPaid: '$0.00'
+        };
+      };
+
+      const finalDrivers = combinedDrivers.map(d => {
+        const sub = getSubscriptionDetails(d.id, d.email);
+        return {
+          ...d,
+          membership: sub.isPro ? 'Pro' : 'Free',
+          subscription: sub
+        };
+      });
+
+      setDrivers(finalDrivers);
 
       // 3. Fetch Route Bids from Supabase
       const bidsData = await fetchAllRouteBids();
@@ -307,6 +363,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                 <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">
                   <th className="px-6 py-4">Driver Name</th>
                   <th className="px-6 py-4">Vehicle Type</th>
+                  <th className="px-6 py-4">Member</th>
                   <th className="px-6 py-4">Location</th>
                   <th className="px-6 py-4 text-center">Account Access</th>
                   <th className="px-6 py-4 text-right">Admin Actions</th>
@@ -337,6 +394,14 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                           <Truck className="w-3.5 h-3.5 text-rose-600" />
                           <span>{driver.vehicle || 'Cargo Van'}</span>
                         </div>
+                      </td>
+
+                      <td className="px-6 py-4 font-bold">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${driver.membership === 'Pro' 
+                          ? 'bg-amber-50 text-amber-700 border-amber-300 font-black' 
+                          : 'bg-slate-50 text-slate-500 border-slate-300'}`}>
+                          {driver.membership === 'Pro' ? '★ Pro' : 'Free'}
+                        </span>
                       </td>
 
                       <td className="px-6 py-4 font-medium text-slate-600">
@@ -754,6 +819,38 @@ export default function AdminDriverList({ searchQuery, setSearchQuery }) {
                   No compliance certifications recorded in database for this driver profile.
                 </div>
               )}
+            </div>
+
+            {/* Subscription Membership Details */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PRO Plan & Billing Details</span>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Membership status</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase inline-block ${selectedDriverModal.membership === 'Pro' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                    {selectedDriverModal.membership === 'Pro' ? 'Pro Plan' : 'Free Starter'}
+                  </span>
+                </div>
+                
+                <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Amount Paid</span>
+                  <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.amountPaid || '$0.00'}</span>
+                </div>
+
+                {selectedDriverModal.membership === 'Pro' && (
+                  <>
+                    <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase block">Date Subscribed</span>
+                      <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.subscribedAt}</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 text-left">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase block">Days Remaining / Renewal</span>
+                      <span className="font-extrabold text-slate-800">{selectedDriverModal.subscription?.daysLeft} days left ({selectedDriverModal.subscription?.nextRenewal})</span>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
