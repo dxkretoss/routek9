@@ -141,7 +141,7 @@ export default function LoginPage({ onLogin }) {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-white font-sans selection:bg-rose-600 selection:text-white">
-      
+
       {/* Left Column: Full-Height Branding Pane */}
       <div className="hidden lg:flex lg:w-1/2 bg-[#0b132b] text-white p-12 lg:p-16 flex-col justify-between relative overflow-hidden min-h-screen">
         {/* Background Decorative Gradient Blobs */}
@@ -204,7 +204,7 @@ export default function LoginPage({ onLogin }) {
 
       {/* Right Column: Clean Form Container */}
       <div className="w-full lg:w-1/2 flex flex-col justify-between min-h-screen bg-white p-8 sm:p-12 lg:p-16">
-        
+
         {/* Logo for mobile viewports only */}
         <div className="flex lg:hidden items-center justify-center mb-8">
           <Link to="/" className="flex items-center gap-3 group">
@@ -337,7 +337,7 @@ export default function LoginPage({ onLogin }) {
                   name="login_email_no_fill"
                   required
                   autoComplete="new-password"
-                  placeholder="driver@routek9.com"
+                  placeholder="Enter Email address"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"

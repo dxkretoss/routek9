@@ -56,6 +56,7 @@ export default function Hero({
 }) {
   const [activeSlide, setActiveSlide] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [inputError, setInputError] = useState(false);
   const searchContainerRef = useRef(null);
 
   // Auto-rotate every 5 seconds
@@ -109,6 +110,11 @@ export default function Hero({
 
   const handleFormSubmit = (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (!searchQuery || searchQuery.trim().length === 0) {
+      setInputError(true);
+      return;
+    }
+    setInputError(false);
     setShowSuggestions(false);
     if (onSearch) {
       onSearch();
@@ -117,6 +123,7 @@ export default function Hero({
 
   const handleSelectSuggestion = (item) => {
     setSearchQuery(item.name);
+    setInputError(false);
     setShowSuggestions(false);
   };
 
@@ -153,21 +160,34 @@ export default function Hero({
             </p>
 
             {/* Search Bar Form */}
-            <form onSubmit={handleFormSubmit} className="bg-white p-3 sm:p-4 rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 flex flex-col sm:flex-row gap-3 max-w-xl relative z-30">
+            <form onSubmit={handleFormSubmit} className="bg-white p-3 sm:p-4 rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 flex flex-col sm:flex-row gap-3 max-w-xl relative z-30 items-start">
 
-              <div className="flex-1 relative flex items-center" ref={searchContainerRef}>
-                <Search className="w-5 h-5 text-slate-400 absolute left-3.5 z-10 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="City or state (e.g. NY, Texas, Houston)..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  onFocus={() => setShowSuggestions(true)}
-                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white transition-all font-medium"
-                />
+              <div className="flex-1 relative w-full" ref={searchContainerRef}>
+                <div className="relative flex items-center">
+                  <Search className={`w-5 h-5 absolute left-3.5 z-10 pointer-events-none ${inputError ? 'text-red-500' : 'text-slate-400'}`} />
+                  <input
+                    type="text"
+                    placeholder="City or state (e.g. NY, Texas, Houston)..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      if (inputError) setInputError(false);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    className={`w-full pl-11 pr-4 py-3.5 border rounded-xl text-sm transition-all font-medium focus:outline-none ${
+                      inputError
+                        ? 'border-red-500 ring-2 ring-red-500/20 focus:ring-red-500 focus:border-red-500 text-red-900 bg-red-50/20'
+                        : 'border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:bg-white'
+                    }`}
+                  />
+                </div>
+
+                {inputError && (
+                  <p className="text-red-500 text-xs font-semibold mt-1.5 pl-1 animate-fadeIn">
+                    please select city or state
+                  </p>
+                )}
 
                 {/* Floating Autocomplete Suggestions Dropdown */}
                 {showSuggestions && suggestions.length > 0 && (
@@ -204,7 +224,7 @@ export default function Hero({
                 <select
                   value={selectedVehicle}
                   onChange={(e) => setSelectedVehicle(e.target.value)}
-                  className="w-full pl-11 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white transition-all font-medium appearance-none cursor-pointer"
+                  className="w-full pl-11 pr-8 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white transition-all font-medium appearance-none cursor-pointer"
                 >
                   {vehicleTypes.map((v) => (
                     <option key={v} value={v}>{v}</option>
@@ -214,10 +234,10 @@ export default function Hero({
 
               <button
                 type="submit"
-                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md shadow-rose-600/25 transition-all flex items-center justify-center gap-2 transform active:scale-95 cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-base shadow-lg shadow-rose-600/30 hover:shadow-xl hover:shadow-rose-600/40 transition-all flex items-center justify-center gap-2.5 transform active:scale-95 cursor-pointer shrink-0"
               >
                 <span>Search</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-5 h-5" />
               </button>
             </form>
 

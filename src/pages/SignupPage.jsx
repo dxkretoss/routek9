@@ -309,8 +309,8 @@ export default function SignupPage({ onSignup }) {
 
         {/* Footer info at bottom */}
         <div className="relative z-10 pt-6 border-t border-slate-800/80 mt-6 flex items-center justify-between text-xs text-slate-400 font-medium">
-          <span>Free driver registration</span>
-          <span className="text-rose-400 font-bold">No credit card required</span>
+          <span>© 2026 RouteK9 Pro • Contract Drivers of America. All rights reserved.</span>
+          {/* <span className="text-rose-400 font-bold">No credit card required</span> */}
         </div>
       </div>
 
@@ -529,7 +529,7 @@ export default function SignupPage({ onSignup }) {
                     name="signup_fullname_no_fill"
                     required
                     autoComplete="off"
-                    placeholder={signupRole === 'driver' ? 'John Doe' : 'Acme Logistics'}
+                    placeholder='Enter Full name'
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
@@ -549,7 +549,7 @@ export default function SignupPage({ onSignup }) {
                     name="signup_email_no_fill"
                     required
                     autoComplete="new-password"
-                    placeholder="driver@routek9.com"
+                    placeholder='Enter Email address'
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
@@ -639,9 +639,9 @@ export default function SignupPage({ onSignup }) {
         )}
 
         {/* Footer */}
-        <footer className="pt-8 text-center text-xs text-slate-400 font-medium">
+        {/* <footer className="pt-8 text-center text-xs text-slate-400 font-medium">
           © 2026 RouteK9 Pro • Contract Drivers of America. All rights reserved.
-        </footer>
+        </footer> */}
       </div>
 
     </div>
