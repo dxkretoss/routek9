@@ -148,10 +148,10 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
                   </button>
                 )}
 
-                {/* Notification Bell Button */}
+                {/* Notification Bell Button -> Redirects to Dashboard Inbox */}
                 <Link
-                  to="/notifications"
-                  title="Notifications"
+                  to="/dashboard?tab=inbox"
+                  title="Inbox & Notifications"
                   className="relative p-2.5 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                 >
                   <Bell className="w-4 h-4" />
@@ -279,9 +279,11 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           )}
 
           <a href="/#calculator-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Profit Calculator</a>
-          <Link to="/notifications" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-800 flex items-center justify-between">
-            <span>Notifications</span>
-            <span className="px-2 py-0.5 text-[10px] bg-rose-600 text-white rounded-full font-bold">3 New</span>
+          <Link to="/dashboard?tab=inbox" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-800 flex items-center justify-between">
+            <span>Inbox & Notifications</span>
+            {unreadCount > 0 && (
+              <span className="px-2 py-0.5 text-[10px] bg-rose-600 text-white rounded-full font-bold">{unreadCount} New</span>
+            )}
           </Link>
           {(!currentUser || currentUser?.role?.toLowerCase() !== 'driver') && (
             <Link to="/drivers" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">

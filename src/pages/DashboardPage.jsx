@@ -6,7 +6,7 @@ import 'react-phone-input-2/lib/style.css';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import { getCourses } from '../lib/courses';
-import { supabase, fetchNotifications } from '../lib/supabase';
+import { supabase, fetchNotifications, markNotificationRead, markAllNotificationsRead, deleteNotificationRecord } from '../lib/supabase';
 import {
   Award,
   BookOpen,
@@ -15,6 +15,7 @@ import {
   Truck,
   Building2,
   CheckCircle2,
+  CheckCheck,
   ArrowRight,
   Inbox,
   Lock,
@@ -41,6 +42,8 @@ import {
   ExternalLink,
   Users,
   UserCheck,
+  Filter,
+  RotateCcw,
   X
 } from 'lucide-react';
 
@@ -358,46 +361,65 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
       const driverEmail = (currentUser?.email || '').trim().toLowerCase();
 
-      // 1. Remove from company_drivers
-      if (company.recordId) {
-        await supabase
-          .from('company_drivers')
-          .delete()
-          .eq('id', company.recordId);
-      }
-      if (company.companyId && driverEmail) {
-        await supabase
-          .from('company_drivers')
-          .delete()
-          .eq('company_id', company.companyId)
-          .ilike('email', driverEmail);
+      // 1. Immediately update UI local state & close modal popup
+      setConnectedCompanies(prev =>
+        prev.filter(c => c.companyId !== company.companyId && c.recordId !== company.recordId)
+      );
+      setEndContractModalCompany(null);
+
+      // 2. Delete from Supabase database company_drivers table
+      try {
+        if (company.recordId) {
+          await supabase
+            .from('company_drivers')
+            .delete()
+            .eq('id', company.recordId);
+        }
+        if (company.companyId && driverEmail) {
+          await supabase
+            .from('company_drivers')
+            .delete()
+            .eq('company_id', company.companyId)
+            .ilike('email', driverEmail);
+        }
+        if (currentUser?.id && company.companyId) {
+          await supabase
+            .from('company_drivers')
+            .delete()
+            .eq('company_id', company.companyId)
+            .eq('driver_id', currentUser.id);
+        }
+      } catch (dbErr) {
+        console.warn("Supabase company_drivers delete notice:", dbErr);
       }
 
-      // 2. Notify company about ended contract
-      if (company.companyId) {
-        await createNotification({
-          userId: company.companyId,
-          companyId: company.companyId,
-          title: `⚠️ Driver Turned Off Fleet Contract`,
-          message: `${driverName} (${driverEmail}) has ended their fleet contract and disconnected from your company fleet.`,
-          category: 'Fleet',
-          unread: true,
-          important: true
-        });
+      // 3. Send notification to company informing them that driver left fleet
+      try {
+        if (company.companyId) {
+          await createNotification({
+            userId: company.companyId,
+            companyId: company.companyId,
+            title: `⚠️ Driver Turned Off Fleet Contract`,
+            message: `${driverName} (${driverEmail}) has ended their fleet contract and disconnected from your company fleet.`,
+            category: 'Fleet',
+            unread: true,
+            important: true
+          });
+        }
+      } catch (notifErr) {
+        console.warn("Notification send notice:", notifErr);
       }
 
-      // 3. Update local state
-      setConnectedCompanies(prev => prev.filter(c => c.companyId !== company.companyId && c.recordId !== company.recordId));
-
-      // 4. Broadcast rk9_fleet_updated
+      // 4. Broadcast global fleet sync event & auto-refresh list
       window.dispatchEvent(new Event('rk9_fleet_updated'));
+      await fetchDriverConnectedCompanies();
 
       setToast({ show: true, message: `Contract ended. You are disconnected from ${company.companyName}.`, type: 'info' });
-      setEndContractModalCompany(null);
     } catch (err) {
       console.warn("Error ending fleet contract:", err);
     } finally {
       setIsEndingContract(false);
+      setEndContractModalCompany(null);
     }
   };
 
@@ -594,52 +616,65 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   };
 
   const handleAcceptFleetInvite = async (notif) => {
-    try {
-      const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
-      const driverEmail = (currentUser?.email || '').trim().toLowerCase();
+    const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
+    const driverEmail = (currentUser?.email || '').trim().toLowerCase();
 
-      // 1. Update company_drivers status to ACTIVE in Supabase
-      if (driverEmail) {
-        await supabase
-          .from('company_drivers')
-          .update({ status: 'ACTIVE' })
-          .ilike('email', driverEmail);
-      }
-      if (currentUser?.id) {
-        await supabase
-          .from('company_drivers')
-          .update({ status: 'ACTIVE' })
-          .eq('driver_id', currentUser.id);
+    // 1. Optimistically update local Inbox UI immediately
+    setInboxNotifications(prev =>
+      prev.map(n => n.id === notif.id ? { ...n, status: 'ACCEPTED', unread: false } : n)
+    );
+
+    try {
+      // 2. Update company_drivers status to ACTIVE in Supabase
+      try {
+        if (driverEmail) {
+          await supabase
+            .from('company_drivers')
+            .update({ status: 'ACTIVE' })
+            .ilike('email', driverEmail);
+        }
+        if (currentUser?.id) {
+          await supabase
+            .from('company_drivers')
+            .update({ status: 'ACTIVE' })
+            .eq('driver_id', currentUser.id);
+        }
+      } catch (cdErr) {
+        console.warn("company_drivers update notice:", cdErr);
       }
 
       const compId = notif.companyId;
 
-      // 2. Update notification status for driver
-      await supabase
-        .from('notifications')
-        .update({ unread: false, status: 'ACCEPTED' })
-        .eq('id', notif.id);
-
-      // 3. Send acceptance notification back to the Company!
-      if (compId) {
-        await createNotification({
-          userId: compId,
-          companyId: compId,
-          title: `Driver Invitation Accepted!`,
-          message: `${driverName} (${driverEmail}) has accepted your fleet invitation! They are now added to your company fleet drivers list.`,
-          category: 'Fleet',
-          unread: true,
-          important: true,
-          actionUrl: '/dashboard?tab=fleet',
-          actionText: 'View Fleet Drivers'
-        });
+      // 3. Update notification status for driver
+      try {
+        await supabase
+          .from('notifications')
+          .update({ unread: false, status: 'ACCEPTED' })
+          .eq('id', notif.id);
+      } catch (notifErr) {
+        console.warn("notification update notice:", notifErr);
       }
 
-      // 4. Update local inbox state & fleet state directly
-      setInboxNotifications(prev =>
-        prev.map(n => n.id === notif.id ? { ...n, status: 'ACCEPTED', unread: false } : n)
-      );
+      // 4. Send acceptance notification back to the Company!
+      try {
+        if (compId) {
+          await createNotification({
+            userId: compId,
+            companyId: compId,
+            title: `Driver Invitation Accepted!`,
+            message: `${driverName} (${driverEmail}) has accepted your fleet invitation! They are now added to your company fleet drivers list.`,
+            category: 'Fleet',
+            unread: true,
+            important: true,
+            actionUrl: '/dashboard?tab=fleet',
+            actionText: 'View Fleet Drivers'
+          });
+        }
+      } catch (createErr) {
+        console.warn("createNotification notice:", createErr);
+      }
 
+      // 5. Update local fleet state & refresh connected companies list
       setFleetDrivers(prev =>
         prev.map(d => {
           if ((d.email && d.email.toLowerCase() === driverEmail) || d.id === currentUser?.id) {
@@ -649,8 +684,8 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
         })
       );
 
-      // 5. Broadcast global fleet sync event
       window.dispatchEvent(new Event('rk9_fleet_updated'));
+      await fetchDriverConnectedCompanies();
 
       setToast({ show: true, message: 'You have accepted the fleet invitation! You are now added to the company fleet.', type: 'success' });
     } catch (err) {
@@ -659,50 +694,63 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   };
 
   const handleDeclineFleetInvite = async (notif) => {
-    try {
-      const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
-      const driverEmail = (currentUser?.email || '').trim().toLowerCase();
+    const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
+    const driverEmail = (currentUser?.email || '').trim().toLowerCase();
 
-      // 1. Update company_drivers status to DECLINED
-      if (driverEmail) {
-        await supabase
-          .from('company_drivers')
-          .update({ status: 'DECLINED' })
-          .ilike('email', driverEmail);
-      }
-      if (currentUser?.id) {
-        await supabase
-          .from('company_drivers')
-          .update({ status: 'DECLINED' })
-          .eq('driver_id', currentUser.id);
+    // 1. Optimistically update local Inbox UI immediately
+    setInboxNotifications(prev =>
+      prev.map(n => n.id === notif.id ? { ...n, status: 'DECLINED', unread: false } : n)
+    );
+
+    try {
+      // 2. Update company_drivers status to DECLINED in Supabase
+      try {
+        if (driverEmail) {
+          await supabase
+            .from('company_drivers')
+            .update({ status: 'DECLINED' })
+            .ilike('email', driverEmail);
+        }
+        if (currentUser?.id) {
+          await supabase
+            .from('company_drivers')
+            .update({ status: 'DECLINED' })
+            .eq('driver_id', currentUser.id);
+        }
+      } catch (cdErr) {
+        console.warn("company_drivers decline notice:", cdErr);
       }
 
       const compId = notif.companyId;
 
-      // 2. Update notification status for driver
-      await supabase
-        .from('notifications')
-        .update({ unread: false, status: 'DECLINED' })
-        .eq('id', notif.id);
-
-      // 3. Send decline notification back to Company
-      if (compId) {
-        await createNotification({
-          userId: compId,
-          companyId: compId,
-          title: `✕ Driver Invitation Declined`,
-          message: `${driverName} (${driverEmail}) declined your invitation to join your company fleet.`,
-          category: 'Fleet',
-          unread: true,
-          important: false
-        });
+      // 3. Update notification status for driver
+      try {
+        await supabase
+          .from('notifications')
+          .update({ unread: false, status: 'DECLINED' })
+          .eq('id', notif.id);
+      } catch (notifErr) {
+        console.warn("notification update notice:", notifErr);
       }
 
-      // 4. Update local inbox state & fleet state directly
-      setInboxNotifications(prev =>
-        prev.map(n => n.id === notif.id ? { ...n, status: 'DECLINED', unread: false } : n)
-      );
+      // 4. Send decline notification back to Company
+      try {
+        if (compId) {
+          await createNotification({
+            userId: compId,
+            companyId: compId,
+            title: `✕ Driver Invitation Declined`,
+            message: `${driverName} (${driverEmail}) declined your invitation to join your company fleet.`,
+            category: 'Fleet',
+            unread: true,
+            important: false
+          });
+        }
+      } catch (createErr) {
+        console.warn("createNotification notice:", createErr);
+      }
 
+      // 5. Update local fleet state & refresh connected companies list
       setFleetDrivers(prev =>
         prev.map(d => {
           if ((d.email && d.email.toLowerCase() === driverEmail) || d.id === currentUser?.id) {
@@ -713,6 +761,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       );
 
       window.dispatchEvent(new Event('rk9_fleet_updated'));
+      await fetchDriverConnectedCompanies();
 
       setToast({ show: true, message: 'Fleet invitation declined.', type: 'info' });
     } catch (err) {
@@ -723,6 +772,39 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   // Dynamic Inbox Notifications State
   const [inboxNotifications, setInboxNotifications] = useState([]);
   const [loadingInbox, setLoadingInbox] = useState(true);
+  const [inboxCategoryFilter, setInboxCategoryFilter] = useState('All');
+  const [inboxUnreadOnly, setInboxUnreadOnly] = useState(false);
+
+  const handleMarkAllInboxAsRead = async () => {
+    setInboxNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+    try {
+      await markAllNotificationsRead(currentUser?.id);
+    } catch (err) {
+      console.warn("Error marking all inbox as read:", err);
+    }
+    setToast({ show: true, message: 'All notifications marked as read', type: 'success' });
+  };
+
+  const handleToggleInboxRead = async (id) => {
+    const target = inboxNotifications.find(n => n.id === id);
+    const nextUnread = !target?.unread;
+    setInboxNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: nextUnread } : n));
+    try {
+      await markNotificationRead(id, nextUnread);
+    } catch (err) {
+      console.warn("Error toggling notification read:", err);
+    }
+  };
+
+  const handleDeleteInboxNotification = async (id) => {
+    setInboxNotifications(prev => prev.filter(n => n.id !== id));
+    try {
+      await deleteNotificationRecord(id);
+    } catch (err) {
+      console.warn("Error deleting notification record:", err);
+    }
+    setToast({ show: true, message: 'Notification removed', type: 'info' });
+  };
 
   useEffect(() => {
     async function loadInbox() {
@@ -730,18 +812,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       try {
         const dbNotifs = await fetchNotifications(currentUser?.id);
         if (dbNotifs && dbNotifs.length > 0) {
-          // Filter out purchase course receipts / course notifications to only show dispatch & inquiry data
-          const filteredNotifs = dbNotifs.filter((n) => {
-            const titleLower = (n.title || '').toLowerCase();
-            const catLower = (n.category || '').toLowerCase();
-            return (
-              !titleLower.includes('course purchased') &&
-              !titleLower.includes('purchased successfully') &&
-              !catLower.includes('training')
-            );
-          });
-
-          const formatted = filteredNotifs.map((n) => ({
+          const formatted = dbNotifs.map((n) => ({
             id: n.id,
             title: n.title,
             snippet: n.message,
@@ -750,7 +821,9 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             unread: Boolean(n.unread),
             status: n.status || 'PENDING',
             category: n.category || 'Dispatch Inquiry',
-            companyId: n.company_id
+            companyId: n.company_id,
+            actionUrl: n.action_url,
+            actionText: n.action_text
           }));
           setInboxNotifications(formatted);
         } else {
@@ -1383,105 +1456,218 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             </div>
           )}
 
-          {/* TAB 2: Inbox & Notifications */}
+          {/* TAB 2: Inbox & Notifications (Unified Inbox) */}
           {activeTab === 'inbox' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
                 <div>
                   <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
-                    Inbox & Platform Alerts
+                    Inbox & Notifications
                   </h2>
                   <p className="text-xs text-slate-500 font-medium mt-1">
-                    Contract notifications, SAM.gov opportunity matches, and dispatcher updates.
+                    Contract invitations, dispatch inquiries, SAM.gov opportunity matches, and platform updates.
                   </p>
                 </div>
 
-                <Link
-                  to="/notifications"
-                  className="text-xs font-bold text-rose-600 hover:underline flex items-center gap-1"
-                >
-                  <span>View All Notifications</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleMarkAllInboxAsRead}
+                    disabled={!inboxNotifications.some(n => n.unread)}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <CheckCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Mark All as Read</span>
+                  </button>
+                </div>
               </div>
 
-              {loadingInbox ? (
-                <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 flex flex-col items-center justify-center">
-                  <Loader2 className="w-8 h-8 text-rose-600 animate-spin" />
-                  <p className="text-xs font-bold text-slate-600">Loading inbox messages from database...</p>
-                </div>
-              ) : inboxNotifications.length === 0 ? (
-                <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
-                  <Inbox className="w-12 h-12 text-slate-300 mx-auto" />
-                  <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No Inbox Messages Yet</h3>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                    When courier companies or dispatchers contact you from the Drivers Directory, their route inquiries and contract proposals will appear here in real time.
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm divide-y divide-slate-100 overflow-hidden">
-                  {inboxNotifications.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${msg.unread ? 'bg-rose-50/30 border-l-4 border-l-rose-600' : 'hover:bg-slate-50/50'
+              {/* Filter Controls & Categories */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
+                <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                  {['All', 'Fleet Invites', 'Dispatch Inquiries', 'System & Alerts'].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setInboxCategoryFilter(cat)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${inboxCategoryFilter === cat
+                        ? 'bg-rose-600 text-white shadow-2xs'
+                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                         }`}
                     >
-                      <div className="space-y-1.5 max-w-3xl">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-extrabold text-[10px]">
-                            {msg.category}
-                          </span>
-                          {msg.unread && (
-                            <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
-                          )}
-                          <span className="text-xs font-bold text-slate-900">{msg.sender}</span>
-                        </div>
-                        <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
-                          {msg.title}
-                        </h4>
-                        <p className="text-xs text-slate-600 font-medium whitespace-pre-line leading-relaxed">
-                          {msg.snippet}
-                        </p>
-
-                        {msg.category === 'FLEET_INVITE' && msg.status !== 'ACCEPTED' && msg.status !== 'DECLINED' && (
-                          <div className="flex items-center gap-2 pt-2">
-                            <button
-                              type="button"
-                              onClick={() => handleAcceptFleetInvite(msg)}
-                              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm cursor-pointer transition-all flex items-center gap-1.5"
-                            >
-                              <span>✓ Accept Fleet Invitation</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeclineFleetInvite(msg)}
-                              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs border border-slate-200 cursor-pointer transition-all"
-                            >
-                              <span>Decline</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {msg.status === 'ACCEPTED' && (
-                          <div className="inline-block mt-2 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200">
-                            ✓ Invitation Accepted
-                          </div>
-                        )}
-
-                        {msg.status === 'DECLINED' && (
-                          <div className="inline-block mt-2 px-3 py-1 rounded-lg bg-rose-50 text-rose-800 font-bold text-[11px] border border-rose-200">
-                            ✕ Invitation Declined
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-slate-400 font-semibold shrink-0 sm:text-right">
-                        {msg.time}
-                      </div>
-                    </div>
+                      {cat}
+                    </button>
                   ))}
                 </div>
-              )}
+
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer self-start sm:self-auto px-2">
+                  <input
+                    type="checkbox"
+                    checked={inboxUnreadOnly}
+                    onChange={(e) => setInboxUnreadOnly(e.target.checked)}
+                    className="w-4 h-4 accent-rose-600 rounded"
+                  />
+                  <span>Unread Only</span>
+                </label>
+              </div>
+
+              {(() => {
+                const filteredInboxNotifications = inboxNotifications.filter(msg => {
+                  if (inboxUnreadOnly && !msg.unread) return false;
+                  if (inboxCategoryFilter === 'Fleet Invites') {
+                    return msg.category === 'FLEET_INVITE' || msg.category === 'Fleet' || (msg.title || '').toLowerCase().includes('invite');
+                  }
+                  if (inboxCategoryFilter === 'Dispatch Inquiries') {
+                    return (msg.category || '').toLowerCase().includes('inquiry') || (msg.category || '').toLowerCase().includes('dispatch');
+                  }
+                  if (inboxCategoryFilter === 'System & Alerts') {
+                    return (msg.category || '').toLowerCase().includes('system') || (msg.category || '').toLowerCase().includes('alert');
+                  }
+                  return true;
+                });
+
+                if (loadingInbox) {
+                  return (
+                    <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 flex flex-col items-center justify-center">
+                      <Loader2 className="w-8 h-8 text-rose-600 animate-spin" />
+                      <p className="text-xs font-bold text-slate-600">Loading inbox messages from database...</p>
+                    </div>
+                  );
+                }
+
+                if (filteredInboxNotifications.length === 0) {
+                  return (
+                    <div className="bg-white p-12 sm:p-16 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
+                      <Inbox className="w-12 h-12 text-slate-300 mx-auto" />
+                      <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No Messages Found</h3>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        {inboxCategoryFilter !== 'All'
+                          ? `No notifications found under "${inboxCategoryFilter}".`
+                          : inboxUnreadOnly
+                            ? "No unread notifications in your inbox."
+                            : "When courier companies or dispatchers contact you, their route inquiries and contract proposals will appear here in real time."}
+                      </p>
+                      {(inboxCategoryFilter !== 'All' || inboxUnreadOnly) && (
+                        <button
+                          type="button"
+                          onClick={() => { setInboxCategoryFilter('All'); setInboxUnreadOnly(false); }}
+                          className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset Filters to View All</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm divide-y divide-slate-100 overflow-hidden">
+                    {filteredInboxNotifications.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`p-6 flex flex-col sm:flex-row sm:items-start justify-between gap-4 transition-colors ${msg.unread ? 'bg-rose-50/30 border-l-4 border-l-rose-600' : 'hover:bg-slate-50/50'
+                          }`}
+                      >
+                        <div className="space-y-2 max-w-3xl">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-extrabold text-[10px]">
+                              {msg.category}
+                            </span>
+                            {msg.unread && (
+                              <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                            )}
+                            <span className="text-xs font-bold text-slate-900">{msg.sender}</span>
+                          </div>
+                          <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
+                            {msg.title}
+                          </h4>
+                          <p className="text-xs text-slate-600 font-medium whitespace-pre-line leading-relaxed">
+                            {msg.snippet}
+                          </p>
+
+                          {(msg.category === 'FLEET_INVITE' || msg.category === 'Fleet' || (msg.title || '').toLowerCase().includes('invitation')) &&
+                            msg.status !== 'ACCEPTED' && msg.status !== 'DECLINED' && (
+                              <div className="flex items-center gap-2 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcceptFleetInvite(msg)}
+                                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm cursor-pointer transition-all flex items-center gap-1.5"
+                                >
+                                  <span>✓ Accept Fleet Invitation</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeclineFleetInvite(msg)}
+                                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs border border-slate-200 cursor-pointer transition-all"
+                                >
+                                  <span>Decline</span>
+                                </button>
+                              </div>
+                            )}
+
+                          {msg.status === 'ACCEPTED' && (
+                            <div className="inline-block mt-2 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200">
+                              ✓ Invitation Accepted
+                            </div>
+                          )}
+
+                          {msg.status === 'DECLINED' && (
+                            <div className="inline-block mt-2 px-3 py-1 rounded-lg bg-rose-50 text-rose-800 font-bold text-[11px] border border-rose-200">
+                              ✕ Invitation Declined
+                            </div>
+                          )}
+
+                          {msg.actionUrl &&
+                            msg.actionUrl !== '/dashboard?tab=inbox' &&
+                            msg.actionUrl !== '/notifications' &&
+                            msg.category !== 'FLEET_INVITE' &&
+                            msg.category !== 'Fleet' &&
+                            !msg.title?.toLowerCase().includes('invitation') && (
+                              <div className="pt-1">
+                                <Link
+                                  to={msg.actionUrl}
+                                  className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:underline"
+                                >
+                                  <span>{msg.actionText || 'View Details'} →</span>
+                                </Link>
+                              </div>
+                            )}
+                        </div>
+
+                        <div className="flex sm:flex-col items-center sm:items-end justify-between gap-3 shrink-0">
+                          <div className="text-[11px] text-slate-400 font-semibold">
+                            {msg.time}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleInboxRead(msg.id)}
+                              title={msg.unread ? "Mark as Read" : "Mark as Unread"}
+                              className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${msg.unread
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                              {msg.unread ? <CheckCircle2 className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteInboxNotification(msg.id)}
+                              title="Delete notification"
+                              className="p-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

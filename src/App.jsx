@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -608,7 +608,7 @@ export default function App() {
           <Route path="/checkout/:courseId" element={<CheckoutPage currentUser={currentUser} onLogout={handleLogout} onCompletePurchase={handleCompletePurchase} />} />
           <Route path="/dashboard" element={<DashboardPage currentUser={currentUser} onLogout={handleLogout} purchasedCourses={purchasedCourses} savedUserRoutes={savedUserRoutes} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
           <Route path="/profile" element={<ProfilePage currentUser={currentUser} onLogout={handleLogout} onUpdateProfile={handleUpdateProfile} onOpenPricing={handleOpenPricing} />} />
-          <Route path="/notifications" element={<NotificationsPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/notifications" element={<Navigate to="/dashboard?tab=inbox" replace />} />
           <Route path="/drivers" element={<DriversPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
           <Route path="/companies" element={<CompaniesPage currentUser={currentUser} onLogout={handleLogout} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
           <Route path="/planner" element={<PlannerPage currentUser={currentUser} onLogout={handleLogout} onSaveRoute={handleSaveUserRoute} onOpenPricing={handleOpenPricing} onTriggerGateModal={handleTriggerGateModal} />} />
