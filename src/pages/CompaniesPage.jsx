@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { MOCK_COMPANIES } from '../data/mockCompanies';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 import { 
   Building2, 
   MapPin, 
@@ -10,7 +11,8 @@ import {
   Send, 
   X, 
   CheckCircle2,
-  Building
+  Building,
+  Loader2
 } from 'lucide-react';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
@@ -20,19 +22,131 @@ const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import heroBgPattern from '../assets/hero_bg_pattern.png';
 import heroFleetImg from '../assets/hero_fleet_trucks.png';
 
+const LOCATION_SUGGESTIONS = [
+  'Houston, TX',
+  'Dallas, TX',
+  'Austin, TX',
+  'San Antonio, TX',
+  'Fort Worth, TX',
+  'Los Angeles, CA',
+  'San Francisco, CA',
+  'San Diego, CA',
+  'Sacramento, CA',
+  'Chicago, IL',
+  'Miami, FL',
+  'Orlando, FL',
+  'Tampa, FL',
+  'Jacksonville, FL',
+  'New York, NY',
+  'Buffalo, NY',
+  'Atlanta, GA',
+  'Seattle, WA',
+  'Denver, CO',
+  'Las Vegas, NV',
+  'Phoenix, AZ',
+  'Boston, MA',
+  'Detroit, MI',
+  'Philadelphia, PA',
+  'Charlotte, NC',
+  'Nashville, TN',
+  'Salt Lake City, UT',
+  'TX (Texas)',
+  'CA (California)',
+  'FL (Florida)',
+  'NY (New York)',
+  'IL (Illinois)',
+  'GA (Georgia)',
+  'NC (North Carolina)'
+];
+
 export default function CompaniesPage({ currentUser, onLogout }) {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [stateFilter, setStateFilter] = useState('');
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [contractFilter, setContractFilter] = useState('All Contracts');
   const [selectedCompany, setSelectedCompany] = useState(null); // for Contact modal
+
+  const handleContactCompany = (company) => {
+    if (!currentUser) {
+      navigate('/login?redirect=/companies');
+      return;
+    }
+    setSelectedCompany(company);
+  };
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [contactForm, setContactForm] = useState({
     name: currentUser?.name || '',
     email: currentUser?.email || '',
-    phone: '',
+    phone: currentUser?.phone || '',
     vehicle: currentUser?.vehicle || 'Cargo Van',
     message: ''
   });
   const [contactSuccess, setContactSuccess] = useState(false);
+
+  // Sync contactForm with currentUser when profile loads
+  useEffect(() => {
+    if (currentUser) {
+      setContactForm((prev) => ({
+        ...prev,
+        name: prev.name || currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : ''),
+        email: prev.email || currentUser.email || '',
+        phone: currentUser.phone || prev.phone || '',
+        vehicle: currentUser.vehicle || prev.vehicle || 'Cargo Van'
+      }));
+    }
+  }, [currentUser]);
+
+  // Fetch Courier Companies from Supabase profiles table
+  useEffect(() => {
+    async function loadCompanies() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*');
+
+        if (!error && data) {
+          // Filter profiles by role = 'company' (case-insensitive) AND ready_to_work !== false
+          const companyProfiles = data.filter(p => 
+            p.role && p.role.toLowerCase() === 'company' &&
+            (p.ready_to_work !== false && p.readyToWork !== false)
+          );
+
+          const formatted = companyProfiles.map((c, index) => {
+            const name = c.full_name || c.name || (c.email ? c.email.split('@')[0] : `Company #${index + 1}`);
+            return {
+              id: c.id,
+              user_id: c.id,
+              company_name: name,
+              email: c.email || '',
+              city: c.city || 'Operating Region',
+              state: (c.state_code || c.state || 'US').toUpperCase(),
+              contract_types: c.vehicle || c.contract_types || 'Medical Specimen, Scheduled Routes',
+              service_area: c.availability || c.service_area || 'Regional & Statewide Logistics',
+              description: c.bio || c.description || 'Verified courier logistics and route contracting company on RouteK9.',
+              website: c.website_url || c.website || c.dot_number || '',
+              phone: c.phone || '',
+              logo: c.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0b132b&color=ffffff`
+            };
+          });
+
+          setCompanies(formatted);
+        } else {
+          console.warn("Supabase profiles query notice for companies:", error);
+          setCompanies([]);
+        }
+      } catch (err) {
+        console.error("Error loading companies from Supabase:", err);
+        setCompanies([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadCompanies();
+  }, []);
 
   // Available contract options for filter
   const contractOptions = [
@@ -51,13 +165,31 @@ export default function CompaniesPage({ currentUser, onLogout }) {
     setContractFilter('All Contracts');
   };
 
-  const filteredCompanies = MOCK_COMPANIES.filter((c) => {
+  const dynamicLocationSuggestions = useMemo(() => {
+    const list = [...LOCATION_SUGGESTIONS];
+    companies.forEach(c => {
+      if (c.city && c.state_code) {
+        const item = `${c.city}, ${c.state_code}`;
+        if (!list.includes(item)) list.unshift(item);
+      }
+    });
+    if (!stateFilter.trim()) return list.slice(0, 8);
+    const q = stateFilter.toLowerCase().trim();
+    return list.filter(item => item.toLowerCase().includes(q)).slice(0, 10);
+  }, [companies, stateFilter]);
+
+  const filteredCompanies = companies.filter((c) => {
     const matchesSearch = 
       c.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.city && c.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (c.description && c.description.toLowerCase().includes(searchTerm.toLowerCase()));
       
-    const matchesState = !stateFilter || (c.state && c.state.toUpperCase() === stateFilter.toUpperCase());
+    const filterLoc = stateFilter.trim().toLowerCase();
+    const matchesState = !filterLoc ||
+      (c.state && c.state.toLowerCase().includes(filterLoc)) ||
+      (c.state_code && c.state_code.toLowerCase().includes(filterLoc)) ||
+      (c.city && c.city.toLowerCase().includes(filterLoc)) ||
+      (c.city && (c.state_code || c.state) && `${c.city}, ${c.state_code || c.state}`.toLowerCase().includes(filterLoc));
     
     const matchesContract = contractFilter === 'All Contracts' || 
       (c.contract_types && c.contract_types.toLowerCase().includes(contractFilter.toLowerCase()));
@@ -65,8 +197,38 @@ export default function CompaniesPage({ currentUser, onLogout }) {
     return matchesSearch && matchesState && matchesContract;
   });
 
-  const handleContactSubmit = (e) => {
+  const handleContactSubmit = async (e) => {
     e.preventDefault();
+    if (!selectedCompany) return;
+
+    const targetUserId = selectedCompany.user_id || selectedCompany.id;
+
+    // Build notification record for Company's Supabase Inbox
+    const notifPayload = {
+      user_id: targetUserId,
+      title: `Contract Courier Inquiry from ${contactForm.name || 'Independent Driver'}`,
+      message: `Driver Name: ${contactForm.name}\nEmail: ${contactForm.email}\nPhone: ${contactForm.phone || 'N/A'}\nVehicle Type: ${contactForm.vehicle}\n\nMessage / Pitch:\n${contactForm.message}`,
+      category: 'Dispatch Inquiry',
+      unread: true,
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      const { error } = await supabase.from('notifications').insert([notifPayload]);
+      if (error) {
+        console.warn("Supabase notification insert warning:", error);
+        // Fallback retry without extra fields
+        await supabase.from('notifications').insert([{
+          user_id: targetUserId,
+          title: `Contract Courier Inquiry from ${contactForm.name || 'Driver'}`,
+          message: contactForm.message || 'Driver contacted you from Companies Directory.',
+          unread: true
+        }]);
+      }
+    } catch (err) {
+      console.warn("Could not save notification to Supabase:", err);
+    }
+
     setContactSuccess(true);
     setTimeout(() => {
       setContactSuccess(false);
@@ -74,7 +236,7 @@ export default function CompaniesPage({ currentUser, onLogout }) {
       setContactForm({
         name: currentUser?.name || '',
         email: currentUser?.email || '',
-        phone: '',
+        phone: currentUser?.phone || '',
         vehicle: currentUser?.vehicle || 'Cargo Van',
         message: ''
       });
@@ -123,7 +285,7 @@ export default function CompaniesPage({ currentUser, onLogout }) {
           {/* Centered Floating Metric Glass Cards */}
           <div className="pt-4 grid grid-cols-3 gap-3 max-w-2xl mx-auto">
             <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
-              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{MOCK_COMPANIES.length}</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{companies.length}</div>
               <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Total Partners</div>
             </div>
 
@@ -160,21 +322,85 @@ export default function CompaniesPage({ currentUser, onLogout }) {
                   placeholder="Search by company name, city or keyword..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                  className={`w-full pl-10 ${searchTerm ? 'pr-10' : 'pr-4'} py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all`}
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-200/60 transition-all"
+                    title="Clear search"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
-              {/* State Filter */}
+              {/* City & State Location Filter */}
               <div className="relative">
-                <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 z-10" />
                 <input
                   type="text"
-                  placeholder="Filter by state code (e.g. TX, CA)"
-                  maxLength={2}
+                  placeholder="Filter by city or state (e.g. Dallas, TX, CA)"
                   value={stateFilter}
-                  onChange={(e) => setStateFilter(e.target.value.toUpperCase())}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                  onFocus={() => setShowLocationDropdown(true)}
+                  onChange={(e) => {
+                    setStateFilter(e.target.value);
+                    setShowLocationDropdown(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setShowLocationDropdown(false);
+                    }
+                  }}
+                  className={`w-full pl-10 ${stateFilter ? 'pr-10' : 'pr-4'} py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all`}
                 />
+                {stateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStateFilter('');
+                      setShowLocationDropdown(false);
+                    }}
+                    className="absolute right-3 top-3 z-10 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-200/60 transition-all"
+                    title="Clear location filter"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* City & State Autocomplete Dropdown */}
+                {showLocationDropdown && dynamicLocationSuggestions.length > 0 && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setShowLocationDropdown(false)}
+                    />
+                    <div className="absolute left-0 right-0 top-12 z-30 bg-white rounded-2xl border border-slate-200 shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5 animate-fadeIn">
+                      <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">
+                        Suggested Cities & States
+                      </div>
+                      {dynamicLocationSuggestions.map((loc, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            const cleanVal = loc.includes('(') ? loc.split('(')[1].replace(')', '') : loc;
+                            setStateFilter(cleanVal);
+                            setShowLocationDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 rounded-xl flex items-center justify-between cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                            <span>{loc}</span>
+                          </div>
+                          <span className="text-[10px] font-extrabold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">Select</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Contract Select */}
@@ -209,18 +435,23 @@ export default function CompaniesPage({ currentUser, onLogout }) {
           </div>
 
           {/* Directory Listings Grid */}
-          {filteredCompanies.length === 0 ? (
-            <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
-              <Building2 className="w-12 h-12 text-slate-300 mx-auto" />
-              <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No companies match your filters</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Try widening your search terms or clearing state filters to view nationwide opportunities.
+          {loading ? (
+            <div className="bg-white rounded-3xl p-16 text-center space-y-4 border border-slate-200/90 shadow-sm flex flex-col items-center justify-center">
+              <Loader2 className="w-10 h-10 text-rose-600 animate-spin" />
+              <p className="text-xs font-extrabold text-[#0b132b] uppercase tracking-wider">Loading Courier Companies Directory...</p>
+            </div>
+          ) : filteredCompanies.length === 0 ? (
+            <div className="bg-white p-12 sm:p-16 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
+              <Building2 className="w-14 h-14 text-slate-300 mx-auto" />
+              <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No Courier Companies Listed Yet</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                No courier logistics companies match your filter criteria or have registered on RouteK9 yet. Registered company profiles will appear here as soon as they complete their business setup.
               </p>
               <button
                 onClick={handleClearFilters}
-                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-2 mt-2"
               >
-                Reset Search Filters
+                <span>Reset Search Filters</span>
               </button>
             </div>
           ) : (
@@ -281,7 +512,7 @@ export default function CompaniesPage({ currentUser, onLogout }) {
                     <div className="space-y-3 pt-5 mt-4 border-t border-slate-100">
                       {/* Action trigger: Contact */}
                       <button
-                        onClick={() => setSelectedCompany(c)}
+                        onClick={() => handleContactCompany(c)}
                         className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -291,10 +522,10 @@ export default function CompaniesPage({ currentUser, onLogout }) {
                       {/* Website external link */}
                       {c.website && (
                         <a
-                          href={c.website}
+                          href={c.website.startsWith('http') ? c.website : `https://${c.website}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-white"
+                          className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-white cursor-pointer"
                         >
                           <Globe className="w-3.5 h-3.5 text-slate-400" />
                           <span>Visit Website</span>

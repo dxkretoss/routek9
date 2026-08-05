@@ -425,6 +425,13 @@ export default function App() {
           phone: profile?.phone || prev?.phone || '',
           dotNumber: profile?.dot_number || prev?.dotNumber || '',
           insurancePolicy: profile?.insurance_policy || prev?.insurancePolicy || '',
+          experience: profile?.experience || prev?.experience || '1-3 Years',
+          availability: profile?.availability || prev?.availability || 'Immediate',
+          hasCDL: profile?.has_cdl !== undefined ? profile?.has_cdl : (prev?.hasCDL || false),
+          readyToWork: profile?.ready_to_work !== undefined ? profile?.ready_to_work : (prev?.readyToWork ?? true),
+          websiteUrl: profile?.website_url || profile?.website || prev?.websiteUrl || '',
+          avatarUrl: profile?.avatar_url || profile?.avatarUrl || prev?.avatarUrl || '',
+          bio: profile?.bio || prev?.bio || '',
           isPro: isPro || prev?.isPro || false,
           subscriptionPlan: subscriptionPlan || prev?.subscriptionPlan || 'free',
           subscribedAt: subscribedAt || prev?.subscribedAt || null,
@@ -555,6 +562,13 @@ export default function App() {
           phone: updatedUser.phone || '',
           dot_number: updatedUser.dotNumber || '',
           insurance_policy: updatedUser.insurancePolicy || '',
+          experience: updatedUser.experience || '1-3 Years',
+          availability: updatedUser.availability || 'Immediate',
+          has_cdl: updatedUser.hasCDL !== undefined ? updatedUser.hasCDL : false,
+          ready_to_work: updatedUser.readyToWork !== undefined ? updatedUser.readyToWork : true,
+          website_url: updatedUser.websiteUrl || updatedUser.website || '',
+          avatar_url: updatedUser.avatarUrl || updatedUser.avatar_url || updatedUser.avatar || '',
+          bio: updatedUser.bio || '',
           updated_at: new Date().toISOString()
         };
 

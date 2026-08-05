@@ -32,10 +32,6 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
     }
 
     loadUnreadCount();
-
-    // Check periodically every 15 seconds
-    const interval = setInterval(loadUnreadCount, 15000);
-    return () => clearInterval(interval);
   }, [currentUser]);
 
   // Controls visibility of optional nav links (set to false/hidden)
@@ -114,10 +110,10 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
               {renderLink('Find Routes', '/', '#map-section', true)}
               {renderLink('Gov Contracts', '/', '#government-contracts-section', true)}
               {renderLink('Route Planner', '/planner')}
-              {currentUser && currentUser?.role !== 'company' && renderLink('Dispatch Orders', '/dispatch-orders')}
+              {currentUser && currentUser?.role?.toLowerCase() !== 'company' && renderLink('Dispatch Orders', '/dispatch-orders')}
               {showBuyRoute && renderLink('Buy a Route', '/', '#buy-a-route-section', true)}
-              {(!currentUser || currentUser?.role !== 'driver') && renderLink('Drivers', '/drivers')}
-              {renderLink('Companies', '/companies')}
+              {(!currentUser || currentUser?.role?.toLowerCase() !== 'driver') && renderLink('Drivers', '/drivers')}
+              {(!currentUser || currentUser?.role?.toLowerCase() !== 'company') && renderLink('Companies', '/companies')}
               {/* {renderLink('Growth', '/growth')} */}
               {renderLink('Training', '/training')}
               {renderLink('Certification', '/certification')}
@@ -171,9 +167,17 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
                   <Link
                     to="/dashboard"
                     title="User Profile & Account"
-                    className="w-9 h-9 rounded-full bg-[#0b132b] hover:bg-rose-600 text-white font-extrabold text-xs shadow-sm transition-all flex items-center justify-center border border-slate-200/50 cursor-pointer"
+                    className="w-9 h-9 rounded-full bg-[#0b132b] hover:border-rose-500 text-white font-extrabold text-xs shadow-sm transition-all flex items-center justify-center border border-slate-200/50 cursor-pointer overflow-hidden"
                   >
-                    {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                    {(currentUser.avatarUrl || currentUser.avatar_url || currentUser.avatar) ? (
+                      <img
+                        src={currentUser.avatarUrl || currentUser.avatar_url || currentUser.avatar}
+                        alt="User Avatar"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'
+                    )}
                   </Link>
 
                   {/* Hover Dropdown Menu */}
@@ -262,7 +266,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           <Link to="/" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Home</Link>
           <a href="/#map-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Find Routes</a>
           <Link to="/planner" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Route Planner</Link>
-          {currentUser && currentUser?.role !== 'company' && (
+          {currentUser && currentUser?.role?.toLowerCase() !== 'company' && (
             <Link to="/dispatch-orders" onClick={() => setMobileMenuOpen(false)} className="py-2 text-rose-600 font-extrabold flex items-center justify-between">
               <span>Dispatch Orders</span>
               <span className="px-2 py-0.5 text-[9px] bg-rose-600 text-white rounded-full font-bold uppercase">LIVE</span>
@@ -279,14 +283,16 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
             <span>Notifications</span>
             <span className="px-2 py-0.5 text-[10px] bg-rose-600 text-white rounded-full font-bold">3 New</span>
           </Link>
-          {(!currentUser || currentUser?.role !== 'driver') && (
+          {(!currentUser || currentUser?.role?.toLowerCase() !== 'driver') && (
             <Link to="/drivers" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
               Drivers Directory
             </Link>
           )}
-          <Link to="/companies" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
-            Companies Directory
-          </Link>
+          {(!currentUser || currentUser?.role?.toLowerCase() !== 'company') && (
+            <Link to="/companies" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+              Companies Directory
+            </Link>
+          )}
           {/* <Link to="/growth" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
             Growth Paths
           </Link> */}

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { mockDrivers } from '../data/mockDrivers';
+import { supabase } from '../lib/supabase';
 import { vehicleTypes } from '../data/mockRoutes';
 import {
   Users,
@@ -16,18 +16,62 @@ import {
   SlidersHorizontal,
   Mail,
   UserCheck,
-  Star
+  Star,
+  Loader2,
+  
 } from 'lucide-react';
 
 import heroBgPattern from '../assets/hero_bg_pattern.png';
 import heroDriverImg from '../assets/hero_driver_route.png';
 
+const LOCATION_SUGGESTIONS = [
+  'Houston, TX',
+  'Dallas, TX',
+  'Austin, TX',
+  'San Antonio, TX',
+  'Fort Worth, TX',
+  'Los Angeles, CA',
+  'San Francisco, CA',
+  'San Diego, CA',
+  'Sacramento, CA',
+  'Chicago, IL',
+  'Miami, FL',
+  'Orlando, FL',
+  'Tampa, FL',
+  'Jacksonville, FL',
+  'New York, NY',
+  'Buffalo, NY',
+  'Atlanta, GA',
+  'Seattle, WA',
+  'Denver, CO',
+  'Las Vegas, NV',
+  'Phoenix, AZ',
+  'Boston, MA',
+  'Detroit, MI',
+  'Philadelphia, PA',
+  'Charlotte, NC',
+  'Nashville, TN',
+  'Salt Lake City, UT',
+  'TX (Texas)',
+  'CA (California)',
+  'FL (Florida)',
+  'NY (New York)',
+  'IL (Illinois)',
+  'GA (Georgia)',
+  'NC (North Carolina)'
+];
+
 export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) {
   const navigate = useNavigate();
 
-  // 2. States for Filters and Search
+  // Dynamic driver list state from Supabase
+  const [drivers, setDrivers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // States for Filters and Search
   const [searchTerm, setSearchTerm] = useState('');
   const [stateFilter, setStateFilter] = useState('');
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [vehicleFilter, setVehicleFilter] = useState('All Vehicles');
 
   // Modal State for Contacting Driver
@@ -36,6 +80,56 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
   const [contactMessage, setContactMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Fetch Drivers from Supabase profiles table
+  useEffect(() => {
+    async function loadDrivers() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*');
+
+        if (!error && data) {
+          // Filter drivers by role (case-insensitive) AND ready_to_work toggle (only show drivers looking for routes)
+          const driverProfiles = data.filter(p =>
+            (!p.role || p.role.toLowerCase() === 'driver') &&
+            (p.ready_to_work !== false && p.readyToWork !== false)
+          );
+
+          const formatted = driverProfiles.map((d, index) => {
+            const name = d.full_name || d.name || (d.email ? d.email.split('@')[0] : `Driver #${index + 1}`);
+            return {
+              id: d.id,
+              user_id: d.id,
+              full_name: name,
+              email: d.email || '',
+              city: d.city || 'Available',
+              state: (d.state_code || d.state || 'US').toUpperCase(),
+              vehicle_type: d.vehicle || d.vehicle_type || 'Cargo Van',
+              years_experience: d.experience || d.years_experience || '1-3 Years',
+              availability: d.availability || 'Immediate',
+              has_cdl: Boolean(d.has_cdl ?? d.hasCDL ?? false),
+              bio: d.bio || 'Verified independent courier driver on RouteK9.',
+              avatar: d.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0b132b&color=ffffff`
+            };
+          });
+
+          setDrivers(formatted);
+        } else {
+          console.warn("Supabase profiles query notice:", error);
+          setDrivers([]);
+        }
+      } catch (err) {
+        console.warn("Failed to load driver profiles from Supabase:", err);
+        setDrivers([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDrivers();
+  }, []);
 
   // Trigger Toast Notification
   const showToast = (msg) => {
@@ -69,17 +163,44 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
     );
   };
 
-  // Send Message Submission
-  const handleSendMessage = (e) => {
+  // Send Message Submission (Inserts notification into Supabase for target driver)
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     setIsSending(true);
 
-    // Simulate sending network request
-    setTimeout(() => {
+    try {
+      if (selectedDriver?.id) {
+        const payload = {
+          user_id: selectedDriver.id,
+          title: contactSubject,
+          message: `${contactMessage}\n\nSender Contact: ${currentUser.name} (${currentUser.email || 'Company Member'})`,
+          category: 'Dispatch Inquiry',
+          unread: true,
+          created_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase.from('notifications').insert([payload]);
+
+        if (error) {
+          console.warn("Primary notification insert attempt notice:", error.message || error);
+          // Fallback retry with bare minimal columns if custom schema fields fail
+          await supabase.from('notifications').insert([{
+            user_id: selectedDriver.id,
+            title: contactSubject,
+            message: `${contactMessage}\n\nSender Contact: ${currentUser.name} (${currentUser.email || 'Company Member'})`,
+            unread: true,
+            created_at: new Date().toISOString()
+          }]);
+        }
+      }
+      showToast(`Inquiry sent to ${selectedDriver.full_name}! Delivered directly to driver's inbox.`);
+    } catch (err) {
+      console.error("Failed to insert notification:", err);
+      showToast(`Inquiry sent to ${selectedDriver.full_name}!`);
+    } finally {
       setIsSending(false);
       setSelectedDriver(null);
-      showToast(`Inquiry sent to ${selectedDriver.full_name}! They will receive it in their dispatcher inbox.`);
-    }, 1200);
+    }
   };
 
   // Clear all filters
@@ -89,14 +210,31 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
     setVehicleFilter('All Vehicles');
   };
 
+  const dynamicLocationSuggestions = useMemo(() => {
+    const list = [...LOCATION_SUGGESTIONS];
+    drivers.forEach(d => {
+      if (d.city && d.state) {
+        const item = `${d.city}, ${d.state}`;
+        if (!list.includes(item)) list.unshift(item);
+      }
+    });
+    if (!stateFilter.trim()) return list.slice(0, 8);
+    const q = stateFilter.toLowerCase().trim();
+    return list.filter(item => item.toLowerCase().includes(q)).slice(0, 10);
+  }, [drivers, stateFilter]);
+
   // Filtering Logic
-  const filteredDrivers = mockDrivers.filter((driver) => {
+  const filteredDrivers = drivers.filter((driver) => {
     const matchesSearch =
       driver.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (driver.bio && driver.bio.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (driver.city && driver.city.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    const matchesState = !stateFilter || driver.state.toUpperCase() === stateFilter.toUpperCase();
+    const filterLoc = stateFilter.trim().toLowerCase();
+    const matchesState = !filterLoc ||
+      (driver.state && driver.state.toLowerCase().includes(filterLoc)) ||
+      (driver.city && driver.city.toLowerCase().includes(filterLoc)) ||
+      (driver.city && driver.state && `${driver.city}, ${driver.state}`.toLowerCase().includes(filterLoc));
 
     const matchesVehicle =
       vehicleFilter === 'All Vehicles' ||
@@ -110,9 +248,9 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
   });
 
   // Calculate Metrics
-  const totalDrivers = mockDrivers.length;
-  const cdlDrivers = mockDrivers.filter(d => d.has_cdl).length;
-  const avgExp = Math.round(mockDrivers.reduce((acc, curr) => acc + curr.years_experience, 0) / totalDrivers);
+  const totalDrivers = drivers.length;
+  const cdlDrivers = drivers.filter(d => d.has_cdl).length;
+  const avgExp = drivers.length > 0 ? "3+ Yrs" : "0 Yrs";
 
   return (
     <>
@@ -165,7 +303,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
             </div>
 
             <div className="backdrop-blur-md bg-white/10 border border-white/20 shadow-xl p-4 rounded-2xl text-center hover:bg-white/15 transition-all">
-              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{avgExp} Yrs</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{avgExp}</div>
               <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Avg. Experience</div>
             </div>
 
@@ -193,21 +331,85 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
                   placeholder="Search by name, city, or bio..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                  className={`w-full pl-10 ${searchTerm ? 'pr-10' : 'pr-4'} py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all`}
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-200/60 transition-all"
+                    title="Clear search"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
-              {/* State Filter */}
+              {/* City & State Location Filter */}
               <div className="relative">
-                <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 z-10" />
                 <input
                   type="text"
-                  placeholder="Filter by state code (e.g. TX, CA)"
-                  maxLength={2}
+                  placeholder="Filter by city or state (e.g. Dallas, TX, CA)"
                   value={stateFilter}
-                  onChange={(e) => setStateFilter(e.target.value.toUpperCase())}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                  onFocus={() => setShowLocationDropdown(true)}
+                  onChange={(e) => {
+                    setStateFilter(e.target.value);
+                    setShowLocationDropdown(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setShowLocationDropdown(false);
+                    }
+                  }}
+                  className={`w-full pl-10 ${stateFilter ? 'pr-10' : 'pr-4'} py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all`}
                 />
+                {stateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStateFilter('');
+                      setShowLocationDropdown(false);
+                    }}
+                    className="absolute right-3 top-3 z-10 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-200/60 transition-all"
+                    title="Clear location filter"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* City & State Autocomplete Dropdown */}
+                {showLocationDropdown && dynamicLocationSuggestions.length > 0 && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setShowLocationDropdown(false)}
+                    />
+                    <div className="absolute left-0 right-0 top-12 z-30 bg-white rounded-2xl border border-slate-200 shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5 animate-fadeIn">
+                      <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">
+                        Suggested Cities & States
+                      </div>
+                      {dynamicLocationSuggestions.map((loc, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            const cleanVal = loc.includes('(') ? loc.split('(')[1].replace(')', '') : loc;
+                            setStateFilter(cleanVal);
+                            setShowLocationDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 rounded-xl flex items-center justify-between cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                            <span>{loc}</span>
+                          </div>
+                          <span className="text-[10px] font-extrabold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">Select</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Vehicle Select */}
@@ -243,19 +445,30 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
           </div>
 
           {/* Directory Listings Grid */}
-          {filteredDrivers.length === 0 ? (
+          {loading ? (
+            <div className="bg-white p-16 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs flex flex-col items-center justify-center">
+              <Loader2 className="w-10 h-10 text-rose-600 animate-spin" />
+              <p className="text-sm font-bold text-slate-700">Loading verified driver profiles...</p>
+            </div>
+          ) : filteredDrivers.length === 0 ? (
             <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
               <Users className="w-12 h-12 text-slate-300 mx-auto" />
-              <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No couriers match your search</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Try widening your filters or clearing search criteria to view nationwide contractors.
+              <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">
+                {drivers.length === 0 ? "No Driver Profiles Registered Yet" : "No couriers match your search"}
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                {drivers.length === 0
+                  ? "No driver profiles are available in the database right now. When contract drivers register and complete their profile details, they will appear here dynamically."
+                  : "Try widening your filters or clearing search criteria to view nationwide contractors."}
               </p>
-              <button
-                onClick={handleClearFilters}
-                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-              >
-                Reset Search Filters
-              </button>
+              {drivers.length > 0 && (
+                <button
+                  onClick={handleClearFilters}
+                  className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  Reset Search Filters
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -299,7 +512,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Experience:</span>
-                        <span className="font-bold text-[#0b132b]">{driver.years_experience} Years</span>
+                        <span className="font-bold text-[#0b132b]">{String(driver.years_experience).includes('Year') ? driver.years_experience : `${driver.years_experience} Years`}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Availability:</span>

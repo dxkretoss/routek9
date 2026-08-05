@@ -6,7 +6,7 @@ import 'react-phone-input-2/lib/style.css';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import { getCourses } from '../lib/courses';
-import { supabase } from '../lib/supabase';
+import { supabase, fetchNotifications } from '../lib/supabase';
 import {
   Award,
   BookOpen,
@@ -32,40 +32,19 @@ import {
   EyeOff,
   Loader2,
   AlertCircle,
+  AlertTriangle,
+  Camera,
+  Upload,
+  Trash2,
   ChevronDown,
   MapPin,
-  ExternalLink
+  ExternalLink,
+  Users,
+  UserCheck,
+  X
 } from 'lucide-react';
 
-const MOCK_INBOX_MESSAGES = [
-  {
-    id: 1,
-    sender: "RouteK9 Contract Dispatch",
-    title: "New VA Medical Specimen Contract in Baltimore, MD",
-    snippet: "Solicitation #36C24524Q0189 match for your Cargo Van profile.",
-    time: "2 hours ago",
-    unread: true,
-    category: "Contract Alert"
-  },
-  {
-    id: 2,
-    sender: "Master Contractor Masterclass",
-    title: "Course Certificate Issued & Ready for Download",
-    snippet: "Congratulations! Your official RouteK9 completion certificate has been verified.",
-    time: "Yesterday",
-    unread: false,
-    category: "Training"
-  },
-  {
-    id: 3,
-    sender: "SAM.gov Federal Feed",
-    title: "NAICS 492110 Weekly Opportunity Digest",
-    snippet: "5 new federal courier bids posted in Texas and Nevada region.",
-    time: "3 days ago",
-    unread: false,
-    category: "Gov Digest"
-  }
-];
+
 
 export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], savedUserRoutes: propSavedRoutes = [], onUpdateProfile, onOpenPricing }) {
   const navigate = useNavigate();
@@ -87,7 +66,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     if (tabParam === 'inbox') return 'inbox';
     if (tabParam === 'profile') return 'profile';
     if (tabParam === 'routes') return 'routes';
-    return 'courses';
+    return 'profile';
   };
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
@@ -215,9 +194,38 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   const [cityName, setCityName] = useState(currentUser?.city || '');
   const [dotNumber, setDotNumber] = useState(currentUser?.dotNumber || '');
   const [insurancePolicy, setInsurancePolicy] = useState(currentUser?.insurancePolicy || '');
+  const [experience, setExperience] = useState(currentUser?.experience || '1-3 Years');
+  const [availability, setAvailability] = useState(currentUser?.availability || 'Immediate');
+  const [hasCDL, setHasCDL] = useState(currentUser?.hasCDL || false);
+  const [readyToWork, setReadyToWork] = useState(currentUser?.readyToWork ?? true);
+  const [websiteUrl, setWebsiteUrl] = useState(currentUser?.websiteUrl || currentUser?.website || '');
+  const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatarUrl || currentUser?.avatar_url || '');
+  const [bio, setBio] = useState(currentUser?.bio || '');
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState(null);
   const [downloadToast, setDownloadToast] = useState(null);
+
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image file size should be under 5MB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatarUrl(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Profile completion calculation for Driver and Company accounts
+  const requiredProfileFields = accountRole === 'company'
+    ? [fullName, email, phone, stateCode, cityName, vehicleClass, websiteUrl, bio]
+    : [fullName, email, phone, vehicleClass, stateCode, cityName, experience, bio];
+  const filledProfileFields = requiredProfileFields.filter(f => f && String(f).trim().length > 0).length;
+  const profileCompletionPercentage = Math.round((filledProfileFields / requiredProfileFields.length) * 100);
 
   useEffect(() => {
     if (currentUser) {
@@ -225,15 +233,543 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       setEmail(currentUser.email || '');
       setPhone(currentUser.phone || '');
       setAccountRole(currentUser.role || 'driver');
-      setVehicleClass(currentUser.vehicle || 'Cargo Van');
+      setVehicleClass(currentUser.vehicle || (currentUser.role === 'company' ? 'Medical Specimen, Scheduled Routes' : 'Cargo Van'));
       setStateCode(currentUser.stateCode || '');
       setCityName(currentUser.city || '');
       setDotNumber(currentUser.dotNumber || '');
       setInsurancePolicy(currentUser.insurancePolicy || '');
+      setExperience(currentUser.experience || '1-3 Years');
+      setAvailability(currentUser.availability || 'Immediate');
+      setHasCDL(currentUser.hasCDL || false);
+      setReadyToWork(currentUser.readyToWork ?? true);
+      setWebsiteUrl(currentUser.websiteUrl || currentUser.website || '');
+      setAvatarUrl(currentUser.avatarUrl || currentUser.avatar_url || '');
+      setBio(currentUser.bio || '');
     }
   }, [currentUser]);
 
   const [enrolledCourses, setEnrolledCourses] = useState([]);
+
+  // Dynamic Company Fleet Drivers State
+  const getInitialFleetDrivers = () => {
+    try {
+      const stored = localStorage.getItem(`rk9_company_fleet_${currentUser?.id || 'default'}`);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.warn("Error reading fleet drivers from localStorage:", e);
+    }
+    return [];
+  };
+
+  const [fleetDrivers, setFleetDrivers] = useState(getInitialFleetDrivers);
+  const [connectedCompanies, setConnectedCompanies] = useState([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+  const [isAddDriverModalOpen, setIsAddDriverModalOpen] = useState(false);
+  const [newDriverForm, setNewDriverForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    vehicle: 'Cargo Van',
+    city: 'Houston',
+    state: 'TX',
+    cdl: false
+  });
+
+  // Load Connected Companies for Driver
+  const fetchDriverConnectedCompanies = async () => {
+    if (!currentUser) return;
+    setLoadingCompanies(true);
+    try {
+      const userEmail = (currentUser.email || '').trim().toLowerCase();
+
+      let query = supabase
+        .from('company_drivers')
+        .select('*')
+        .eq('status', 'ACTIVE');
+
+      if (currentUser.id) {
+        query = query.or(`driver_id.eq.${currentUser.id},email.ilike.${userEmail}`);
+      } else {
+        query = query.ilike('email', userEmail);
+      }
+
+      const { data: driverRecords, error } = await query;
+      if (!error && driverRecords && driverRecords.length > 0) {
+        const companyIds = Array.from(new Set(driverRecords.map(r => r.company_id).filter(Boolean)));
+
+        const { data: companyProfiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', companyIds);
+
+        const profileMap = (companyProfiles || []).reduce((acc, curr) => {
+          acc[curr.id] = curr;
+          return acc;
+        }, {});
+
+        const connected = driverRecords.map(r => {
+          const comp = profileMap[r.company_id] || {};
+          return {
+            recordId: r.id,
+            companyId: r.company_id,
+            companyName: comp.full_name || comp.company_name || 'Logistics Company',
+            companyEmail: comp.email || '',
+            companyPhone: comp.phone || r.phone || '',
+            city: comp.city || r.city || 'Houston',
+            state: comp.state_code || r.state_code || 'TX',
+            contractTypes: comp.contract_types || comp.vehicle || 'Courier & Freight',
+            joinedAt: r.created_at
+          };
+        });
+
+        setConnectedCompanies(connected);
+      } else {
+        setConnectedCompanies([]);
+      }
+    } catch (err) {
+      console.warn("Could not fetch connected companies for driver:", err);
+    } finally {
+      setLoadingCompanies(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDriverConnectedCompanies();
+
+    const handleFleetSync = () => {
+      fetchDriverConnectedCompanies();
+    };
+
+    window.addEventListener('rk9_fleet_updated', handleFleetSync);
+    return () => {
+      window.removeEventListener('rk9_fleet_updated', handleFleetSync);
+    };
+  }, [currentUser?.id, currentUser?.email]);
+
+  const [endContractModalCompany, setEndContractModalCompany] = useState(null);
+  const [isEndingContract, setIsEndingContract] = useState(false);
+
+  const confirmEndFleetContract = async () => {
+    if (!endContractModalCompany) return;
+    const company = endContractModalCompany;
+    setIsEndingContract(true);
+
+    try {
+      const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
+      const driverEmail = (currentUser?.email || '').trim().toLowerCase();
+
+      // 1. Remove from company_drivers
+      if (company.recordId) {
+        await supabase
+          .from('company_drivers')
+          .delete()
+          .eq('id', company.recordId);
+      }
+      if (company.companyId && driverEmail) {
+        await supabase
+          .from('company_drivers')
+          .delete()
+          .eq('company_id', company.companyId)
+          .ilike('email', driverEmail);
+      }
+
+      // 2. Notify company about ended contract
+      if (company.companyId) {
+        await createNotification({
+          userId: company.companyId,
+          companyId: company.companyId,
+          title: `⚠️ Driver Turned Off Fleet Contract`,
+          message: `${driverName} (${driverEmail}) has ended their fleet contract and disconnected from your company fleet.`,
+          category: 'Fleet',
+          unread: true,
+          important: true
+        });
+      }
+
+      // 3. Update local state
+      setConnectedCompanies(prev => prev.filter(c => c.companyId !== company.companyId && c.recordId !== company.recordId));
+
+      // 4. Broadcast rk9_fleet_updated
+      window.dispatchEvent(new Event('rk9_fleet_updated'));
+
+      setToast({ show: true, message: `Contract ended. You are disconnected from ${company.companyName}.`, type: 'info' });
+      setEndContractModalCompany(null);
+    } catch (err) {
+      console.warn("Error ending fleet contract:", err);
+    } finally {
+      setIsEndingContract(false);
+    }
+  };
+
+  // Load Fleet Drivers from Supabase database & Local Storage
+  useEffect(() => {
+    async function fetchFleetFromSupabase() {
+      if (!currentUser?.id) return;
+      try {
+        const { data, error } = await supabase
+          .from('company_drivers')
+          .select('*')
+          .eq('company_id', currentUser.id)
+          .neq('status', 'DECLINED')
+          .order('created_at', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          const mapped = data.map(d => ({
+            id: d.id,
+            name: d.full_name || d.name,
+            phone: d.phone,
+            email: d.email,
+            vehicle: d.vehicle_type || d.vehicle || 'Cargo Van',
+            city: d.city || 'Houston',
+            state: d.state_code || d.state || 'TX',
+            cdl: Boolean(d.has_cdl ?? d.cdl),
+            status: d.status || 'ACTIVE'
+          }));
+          setFleetDrivers(mapped);
+          localStorage.setItem(`rk9_company_fleet_${currentUser.id}`, JSON.stringify(mapped));
+        }
+      } catch (err) {
+        console.warn("Supabase company_drivers fetch notice:", err.message || err);
+      }
+    }
+
+    fetchFleetFromSupabase();
+
+    window.addEventListener('rk9_fleet_updated', fetchFleetFromSupabase);
+    return () => {
+      window.removeEventListener('rk9_fleet_updated', fetchFleetFromSupabase);
+    };
+  }, [currentUser?.id]);
+
+  const saveFleetDrivers = (newList) => {
+    setFleetDrivers(newList);
+    try {
+      localStorage.setItem(`rk9_company_fleet_${currentUser?.id || 'default'}`, JSON.stringify(newList));
+      window.dispatchEvent(new Event('rk9_fleet_updated'));
+    } catch (e) {
+      console.warn("Error saving fleet drivers to localStorage:", e);
+    }
+  };
+
+  const handleAddFleetDriverSubmit = async (e) => {
+    e.preventDefault();
+    if (!newDriverForm.name.trim()) return;
+
+    const enteredEmail = (newDriverForm.email || '').trim().toLowerCase();
+
+    // ── 1. VALIDATION: Check if email is registered as a Company account ───────
+    if (enteredEmail) {
+      try {
+        const { data: profileCheck } = await supabase
+          .from('profiles')
+          .select('id, role, full_name, email')
+          .eq('email', enteredEmail)
+          .maybeSingle();
+
+        if (profileCheck && (profileCheck.role === 'company' || profileCheck.role === 'Company')) {
+          alert(`Invalid Driver Email: "${enteredEmail}" belongs to a registered Company account.`);
+          return;
+        }
+
+        // ── 2. VALIDATION: Check if email belongs to a Registered Driver ──────────
+        const isRegisteredDriver = profileCheck && (profileCheck.role === 'driver' || profileCheck.role === 'Driver');
+
+        if (isRegisteredDriver) {
+          const companyName = currentUser?.name || currentUser?.company_name || 'Courier Logistics';
+
+          // Insert pending invitation in company_drivers
+          await supabase.from('company_drivers').insert([{
+            company_id: currentUser?.id || null,
+            driver_id: profileCheck.id,
+            full_name: newDriverForm.name.trim() || profileCheck.full_name,
+            phone: newDriverForm.phone.trim() || profileCheck.phone || '',
+            email: enteredEmail,
+            vehicle_type: newDriverForm.vehicle,
+            city: newDriverForm.city.trim() || 'Houston',
+            state_code: newDriverForm.state.trim() || 'TX',
+            has_cdl: newDriverForm.cdl,
+            status: 'PENDING_APPROVAL',
+            created_at: new Date().toISOString()
+          }]);
+
+          // Send Inbox Notification to Driver
+          await createNotification({
+            userId: profileCheck.id,
+            companyId: currentUser?.id || null,
+            title: `Fleet Join Invitation from ${companyName}`,
+            message: `${companyName} has invited you to join their company fleet as a registered driver. Please respond to this invitation in your inbox.`,
+            category: 'FLEET_INVITE',
+            unread: true,
+            important: true,
+            actionUrl: '/dashboard?tab=inbox',
+            actionText: 'View Invitation'
+          });
+
+          alert(`📩 Fleet Join Invitation sent to registered driver (${enteredEmail})! They will appear in your fleet list as soon as they accept in their Inbox.`);
+          setIsAddDriverModalOpen(false);
+          setNewDriverForm({ name: '', phone: '', email: '', vehicle: 'Cargo Van', city: 'Houston', state: 'TX', cdl: false });
+          return;
+        }
+      } catch (err) {
+        console.warn("Validation check notice:", err);
+      }
+    }
+
+    // ── 3. OFFLINE / NEW DRIVER: Direct Add ────────────────────────────────────
+    const newId = `fleet_${Date.now()}`;
+    const created = {
+      id: newId,
+      name: newDriverForm.name.trim(),
+      phone: newDriverForm.phone.trim() || '+1 (555) 000-0000',
+      email: enteredEmail || 'driver@company.com',
+      vehicle: newDriverForm.vehicle,
+      city: newDriverForm.city.trim() || 'Houston',
+      state: newDriverForm.state.trim() || 'TX',
+      cdl: newDriverForm.cdl
+    };
+
+    const updated = [created, ...fleetDrivers];
+    saveFleetDrivers(updated);
+    setIsAddDriverModalOpen(false);
+
+    try {
+      const payload = {
+        company_id: currentUser?.id || null,
+        full_name: created.name,
+        phone: created.phone,
+        email: created.email,
+        vehicle_type: created.vehicle,
+        city: created.city,
+        state_code: created.state,
+        has_cdl: created.cdl,
+        status: 'ACTIVE',
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase.from('company_drivers').insert([payload]);
+      if (!error && data && data[0]?.id) {
+        const synced = updated.map(d => d.id === newId ? { ...d, id: data[0].id } : d);
+        saveFleetDrivers(synced);
+      }
+    } catch (dbErr) {
+      console.warn("Supabase database fleet driver save warning:", dbErr);
+    }
+
+    setNewDriverForm({
+      name: '',
+      phone: '',
+      email: '',
+      vehicle: 'Cargo Van',
+      city: 'Houston',
+      state: 'TX',
+      cdl: false
+    });
+  };
+
+  const handleDeleteFleetDriver = async (driverId) => {
+    const targetDriver = fleetDrivers.find(d => d.id === driverId);
+
+    // 1. Immediately update UI state & localStorage
+    const updated = fleetDrivers.filter(d => d.id !== driverId);
+    saveFleetDrivers(updated);
+
+    // 2. Broadcast fleet sync event
+    window.dispatchEvent(new Event('rk9_fleet_updated'));
+
+    // 3. Delete from Supabase Database
+    try {
+      if (driverId && !driverId.startsWith('fleet_')) {
+        await supabase.from('company_drivers').delete().eq('id', driverId);
+      }
+      if (targetDriver?.email && currentUser?.id) {
+        await supabase
+          .from('company_drivers')
+          .delete()
+          .eq('company_id', currentUser.id)
+          .eq('email', targetDriver.email);
+      }
+    } catch (dbErr) {
+      console.warn("Supabase database delete warning:", dbErr);
+    }
+  };
+
+  const handleAcceptFleetInvite = async (notif) => {
+    try {
+      const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
+      const driverEmail = (currentUser?.email || '').trim().toLowerCase();
+
+      // 1. Update company_drivers status to ACTIVE in Supabase
+      if (driverEmail) {
+        await supabase
+          .from('company_drivers')
+          .update({ status: 'ACTIVE' })
+          .ilike('email', driverEmail);
+      }
+      if (currentUser?.id) {
+        await supabase
+          .from('company_drivers')
+          .update({ status: 'ACTIVE' })
+          .eq('driver_id', currentUser.id);
+      }
+
+      const compId = notif.companyId;
+
+      // 2. Update notification status for driver
+      await supabase
+        .from('notifications')
+        .update({ unread: false, status: 'ACCEPTED' })
+        .eq('id', notif.id);
+
+      // 3. Send acceptance notification back to the Company!
+      if (compId) {
+        await createNotification({
+          userId: compId,
+          companyId: compId,
+          title: `Driver Invitation Accepted!`,
+          message: `${driverName} (${driverEmail}) has accepted your fleet invitation! They are now added to your company fleet drivers list.`,
+          category: 'Fleet',
+          unread: true,
+          important: true,
+          actionUrl: '/dashboard?tab=fleet',
+          actionText: 'View Fleet Drivers'
+        });
+      }
+
+      // 4. Update local inbox state & fleet state directly
+      setInboxNotifications(prev =>
+        prev.map(n => n.id === notif.id ? { ...n, status: 'ACCEPTED', unread: false } : n)
+      );
+
+      setFleetDrivers(prev =>
+        prev.map(d => {
+          if ((d.email && d.email.toLowerCase() === driverEmail) || d.id === currentUser?.id) {
+            return { ...d, status: 'ACTIVE' };
+          }
+          return d;
+        })
+      );
+
+      // 5. Broadcast global fleet sync event
+      window.dispatchEvent(new Event('rk9_fleet_updated'));
+
+      setToast({ show: true, message: 'You have accepted the fleet invitation! You are now added to the company fleet.', type: 'success' });
+    } catch (err) {
+      console.warn("Error accepting fleet invite:", err);
+    }
+  };
+
+  const handleDeclineFleetInvite = async (notif) => {
+    try {
+      const driverName = currentUser?.name || currentUser?.full_name || 'Driver';
+      const driverEmail = (currentUser?.email || '').trim().toLowerCase();
+
+      // 1. Update company_drivers status to DECLINED
+      if (driverEmail) {
+        await supabase
+          .from('company_drivers')
+          .update({ status: 'DECLINED' })
+          .ilike('email', driverEmail);
+      }
+      if (currentUser?.id) {
+        await supabase
+          .from('company_drivers')
+          .update({ status: 'DECLINED' })
+          .eq('driver_id', currentUser.id);
+      }
+
+      const compId = notif.companyId;
+
+      // 2. Update notification status for driver
+      await supabase
+        .from('notifications')
+        .update({ unread: false, status: 'DECLINED' })
+        .eq('id', notif.id);
+
+      // 3. Send decline notification back to Company
+      if (compId) {
+        await createNotification({
+          userId: compId,
+          companyId: compId,
+          title: `✕ Driver Invitation Declined`,
+          message: `${driverName} (${driverEmail}) declined your invitation to join your company fleet.`,
+          category: 'Fleet',
+          unread: true,
+          important: false
+        });
+      }
+
+      // 4. Update local inbox state & fleet state directly
+      setInboxNotifications(prev =>
+        prev.map(n => n.id === notif.id ? { ...n, status: 'DECLINED', unread: false } : n)
+      );
+
+      setFleetDrivers(prev =>
+        prev.map(d => {
+          if ((d.email && d.email.toLowerCase() === driverEmail) || d.id === currentUser?.id) {
+            return { ...d, status: 'DECLINED' };
+          }
+          return d;
+        })
+      );
+
+      window.dispatchEvent(new Event('rk9_fleet_updated'));
+
+      setToast({ show: true, message: 'Fleet invitation declined.', type: 'info' });
+    } catch (err) {
+      console.warn("Error declining fleet invite:", err);
+    }
+  };
+
+  // Dynamic Inbox Notifications State
+  const [inboxNotifications, setInboxNotifications] = useState([]);
+  const [loadingInbox, setLoadingInbox] = useState(true);
+
+  useEffect(() => {
+    async function loadInbox() {
+      setLoadingInbox(true);
+      try {
+        const dbNotifs = await fetchNotifications(currentUser?.id);
+        if (dbNotifs && dbNotifs.length > 0) {
+          // Filter out purchase course receipts / course notifications to only show dispatch & inquiry data
+          const filteredNotifs = dbNotifs.filter((n) => {
+            const titleLower = (n.title || '').toLowerCase();
+            const catLower = (n.category || '').toLowerCase();
+            return (
+              !titleLower.includes('course purchased') &&
+              !titleLower.includes('purchased successfully') &&
+              !catLower.includes('training')
+            );
+          });
+
+          const formatted = filteredNotifs.map((n) => ({
+            id: n.id,
+            title: n.title,
+            snippet: n.message,
+            sender: n.title?.includes('Inquiry') || n.title?.includes('Contract') ? 'Company Dispatch Inquiry' : 'RouteK9 Platform',
+            time: new Date(n.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            unread: Boolean(n.unread),
+            status: n.status || 'PENDING',
+            category: n.category || 'Dispatch Inquiry',
+            companyId: n.company_id
+          }));
+          setInboxNotifications(formatted);
+        } else {
+          setInboxNotifications([]);
+        }
+      } catch (err) {
+        console.warn("Could not load inbox notifications from Supabase:", err);
+        setInboxNotifications([]);
+      } finally {
+        setLoadingInbox(false);
+      }
+    }
+
+    if (currentUser?.id) {
+      loadInbox();
+    } else {
+      setLoadingInbox(false);
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     async function loadEnrolled() {
@@ -342,7 +878,14 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
         stateCode,
         city: cityName,
         dotNumber,
-        insurancePolicy
+        insurancePolicy,
+        experience,
+        availability,
+        hasCDL,
+        readyToWork,
+        websiteUrl,
+        avatarUrl,
+        bio
       });
 
       if (res && res.success === false) {
@@ -397,14 +940,18 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       <section className="bg-[#0b132b] text-white py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
 
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold uppercase tracking-wider">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>{accountRole === 'company' ? 'Company Member Dashboard' : 'Driver Member Dashboard'}</span>
-          </div>
+          <div className="flex items-center">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[11px] font-bold uppercase tracking-wider">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{accountRole === 'company' ? 'Company Member Dashboard' : 'Driver Member Dashboard'}</span>
+              </div>
 
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight font-serif-heading">
-            Welcome back, <span className="text-rose-500">{fullName}</span>
-          </h1>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight font-serif-heading">
+                Welcome back, <span className="text-rose-500">{fullName}</span>
+              </h1>
+            </div>
+          </div>
 
           <p className="text-slate-300 text-xs sm:text-sm font-normal max-w-2xl">
             Access your purchased training courses, inbox notifications, security settings, and driver authority profile.
@@ -418,7 +965,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             </div>
 
             <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
-              <div className="text-2xl font-extrabold text-emerald-400">{MOCK_INBOX_MESSAGES.length}</div>
+              <div className="text-2xl font-extrabold text-emerald-400">{inboxNotifications.length}</div>
               <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Inbox Messages</div>
             </div>
 
@@ -470,16 +1017,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       <div className="sticky top-20 z-30 bg-white border-b border-slate-200 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-2 overflow-x-auto py-2">
 
-          <button
-            onClick={() => handleTabChange('courses')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'courses'
-              ? 'bg-rose-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-          >
-            <BookOpen className="w-4 h-4" />
-            <span>Purchased Courses ({enrolledCourses.length})</span>
-          </button>
+
 
           <button
             onClick={() => handleTabChange('routes')}
@@ -492,27 +1030,39 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             <span>My Planned Routes ({savedUserRoutes.length})</span>
           </button>
 
-          <button
-            onClick={() => handleTabChange('inbox')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'inbox'
-              ? 'bg-rose-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-          >
-            <Inbox className="w-4 h-4" />
-            <span>Inbox ({MOCK_INBOX_MESSAGES.length})</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          </button>
+          {accountRole === 'company' ? (
+            <button
+              onClick={() => handleTabChange('fleet')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'fleet'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>My Fleet & Drivers ({fleetDrivers.length})</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => handleTabChange('fleets')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'fleets'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Connected Companies ({connectedCompanies.length})</span>
+            </button>
+          )}
 
           <button
-            onClick={() => handleTabChange('settings')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'settings'
+            onClick={() => handleTabChange('courses')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'courses'
               ? 'bg-rose-600 text-white shadow-sm'
               : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
           >
-            <Lock className="w-4 h-4" />
-            <span>Change Password & Settings</span>
+            <BookOpen className="w-4 h-4" />
+            <span>Purchased Courses ({enrolledCourses.length})</span>
           </button>
 
           <button
@@ -526,12 +1076,71 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             <span>{accountRole === 'company' ? 'Company Profile' : 'Driver Profile'}</span>
           </button>
 
+          <button
+            onClick={() => handleTabChange('inbox')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'inbox'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+          >
+            <Inbox className="w-4 h-4" />
+            <span>Inbox ({inboxNotifications.length})</span>
+            {inboxNotifications.some(n => n.unread) && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            )}
+          </button>
+
+          <button
+            onClick={() => handleTabChange('settings')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${activeTab === 'settings'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+          >
+            <Lock className="w-4 h-4" />
+            <span>Change Password & Settings</span>
+          </button>
+
         </div>
       </div>
 
       {/* Main Tab Content */}
       <main className="flex-1 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+          {/* Incomplete Driver/Company Profile Alert Banner */}
+          {profileCompletionPercentage < 100 && (
+            <div className="mb-8 bg-amber-50/90 border border-amber-300 p-4 sm:p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="p-2.5 bg-amber-500/15 rounded-xl text-amber-700 shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-amber-600" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 font-serif-heading">
+                    <h4 className="text-sm font-extrabold text-amber-900">
+                      Incomplete Profile Warning — Action Required
+                    </h4>
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-extrabold">
+                      {profileCompletionPercentage}% Complete
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                    {accountRole === 'company'
+                      ? 'Your company profile is missing key details (City, State, Contract Types, Bio). Complete your profile so independent drivers can find and contact your business on the RouteK9 Companies Directory.'
+                      : 'Your driver profile is missing key details (City, State, Experience, Bio). Complete your profile so courier & logistics companies can find and hire you directly on the RouteK9 Drivers Directory.'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleTabChange('profile')}
+                className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
+              >
+                <span>{accountRole === 'company' ? 'Complete Company Profile Now' : 'Complete Profile Now'}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* TAB 1: Purchased Courses */}
           {activeTab === 'courses' && (
@@ -796,37 +1405,83 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                 </Link>
               </div>
 
-              <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm divide-y divide-slate-100 overflow-hidden">
-                {MOCK_INBOX_MESSAGES.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${msg.unread ? 'bg-rose-50/20' : 'hover:bg-slate-50/50'
-                      }`}
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-extrabold text-[10px]">
-                          {msg.category}
-                        </span>
-                        {msg.unread && (
-                          <span className="w-2 h-2 rounded-full bg-rose-600" />
-                        )}
-                        <span className="text-xs font-bold text-slate-900">{msg.sender}</span>
-                      </div>
-                      <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
-                        {msg.title}
-                      </h4>
-                      <p className="text-xs text-slate-500 font-medium">
-                        {msg.snippet}
-                      </p>
-                    </div>
+              {loadingInbox ? (
+                <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 flex flex-col items-center justify-center">
+                  <Loader2 className="w-8 h-8 text-rose-600 animate-spin" />
+                  <p className="text-xs font-bold text-slate-600">Loading inbox messages from database...</p>
+                </div>
+              ) : inboxNotifications.length === 0 ? (
+                <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
+                  <Inbox className="w-12 h-12 text-slate-300 mx-auto" />
+                  <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No Inbox Messages Yet</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                    When courier companies or dispatchers contact you from the Drivers Directory, their route inquiries and contract proposals will appear here in real time.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm divide-y divide-slate-100 overflow-hidden">
+                  {inboxNotifications.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${msg.unread ? 'bg-rose-50/30 border-l-4 border-l-rose-600' : 'hover:bg-slate-50/50'
+                        }`}
+                    >
+                      <div className="space-y-1.5 max-w-3xl">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-extrabold text-[10px]">
+                            {msg.category}
+                          </span>
+                          {msg.unread && (
+                            <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                          )}
+                          <span className="text-xs font-bold text-slate-900">{msg.sender}</span>
+                        </div>
+                        <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
+                          {msg.title}
+                        </h4>
+                        <p className="text-xs text-slate-600 font-medium whitespace-pre-line leading-relaxed">
+                          {msg.snippet}
+                        </p>
 
-                    <div className="text-xs text-slate-400 font-semibold shrink-0">
-                      {msg.time}
+                        {msg.category === 'FLEET_INVITE' && msg.status !== 'ACCEPTED' && msg.status !== 'DECLINED' && (
+                          <div className="flex items-center gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAcceptFleetInvite(msg)}
+                              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm cursor-pointer transition-all flex items-center gap-1.5"
+                            >
+                              <span>✓ Accept Fleet Invitation</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeclineFleetInvite(msg)}
+                              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs border border-slate-200 cursor-pointer transition-all"
+                            >
+                              <span>Decline</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {msg.status === 'ACCEPTED' && (
+                          <div className="inline-block mt-2 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200">
+                            ✓ Invitation Accepted
+                          </div>
+                        )}
+
+                        {msg.status === 'DECLINED' && (
+                          <div className="inline-block mt-2 px-3 py-1 rounded-lg bg-rose-50 text-rose-800 font-bold text-[11px] border border-rose-200">
+                            ✕ Invitation Declined
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 font-semibold shrink-0 sm:text-right">
+                        {msg.time}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1003,14 +1658,37 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
               <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/90 shadow-lg space-y-8">
 
-                {profileSuccess && (
-                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-bold flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>{accountRole === 'company' ? 'Company profile updated successfully!' : 'Driver profile updated successfully!'}</span>
+                {accountRole === 'driver' && (
+                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs font-bold text-[#0b132b]">
+                      <span>Directory Listing Completion Status</span>
+                      <span className={profileCompletionPercentage === 100 ? 'text-emerald-600 font-extrabold' : 'text-amber-600 font-extrabold'}>
+                        {profileCompletionPercentage}% Complete {profileCompletionPercentage === 100 ? '✓ Fully Verified' : '• Incomplete'}
+                      </span>
+                    </div>
+                    <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-500 rounded-full ${profileCompletionPercentage === 100 ? 'bg-emerald-500' : 'bg-amber-500'
+                          }`}
+                        style={{ width: `${profileCompletionPercentage}%` }}
+                      />
+                    </div>
+                    {profileCompletionPercentage < 100 && (
+                      <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
+                        💡 <strong>Action Needed:</strong> Fill in your City, State, Experience, and Bio below so courier companies can discover and hire you directly on the RouteK9 Drivers Directory.
+                      </p>
+                    )}
                   </div>
                 )}
 
                 <form onSubmit={handleProfileSubmit} className="space-y-6">
+
+                  {profileSuccess && (
+                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-bold flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>{accountRole === 'company' ? 'Company profile updated successfully!' : 'Driver profile updated successfully! Directory listing updated.'}</span>
+                    </div>
+                  )}
 
                   {/* Account Member Type Selector */}
                   {/* <div className="space-y-1.5">
@@ -1044,6 +1722,65 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                       </button>
                     </div>
                   </div> */}
+
+                  {/* Profile Photo / Avatar Upload Card */}
+                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-center gap-5">
+                    <div className="relative group shrink-0">
+                      {avatarUrl ? (
+                        <img
+                          src={avatarUrl}
+                          alt="Profile Avatar"
+                          className="w-20 h-20 rounded-2xl object-cover border-2 border-rose-500 shadow-md"
+                        />
+                      ) : (
+                        <div className="w-20 h-20 rounded-2xl bg-[#0b132b] text-white font-extrabold text-2xl flex items-center justify-center border-2 border-slate-300 shadow-md">
+                          {(fullName || 'U').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <label className="absolute -bottom-2 -right-2 p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-md cursor-pointer transition-transform hover:scale-110">
+                        <Camera className="w-3.5 h-3.5" />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="space-y-1 text-center sm:text-left flex-1">
+                      <h4 className="text-sm font-extrabold text-[#0b132b]">
+                        {accountRole === 'company' ? 'Company Logo / Profile Photo' : 'Driver Profile Photo'}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        Upload a photo or company logo. Saved directly to your database profile and shown on the directory.
+                      </p>
+
+                      <div className="flex items-center gap-3 pt-1.5 justify-center sm:justify-start">
+                        <label className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleAvatarUpload}
+                            className="hidden"
+                          />
+                        </label>
+
+                        {avatarUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setAvatarUrl('')}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1 border border-rose-200 cursor-pointer transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
@@ -1127,35 +1864,64 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                     </div>
                   </div>
 
-                  {/* Primary Vehicle Class & Home State */}
+                  {/* Primary Vehicle Class / Contract Types & Company Website */}
+                  <div className={`grid grid-cols-1 ${accountRole === 'company' ? 'sm:grid-cols-2' : ''} gap-4`}>
+                    <div className={`space-y-1.5 ${accountRole === 'company' ? '' : 'sm:col-span-2'}`}>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        {accountRole === 'company' ? 'Primary Contract Types Offered' : 'Primary Vehicle Class'}
+                      </label>
+                      {accountRole === 'company' ? (
+                        <input
+                          type="text"
+                          value={vehicleClass}
+                          onChange={(e) => setVehicleClass(e.target.value)}
+                          placeholder="e.g. Medical Specimen, Pharmaceuticals, Scheduled Routes"
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        />
+                      ) : (
+                        <select
+                          value={vehicleClass}
+                          onChange={(e) => setVehicleClass(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
+                        >
+                          <option value="Sedan / Hatchback">Sedan / Hatchback</option>
+                          <option value="Minivan / SUV">Minivan / SUV</option>
+                          <option value="Cargo Van">Cargo Van</option>
+                          <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
+                          <option value="16ft Box Truck">16ft Box Truck</option>
+                          <option value="26ft Box Truck">26ft Box Truck</option>
+                          <option value="Company Fleet">Company Fleet / Multi-Vehicle</option>
+                        </select>
+                      )}
+                    </div>
+
+                    {accountRole === 'company' && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                          Company Website URL
+                        </label>
+                        <input
+                          type="url"
+                          value={websiteUrl}
+                          onChange={(e) => setWebsiteUrl(e.target.value)}
+                          placeholder="e.g. https://apexmedical.com"
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Home State & Operating City */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                        Primary Vehicle Class
-                      </label>
-                      <select
-                        value={vehicleClass}
-                        onChange={(e) => setVehicleClass(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                      >
-                        <option value="Sedan / Hatchback">Sedan / Hatchback</option>
-                        <option value="Minivan / SUV">Minivan / SUV</option>
-                        <option value="Cargo Van">Cargo Van</option>
-                        <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
-                        <option value="16ft Box Truck">16ft Box Truck</option>
-                        <option value="26ft Box Truck">26ft Box Truck</option>
-                        <option value="Company Fleet">Company Fleet / Multi-Vehicle</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                        Home State
+                        Operating State Code
                       </label>
                       <input
                         type="text"
                         value={stateCode}
                         onChange={(e) => setStateCode(e.target.value)}
+                        placeholder="e.g. TX"
                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                       />
                     </div>
@@ -1168,9 +1934,94 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                         type="text"
                         value={cityName}
                         onChange={(e) => setCityName(e.target.value)}
+                        placeholder="e.g. Houston"
                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                       />
                     </div>
+                  </div>
+
+                  {/* Contract Types/Experience & Service Region/Availability */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        {accountRole === 'company' ? 'Contract Key Requirements' : 'Driving Experience'}
+                      </label>
+                      <input
+                        type="text"
+                        value={experience}
+                        onChange={(e) => setExperience(e.target.value)}
+                        placeholder={accountRole === 'company' ? 'e.g. Owner-Operators with Cargo Vans' : 'e.g. 5 Years'}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                        {accountRole === 'company' ? 'Service Area / Operating Region' : 'Dispatch Availability'}
+                      </label>
+                      <input
+                        type="text"
+                        value={availability}
+                        onChange={(e) => setAvailability(e.target.value)}
+                        placeholder={accountRole === 'company' ? 'e.g. Texas Medical Center & Gulf Coast' : 'e.g. Immediate, Mon - Fri'}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ready to Find Routes & Listed on Directory Toggle */}
+                  <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/80 flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-[#0b132b]">
+                          {accountRole === 'company' ? 'Actively Hiring & Listed on Companies Directory' : 'Ready to Accept Routes & Listed on Directory'}
+                        </p>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${readyToWork ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-200 text-slate-700'}`}>
+                          {readyToWork ? 'Publicly Listed' : 'Hidden'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                        {accountRole === 'company'
+                          ? 'Check this box to display your company profile on the Companies Directory for drivers to find and contact you. Uncheck to hide your business.'
+                          : 'Check this box if you are looking for routes. Uncheck if you do not want courier companies to see your details.'}
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={readyToWork}
+                      onChange={(e) => setReadyToWork(e.target.checked)}
+                      className="w-5 h-5 accent-rose-600 rounded cursor-pointer shrink-0"
+                    />
+                  </div>
+
+                  {/* CDL Certification Toggle (Drivers Only) */}
+                  {accountRole === 'driver' && (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-[#0b132b]">Commercial Driver (CDL Holder)</p>
+                        <p className="text-[11px] text-slate-500 font-medium">Highlight your CDL certification badge on the Drivers Directory for high-value contracts.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={hasCDL}
+                        onChange={(e) => setHasCDL(e.target.checked)}
+                        className="w-5 h-5 accent-rose-600 rounded cursor-pointer"
+                      />
+                    </div>
+                  )}
+
+                  {/* Driver / Company Overview & Bio */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      {accountRole === 'company' ? 'Company Overview & Contracting Pitch (Directory Summary)' : 'Driver Bio & Equipment Summary (Directory Listing Pitch)'}
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      placeholder={accountRole === 'company' ? 'e.g. Apex specializes in prompt, temp-controlled medical deliveries for laboratory networks and hospitals...' : 'e.g. Reliable owner-operator specialized in medical courier routes and TSA-approved secure cargo deliveries...'}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none resize-none"
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -1199,8 +2050,431 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             </div>
           )}
 
+          {/* TAB: My Fleet & Drivers (For Companies) */}
+          {activeTab === 'fleet' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+                    My Company Fleet & Drivers
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    Manage your company's drivers to assign them directly to routes in the Route Planner.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddDriverModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>+ Add Fleet Driver</span>
+                </button>
+              </div>
+
+              {fleetDrivers.length === 0 ? (
+                <div className="bg-white p-12 sm:p-16 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
+                  <Users className="w-12 h-12 text-slate-300 mx-auto" />
+                  <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No Fleet Drivers Added Yet</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                    Add your company's drivers here so you can assign them to optimized routes and dispatches in the Route Planner.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddDriverModalOpen(true)}
+                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                  >
+                    + Add Your First Driver
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {fleetDrivers.map((driver) => (
+                    <div
+                      key={driver.id}
+                      className={`p-6 rounded-3xl border shadow-sm space-y-4 flex flex-col justify-between transition-all ${driver.status === 'PENDING_APPROVAL'
+                        ? 'bg-amber-50/30 border-amber-200 shadow-amber-100/20'
+                        : 'bg-white border-slate-200/90'
+                        }`}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-2xl font-extrabold flex items-center justify-center border shrink-0 ${driver.status === 'PENDING_APPROVAL'
+                              ? 'bg-amber-100 text-amber-700 border-amber-200'
+                              : 'bg-rose-50 text-rose-600 border-rose-100'
+                              }`}>
+                              {driver.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <h3 className="text-base font-extrabold text-[#0b132b]">{driver.name}</h3>
+                              <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                                <span>{driver.city}, {driver.state}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {driver.cdl && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-extrabold border border-amber-200">
+                              CDL
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5 pt-2 text-xs font-semibold text-slate-600 border-t border-slate-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Vehicle Class:</span>
+                            <span className="text-slate-800 font-bold">{driver.vehicle}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Phone:</span>
+                            <span className="text-slate-800 font-bold">{driver.phone}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Email:</span>
+                            <span className="text-slate-800 font-bold truncate max-w-[160px]">{driver.email}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                        {driver.status === 'PENDING_APPROVAL' ? (
+                          <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100/80 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
+                            <span>⏳ Pending Driver Approval</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                            ● Ready for Route Assignment
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFleetDriver(driver.id)}
+                          className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer hover:underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: Connected Fleets & Companies (For Drivers) */}
+          {activeTab === 'fleets' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] font-serif-heading">
+                    My Connected Companies & Fleets
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    Courier & logistics companies you are connected with. You can turn off your contract at any time.
+                  </p>
+                </div>
+                <span className="px-3.5 py-1.5 rounded-full bg-rose-50 text-rose-700 font-extrabold text-xs border border-rose-200 self-start sm:self-auto">
+                  {connectedCompanies.length} Connected Companies
+                </span>
+              </div>
+
+              {loadingCompanies ? (
+                <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-3">
+                  <Loader2 className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
+                  <p className="text-xs font-bold text-slate-500">Loading connected company contracts...</p>
+                </div>
+              ) : connectedCompanies.length === 0 ? (
+                <div className="bg-white p-12 sm:p-16 rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
+                  <Building2 className="w-12 h-12 text-slate-300 mx-auto" />
+                  <h3 className="text-xl font-bold text-[#0b132b] font-serif-heading">No Connected Fleets Yet</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                    When courier companies invite you to join their fleet, accept their invitation in your Inbox to connect and receive route dispatches!
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('inbox')}
+                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                  >
+                    Check Inbox Messages →
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {connectedCompanies.map((company) => (
+                    <div
+                      key={company.recordId || company.companyId}
+                      className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between hover:border-slate-300 transition-all"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 font-extrabold flex items-center justify-center border border-rose-200 shrink-0 text-sm">
+                              {company.companyName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <h3 className="text-base font-extrabold text-[#0b132b]">{company.companyName}</h3>
+                              <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                                <span>{company.city}, {company.state}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 pt-2 text-xs font-semibold text-slate-600 border-t border-slate-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Contact Email:</span>
+                            <span className="text-slate-800 font-bold truncate max-w-[160px]">{company.companyEmail || 'N/A'}</span>
+                          </div>
+                          {company.companyPhone && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400 font-medium">Company Phone:</span>
+                              <span className="text-slate-800 font-bold">{company.companyPhone}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Contract Type:</span>
+                            <span className="text-slate-800 font-bold">{company.contractTypes}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span>● Active Fleet Contract</span>
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => setEndContractModalCompany(company)}
+                          className="px-3 py-1.5 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-700 font-extrabold text-xs transition-colors cursor-pointer flex items-center gap-1"
+                          title="Turn off contract and disconnect from this company fleet"
+                        >
+                          <X className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Turn Off Contract</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </main>
+
+      {/* Custom End Contract Confirmation Modal Popup */}
+      {endContractModalCompany && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 sm:p-7 text-left space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-xl shrink-0">
+                <AlertTriangle className="w-6 h-6 text-rose-600" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setEndContractModalCompany(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">
+                Turn Off Fleet Contract?
+              </h3>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Are you sure you want to turn off contract and disconnect from <strong className="text-slate-900 font-extrabold">{endContractModalCompany.companyName}</strong>?
+              </p>
+              <div className="p-3 bg-rose-50/80 rounded-2xl border border-rose-200 text-[11px] text-rose-800 font-semibold space-y-1">
+                <p>⚠️ You will be removed from their company driver fleet list and will no longer receive route dispatches from this company.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isEndingContract}
+                onClick={() => setEndContractModalCompany(null)}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isEndingContract}
+                onClick={confirmEndFleetContract}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition-all cursor-pointer flex items-center gap-2"
+              >
+                {isEndingContract ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Disconnecting...</span>
+                  </>
+                ) : (
+                  <span>Yes, Turn Off Contract</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Fleet Driver Modal */}
+      {isAddDriverModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden space-y-6 p-6 sm:p-7 text-left">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Add Company Fleet Driver</h3>
+                <p className="text-xs text-slate-400 font-medium">Register a driver to assign to routes in the Route Planner</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddDriverModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddFleetDriverSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Driver Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Michael Scott"
+                  value={newDriverForm.name}
+                  onChange={(e) => setNewDriverForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Phone Number</label>
+                  <PhoneInput
+                    country={'us'}
+                    value={newDriverForm.phone}
+                    onChange={(val) => setNewDriverForm(prev => ({ ...prev, phone: val }))}
+                    inputStyle={{
+                      width: '100%',
+                      height: '38px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      backgroundColor: '#f8fafc',
+                      borderColor: '#e2e8f0',
+                      borderRadius: '0.75rem',
+                      paddingLeft: '44px',
+                      color: '#1e293b'
+                    }}
+                    buttonStyle={{
+                      backgroundColor: '#f8fafc',
+                      borderColor: '#e2e8f0',
+                      borderTopLeftRadius: '0.75rem',
+                      borderBottomLeftRadius: '0.75rem',
+                      paddingLeft: '2px'
+                    }}
+                    dropdownStyle={{
+                      borderRadius: '0.75rem',
+                      zIndex: 1000
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="e.g. driver@company.com"
+                    value={newDriverForm.email}
+                    onChange={(e) => setNewDriverForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Vehicle Class</label>
+                <select
+                  value={newDriverForm.vehicle}
+                  onChange={(e) => setNewDriverForm(prev => ({ ...prev, vehicle: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
+                >
+                  <option value="Cargo Van">Cargo Van</option>
+                  <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
+                  <option value="16ft Box Truck">16ft Box Truck</option>
+                  <option value="26ft Box Truck">26ft Box Truck</option>
+                  <option value="Sedan / Hatchback">Sedan / Hatchback</option>
+                  <option value="Minivan / SUV">Minivan / SUV</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">City</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Houston"
+                    value={newDriverForm.city}
+                    onChange={(e) => setNewDriverForm(prev => ({ ...prev, city: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">State Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. TX"
+                    value={newDriverForm.state}
+                    onChange={(e) => setNewDriverForm(prev => ({ ...prev, state: e.target.value.toUpperCase() }))}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="cdlCheck"
+                  checked={newDriverForm.cdl}
+                  onChange={(e) => setNewDriverForm(prev => ({ ...prev, cdl: e.target.checked }))}
+                  className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
+                />
+                <label htmlFor="cdlCheck" className="text-xs font-bold text-slate-700 cursor-pointer">
+                  Driver holds CDL Certification
+                </label>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddDriverModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer"
+                >
+                  Save Fleet Driver
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Active Driver Info Modal Popup */}
       {activeDriverModal && (

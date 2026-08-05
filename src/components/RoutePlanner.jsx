@@ -4,6 +4,7 @@ import { supabase, createNotification } from "../lib/supabase";
 import { mockDrivers } from "../data/mockDrivers";
 import PhoneInputPkg from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
+import { Link } from 'react-router-dom';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import {
@@ -379,7 +380,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
   const loadRouteIntoPlanner = (route) => {
     if (!route || !route.stops) return;
-    
+
     // 1. Reconstruct stops
     const stopsWithZones = route.stops.map(s => ({
       id: s.id || `stop-${Math.random()}`,
@@ -423,10 +424,10 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
     // 4. Set rest of UI states
     setSelectedHistoryId(route.id);
     setExpandedHistoryId(route.id);
-    
+
     const hasAssignments = reconstructedZones.length > 0 || route.stops.some(s => s.driverId);
     setWizardStep(hasAssignments ? 3 : 1);
-    
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -554,7 +555,16 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           const activeDriverNames = Array.from(new Set(preparedStops.map(s => s.driverName).filter(Boolean)));
           masterDriverName = activeDriverNames.length > 0 ? activeDriverNames.join(', ') : 'Multiple Drivers';
         } else if (assignedDriverId) {
-          const matchingSpare = spares.find(d => d.id === assignedDriverId);
+          const allDrivers = [
+            ...companyFleetDrivers.map(f => ({
+              id: f.id,
+              first_name: f.name.split(' ')[0] || f.name,
+              last_name: f.name.split(' ').slice(1).join(' ') || '',
+              phone: f.phone
+            })),
+            ...spares
+          ];
+          const matchingSpare = allDrivers.find(d => d.id === assignedDriverId);
           if (matchingSpare) masterDriverName = `${matchingSpare.first_name} ${matchingSpare.last_name}`;
         }
       }
@@ -624,7 +634,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
       setSelectedHistoryId(newRoute.id);
       setExpandedHistoryId(newRoute.id);
       setRouteSavedModal({ isOpen: true, route: newRoute });
-      
+
       // Reset planner states and return to Step 1
       setStops([]);
       setRouteGeo(null);
@@ -660,6 +670,50 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
   // Load registered drivers from supabase database
   const [spares, setSpares] = useState([]);
+  const [companyFleetDrivers, setCompanyFleetDrivers] = useState([]);
+
+  useEffect(() => {
+    async function loadFleetDrivers() {
+      try {
+        if (currentUser?.id) {
+          const { data, error } = await supabase
+            .from('company_drivers')
+            .select('*')
+            .eq('company_id', currentUser.id)
+            .or('status.eq.ACTIVE,status.is.null');
+
+          if (!error && data && data.length > 0) {
+            const mapped = data.map(d => ({
+              id: d.id,
+              name: d.full_name || d.name,
+              phone: d.phone,
+              email: d.email,
+              vehicle: d.vehicle_type || d.vehicle || 'Cargo Van',
+              city: d.city || 'Houston',
+              state: d.state_code || d.state || 'TX',
+              cdl: Boolean(d.has_cdl ?? d.cdl)
+            }));
+            setCompanyFleetDrivers(mapped);
+            return;
+          }
+        }
+
+        const stored = localStorage.getItem(`rk9_company_fleet_${currentUser?.id || 'default'}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setCompanyFleetDrivers(parsed || []);
+          return;
+        }
+      } catch (e) {
+        console.warn("Error reading fleet drivers in RoutePlanner:", e);
+      }
+      setCompanyFleetDrivers([]);
+    }
+
+    loadFleetDrivers();
+    window.addEventListener('rk9_fleet_updated', loadFleetDrivers);
+    return () => window.removeEventListener('rk9_fleet_updated', loadFleetDrivers);
+  }, [currentUser]);
 
   useEffect(() => {
     async function loadRealDrivers() {
@@ -669,29 +723,29 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           .select('id, full_name, email, phone, city, state_code, vehicle')
           .eq('role', 'driver');
         if (!error && data) {
-           const mapped = data.map(d => {
-             let firstName = 'Driver';
-             let lastName = '';
-             if (d.full_name && d.full_name.trim()) {
-               const names = d.full_name.trim().split(' ');
-               firstName = names[0];
-               lastName = names.slice(1).join(' ');
-             } else if (d.email) {
-               firstName = d.email.split('@')[0];
-             }
-             return {
-               id: d.id,
-               first_name: firstName,
-               last_name: lastName,
-               phone: d.phone || '555-0199',
-               city: d.city || 'Houston',
-               state: d.state_code || 'TX',
-               lat: 39.5,
-               lon: -98.35,
-               email: d.email,
-               isReal: true
-             };
-           });
+          const mapped = data.map(d => {
+            let firstName = 'Driver';
+            let lastName = '';
+            if (d.full_name && d.full_name.trim()) {
+              const names = d.full_name.trim().split(' ');
+              firstName = names[0];
+              lastName = names.slice(1).join(' ');
+            } else if (d.email) {
+              firstName = d.email.split('@')[0];
+            }
+            return {
+              id: d.id,
+              first_name: firstName,
+              last_name: lastName,
+              phone: d.phone || '555-0199',
+              city: d.city || 'Houston',
+              state: d.state_code || 'TX',
+              lat: 39.5,
+              lon: -98.35,
+              email: d.email,
+              isReal: true
+            };
+          });
           setSpares(mapped);
         }
       } catch (err) {
@@ -737,8 +791,8 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   const [zonesOpen, setZonesOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [joinForm, setJoinForm] = useState({
-    first_name: "",
-    last_name: "",
+    full_name: "",
+    email: "",
     phone: "",
     city: "",
     state: "",
@@ -746,6 +800,157 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   });
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinMsg, setJoinMsg] = useState(null);
+
+  const handleQuickAddFleetDriverSubmit = async (e) => {
+    e.preventDefault();
+    const driverName = (joinForm.full_name || '').trim();
+    if (!driverName) {
+      setJoinMsg("❌ Please enter driver full name.");
+      return;
+    }
+
+    const enteredEmail = (joinForm.email || '').trim().toLowerCase();
+    if (!enteredEmail) {
+      setJoinMsg("❌ Please enter a valid email address.");
+      return;
+    }
+
+    setJoinBusy(true);
+    setJoinMsg(null);
+
+    const formattedPhone = joinForm.phone ? (joinForm.phone.startsWith('+') ? joinForm.phone : `+${joinForm.phone}`) : '+1 (555) 000-0000';
+
+    // ── 1. VALIDATION: Check if email is registered as a Company account ───────
+    try {
+      const { data: profileCheck } = await supabase
+        .from('profiles')
+        .select('id, role, full_name, email')
+        .eq('email', enteredEmail)
+        .maybeSingle();
+
+      if (profileCheck && (profileCheck.role === 'company' || profileCheck.role === 'Company')) {
+        setJoinBusy(false);
+        setJoinMsg(`❌ Invalid Driver Email: "${enteredEmail}" belongs to a registered Company account.`);
+        return;
+      }
+
+      // ── 2. VALIDATION: Check if email belongs to a Registered Driver ──────────
+      const isRegisteredDriver = profileCheck && (profileCheck.role === 'driver' || profileCheck.role === 'Driver');
+
+      if (isRegisteredDriver) {
+        // Driver exists in system! Send Fleet Invitation & Notification
+        const companyName = currentUser?.name || currentUser?.company_name || 'Courier Logistics';
+
+        // Insert pending invitation in company_drivers
+        const pendingPayload = {
+          company_id: currentUser?.id || null,
+          driver_id: profileCheck.id,
+          full_name: driverName || profileCheck.full_name,
+          phone: formattedPhone,
+          email: enteredEmail,
+          vehicle_type: 'Cargo Van',
+          city: joinForm.city.trim() || 'Houston',
+          state_code: joinForm.state.trim() || 'TX',
+          has_cdl: false,
+          status: 'PENDING_APPROVAL',
+          created_at: new Date().toISOString()
+        };
+
+        await supabase.from('company_drivers').insert([pendingPayload]);
+
+        // Send Inbox Notification to Driver
+        await createNotification({
+          userId: profileCheck.id,
+          companyId: currentUser?.id || null,
+          title: `Fleet Join Invitation from ${companyName}`,
+          message: `${companyName} has invited you to join their company fleet as a registered driver. Please respond to this invitation in your inbox.`,
+          category: 'FLEET_INVITE',
+          unread: true,
+          important: true,
+          actionUrl: '/dashboard?tab=inbox',
+          actionText: 'View Invitation'
+        });
+
+        setJoinBusy(false);
+        setJoinMsg(`📩 Fleet Invitation sent to registered driver (${enteredEmail})! They will appear in your fleet list as soon as they accept the invitation in their inbox.`);
+        setJoinForm({
+          full_name: "",
+          email: "",
+          phone: "",
+          city: "",
+          state: "",
+          share_gps: false,
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn("Validation error during fleet driver add:", err);
+    }
+
+    // ── 3. OFFLINE / NEW DRIVER: Direct Add to Fleet ──────────────────────────
+    const tempId = `fleet_${Date.now()}`;
+    const newDriver = {
+      id: tempId,
+      name: driverName,
+      phone: formattedPhone,
+      email: enteredEmail,
+      vehicle: 'Cargo Van',
+      city: joinForm.city.trim() || 'Houston',
+      state: joinForm.state.trim() || 'TX',
+      cdl: false
+    };
+
+    const updatedFleet = [newDriver, ...companyFleetDrivers];
+    setCompanyFleetDrivers(updatedFleet);
+    setAssignedDriverId(tempId);
+    if (dispatchError && dispatchError.type === 'entire') {
+      setDispatchError(null);
+    }
+
+    try {
+      localStorage.setItem(`rk9_company_fleet_${currentUser?.id || 'default'}`, JSON.stringify(updatedFleet));
+      window.dispatchEvent(new Event('rk9_fleet_updated'));
+    } catch (err) {
+      console.warn("LocalStorage save error:", err);
+    }
+
+    try {
+      const payload = {
+        company_id: currentUser?.id || null,
+        full_name: driverName,
+        phone: newDriver.phone,
+        email: newDriver.email,
+        vehicle_type: newDriver.vehicle,
+        city: newDriver.city,
+        state_code: newDriver.state,
+        has_cdl: false,
+        status: 'ACTIVE',
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase.from('company_drivers').insert([payload]).select();
+      if (!error && data && data[0]?.id) {
+        const synced = updatedFleet.map(d => d.id === tempId ? { ...d, id: data[0].id } : d);
+        setCompanyFleetDrivers(synced);
+        setAssignedDriverId(data[0].id);
+        localStorage.setItem(`rk9_company_fleet_${currentUser?.id || 'default'}`, JSON.stringify(synced));
+      }
+    } catch (dbErr) {
+      console.warn("Supabase database quick driver save warning:", dbErr);
+    } finally {
+      setJoinBusy(false);
+      setJoinMsg(`✅ Driver "${driverName}" saved to database & selected for assignment!`);
+      setJoinForm({
+        full_name: "",
+        email: "",
+        phone: "",
+        city: "",
+        state: "",
+        share_gps: false,
+      });
+      setTimeout(() => setJoinMsg(null), 5000);
+    }
+  };
 
   const isMobile =
     typeof navigator !== "undefined" &&
@@ -1986,6 +2191,120 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
               {/* STEP 3: Zones & Driver Dispatch */}
               {(showAllPanels || wizardStep === 3) && (
                 <div className="space-y-4">
+                  {/* Quick Add Fleet Driver (Company Only) */}
+                  {isCompany && (
+                    <div className="rounded-3xl border border-rose-200/80 bg-white p-5 shadow-sm space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => setContactOpen((o) => !o)}
+                        className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+                          </span>
+                          <div>
+                            <span className="text-base font-extrabold text-[#0b132b]">Quick Add Fleet Driver</span>
+                            <div className="text-[11px] text-slate-500 font-medium">Add a driver directly to your company fleet and assign them immediately</div>
+                          </div>
+                        </div>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className={`text-primary/60 transition-transform ${contactOpen ? "rotate-180" : ""}`}
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+
+                      {contactOpen && (
+                        <div className="mt-3 pt-3 border-t border-slate-100">
+                          <form onSubmit={handleQuickAddFleetDriverSubmit} className="grid gap-2.5">
+                            <input
+                              required
+                              placeholder="Driver Full Name *"
+                              value={joinForm.full_name || ''}
+                              onChange={(e) => setJoinForm((f) => ({ ...f, full_name: e.target.value }))}
+                              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                            />
+
+                            <input
+                              required
+                              type="email"
+                              placeholder="Driver Email Address (e.g. driver@email.com) *"
+                              value={joinForm.email || ''}
+                              onChange={(e) => setJoinForm((f) => ({ ...f, email: e.target.value }))}
+                              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                            />
+                            <PhoneInput
+                              country={'us'}
+                              value={joinForm.phone}
+                              onChange={(val) => setJoinForm((f) => ({ ...f, phone: val }))}
+                              inputStyle={{
+                                width: '100%',
+                                height: '38px',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                backgroundColor: '#f8fafc',
+                                borderColor: '#e2e8f0',
+                                borderRadius: '0.75rem',
+                                paddingLeft: '44px',
+                                color: '#1e293b'
+                              }}
+                              buttonStyle={{
+                                backgroundColor: '#f8fafc',
+                                borderColor: '#e2e8f0',
+                                borderTopLeftRadius: '0.75rem',
+                                borderBottomLeftRadius: '0.75rem',
+                                paddingLeft: '2px'
+                              }}
+                              dropdownStyle={{
+                                borderRadius: '0.75rem',
+                                zIndex: 1000
+                              }}
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                placeholder="City (e.g. Houston)"
+                                value={joinForm.city}
+                                onChange={(e) => setJoinForm((f) => ({ ...f, city: e.target.value }))}
+                                className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                              />
+                              <input
+                                placeholder="State (e.g. TX)"
+                                maxLength={20}
+                                value={joinForm.state}
+                                onChange={(e) => setJoinForm((f) => ({ ...f, state: e.target.value }))}
+                                className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
+                              />
+                            </div>
+
+                            <button
+                              type="submit"
+                              disabled={joinBusy}
+                              className="mt-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 text-xs font-extrabold shadow-md shadow-rose-600/20 disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
+                            >
+                              <span>{joinBusy ? "Saving to Database…" : "Save Driver to Company Fleet"}</span>
+                            </button>
+
+                            {joinMsg && (
+                              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-800 font-bold shadow-2xs">
+                                {joinMsg}
+                              </div>
+                            )}
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {stops.length > 0 && (
                     <>
                       {isDriver ? (
@@ -2034,18 +2353,37 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                                       setDispatchError(null);
                                     }
                                   }}
+                                  disabled={companyFleetDrivers.length === 0}
                                   className={`w-full rounded-xl border px-3 py-2 text-xs font-semibold text-primary focus:outline-none transition-all ${dispatchError && dispatchError.type === 'entire'
                                     ? 'border-rose-600 bg-rose-50/20 ring-1 ring-rose-600'
                                     : 'border-slate-200 bg-white'
                                     }`}
                                 >
-                                  <option value="">— Select Driver —</option>
-                                  {spares.map(d => (
-                                    <option key={d.id} value={d.id}>
-                                      {d.first_name} {d.last_name} ({d.city}, {d.state})
-                                    </option>
-                                  ))}
+                                  {companyFleetDrivers.length > 0 ? (
+                                    <>
+                                      <option value="">— Select Driver —</option>
+                                      {companyFleetDrivers.map(d => (
+                                        <option key={d.id} value={d.id}>
+                                          {d.name} ({d.vehicle || 'Fleet Driver'}) — {d.city}, {d.state}
+                                        </option>
+                                      ))}
+                                    </>
+                                  ) : (
+                                    <option value="">— No company fleet drivers added —</option>
+                                  )}
                                 </select>
+
+                                {companyFleetDrivers.length === 0 && (
+                                  <div className="p-3.5 bg-amber-50 border border-amber-200/90 rounded-2xl text-xs text-amber-900 font-bold space-y-1 mt-2 shadow-2xs">
+                                    <div className="flex items-center gap-1.5 text-amber-800">
+                                      <span>⚠️ No Fleet Drivers Added Yet</span>
+                                    </div>
+                                    <div className="text-[11px] font-normal text-amber-800 leading-relaxed">
+                                      You haven't registered any fleet drivers for your company. Please go to <Link to="/dashboard" className="underline font-extrabold text-amber-950 hover:text-amber-900">Dashboard → My Fleet & Drivers</Link> to add your drivers so you can assign them to this route.
+                                    </div>
+                                  </div>
+                                )}
+
                                 {dispatchError && dispatchError.type === 'entire' && (
                                   <div className="text-[10px] text-rose-600 font-extrabold mt-1.5 animate-pulse flex items-center gap-1">
                                     <span>⚠️</span>
@@ -2182,52 +2520,78 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                                         </button>
                                       </div>
                                       <div className="mt-2.5 space-y-2">
-                                        {spares.length > 0 && (
-                                          <div>
-                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                              Assign Driver
-                                            </label>
-                                            <select
-                                              value={z.driverId ?? z.driverPhone ?? ""}
-                                              onChange={(e) => {
-                                                const selected = spares.find((d) => d.id === e.target.value || d.phone === e.target.value);
-                                                if (selected) {
-                                                  updateZone(z.id, {
-                                                    driverName: `${selected.first_name} ${selected.last_name}`,
-                                                    driverPhone: selected.phone,
-                                                    driverId: selected.id,
-                                                  });
-                                                  if (dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id) {
-                                                    setDispatchError(null);
-                                                  }
-                                                } else {
-                                                  updateZone(z.id, {
-                                                    driverName: "",
-                                                    driverPhone: "",
-                                                    driverId: null,
-                                                  });
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                            Assign Driver
+                                          </label>
+                                          <select
+                                            value={z.driverId ?? z.driverPhone ?? ""}
+                                            onChange={(e) => {
+                                              const availableList = isCompany
+                                                ? companyFleetDrivers.map(f => ({ id: f.id, first_name: f.name, last_name: '', phone: f.phone }))
+                                                : spares;
+                                              const selected = availableList.find((d) => d.id === e.target.value || d.phone === e.target.value);
+                                              if (selected) {
+                                                updateZone(z.id, {
+                                                  driverName: `${selected.first_name} ${selected.last_name}`.trim(),
+                                                  driverPhone: selected.phone,
+                                                  driverId: selected.id,
+                                                });
+                                                if (dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id) {
+                                                  setDispatchError(null);
                                                 }
-                                              }}
-                                              className={`w-full rounded border px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white transition-all ${dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id
-                                                ? 'border-rose-600 bg-rose-50/20 ring-1 ring-rose-600'
-                                                : 'border-border bg-slate-50'
-                                                }`}
-                                            >
-                                              <option value="">— Select Registered Driver —</option>
-                                              {spares.map((d) => (
-                                                <option key={d.id} value={d.id}>
-                                                  {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
-                                                </option>
-                                              ))}
-                                            </select>
-                                            {dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id && (
-                                              <div className="text-[9px] text-rose-600 font-extrabold mt-1 animate-pulse flex items-center gap-1">
-                                                <span>⚠️</span>
-                                                <span>{dispatchError.message}</span>
-                                              </div>
+                                              } else {
+                                                updateZone(z.id, {
+                                                  driverName: "",
+                                                  driverPhone: "",
+                                                  driverId: null,
+                                                });
+                                              }
+                                            }}
+                                            disabled={isCompany && companyFleetDrivers.length === 0}
+                                            className={`w-full rounded border px-2 py-1.5 text-xs font-semibold text-primary focus:bg-white transition-all ${dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id
+                                              ? 'border-rose-600 bg-rose-50/20 ring-1 ring-rose-600'
+                                              : 'border-border bg-slate-50'
+                                              }`}
+                                          >
+                                            {isCompany ? (
+                                              companyFleetDrivers.length > 0 ? (
+                                                <>
+                                                  <option value="">— Select Company Fleet Driver —</option>
+                                                  {companyFleetDrivers.map((d) => (
+                                                    <option key={d.id} value={d.id}>
+                                                      ⭐ {d.name} ({d.vehicle || 'Fleet'}) — {d.phone}
+                                                    </option>
+                                                  ))}
+                                                </>
+                                              ) : (
+                                                <option value="">— No company fleet drivers added —</option>
+                                              )
+                                            ) : (
+                                              <>
+                                                <option value="">— Select Registered Driver —</option>
+                                                {spares.map((d) => (
+                                                  <option key={d.id} value={d.id}>
+                                                    {d.first_name} {d.last_name} ({d.city}, {d.state}) — {d.phone}
+                                                  </option>
+                                                ))}
+                                              </>
                                             )}
-                                          </div>
-                                        )}
+                                          </select>
+
+                                          {isCompany && companyFleetDrivers.length === 0 && (
+                                            <div className="text-[10px] text-amber-800 font-bold bg-amber-50 border border-amber-200/90 rounded-lg p-2 mt-1">
+                                              ⚠️ No fleet drivers added yet. Add drivers in <Link to="/dashboard" className="underline font-extrabold text-amber-950">Dashboard → My Fleet & Drivers</Link>.
+                                            </div>
+                                          )}
+
+                                          {dispatchError && dispatchError.type === 'zone' && dispatchError.zoneId === z.id && (
+                                            <div className="text-[9px] text-rose-600 font-extrabold mt-1 animate-pulse flex items-center gap-1">
+                                              <span>⚠️</span>
+                                              <span>{dispatchError.message}</span>
+                                            </div>
+                                          )}
+                                        </div>
 
                                         <div className="grid grid-cols-2 gap-2">
                                           <input
@@ -2466,125 +2830,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                     )}
                   </div>
 
-                  {/* Need help / Spare drivers */}
-                  <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-                    <button
-                      type="button"
-                      onClick={() => setContactOpen((o) => !o)}
-                      className="flex w-full items-center justify-between gap-3 text-left cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-rose-600">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-                        </span>
-                        <span className="text-base font-bold text-primary">Driver contact</span>
-                        <span className="text-xs text-slate-400">(optional)</span>
-                      </div>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className={`text-primary/60 transition-transform ${contactOpen ? "rotate-180" : ""}`}
-                      >
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </button>
-                    {contactOpen && (
-                      <div className="mt-3">
-                        <div className="text-xs text-slate-500 font-medium">
-                          So a replacement driver can reach you if you need help. We never share this publicly.
-                        </div>
-                        <form onSubmit={submitJoin} className="mt-3 grid gap-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              required
-                              placeholder="First name"
-                              value={joinForm.first_name}
-                              onChange={(e) => setJoinForm((f) => ({ ...f, first_name: e.target.value }))}
-                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                            />
-                            <input
-                              required
-                              placeholder="Last name"
-                              value={joinForm.last_name}
-                              onChange={(e) => setJoinForm((f) => ({ ...f, last_name: e.target.value }))}
-                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                            />
-                          </div>
-                          <PhoneInput
-                            country={'us'}
-                            value={joinForm.phone}
-                            onChange={(val) => setJoinForm((f) => ({ ...f, phone: val }))}
-                            inputStyle={{
-                              width: '100%',
-                              height: '38px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              backgroundColor: '#f8fafc',
-                              borderColor: '#e2e8f0',
-                              borderRadius: '0.75rem',
-                              paddingLeft: '44px',
-                              color: '#1e293b'
-                            }}
-                            buttonStyle={{
-                              backgroundColor: '#f8fafc',
-                              borderColor: '#e2e8f0',
-                              borderTopLeftRadius: '0.75rem',
-                              borderBottomLeftRadius: '0.75rem',
-                              paddingLeft: '2px'
-                            }}
-                            dropdownStyle={{
-                              borderRadius: '0.75rem',
-                              zIndex: 1000
-                            }}
-                          />
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              required
-                              placeholder="City"
-                              value={joinForm.city}
-                              onChange={(e) => setJoinForm((f) => ({ ...f, city: e.target.value }))}
-                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                            />
-                            <input
-                              required
-                              placeholder="State"
-                              maxLength={20}
-                              value={joinForm.state}
-                              onChange={(e) => setJoinForm((f) => ({ ...f, state: e.target.value }))}
-                              className="rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-semibold focus:bg-white outline-none focus:border-rose-500"
-                            />
-                          </div>
-                          <label className="flex items-center gap-2 text-[11px] text-slate-500 font-semibold cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={joinForm.share_gps}
-                              onChange={(e) => setJoinForm((f) => ({ ...f, share_gps: e.target.checked }))}
-                            />
-                            Share my current GPS so drivers can find me faster
-                          </label>
-                          <button
-                            type="submit"
-                            disabled={joinBusy}
-                            className="mt-1 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white px-4 py-2.5 text-xs font-bold shadow-xs disabled:opacity-60 cursor-pointer"
-                          >
-                            {joinBusy ? "Submitting…" : "Save my contact info"}
-                          </button>
-                          {joinMsg && (
-                            <div className="rounded-md border border-border bg-slate-50 px-3 py-2 text-[11px] text-slate-700 font-semibold">
-                              {joinMsg}
-                            </div>
-                          )}
-                        </form>
-                      </div>
-                    )}
-                  </div>
+
 
                   {/* Big "Need help — call a spare driver" CTA */}
                   <button

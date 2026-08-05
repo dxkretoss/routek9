@@ -154,26 +154,44 @@ export async function fetchDriverCertifications(driverId) {
   }
 }
 
-// 4. Notification Helpers
 export async function createNotification(notifData) {
   try {
-    const { data, error } = await supabase
+    const payload = {
+      user_id: notifData.userId || null,
+      title: notifData.title,
+      message: notifData.message,
+      category: notifData.category || 'System',
+      unread: notifData.unread ?? true,
+      important: notifData.important ?? false,
+      action_url: notifData.actionUrl || null,
+      action_text: notifData.actionText || null,
+      created_at: new Date().toISOString()
+    };
+
+    if (notifData.companyId) {
+      payload.company_id = notifData.companyId;
+    }
+
+    let { data, error } = await supabase
       .from('notifications')
-      .insert([{
-        user_id: notifData.userId || null,
-        title: notifData.title,
-        message: notifData.message,
-        category: notifData.category || 'System',
-        unread: notifData.unread ?? true,
-        important: notifData.important ?? false,
-        action_url: notifData.actionUrl || null,
-        action_text: notifData.actionText || null,
-        created_at: new Date().toISOString()
-      }])
+      .insert([payload])
       .select('*');
 
-    if (error) throw error;
-    return { success: true, data: data[0] };
+    if (error && (error.code === 'PGRST204' || error.message?.includes('company_id'))) {
+      delete payload.company_id;
+      const res = await supabase
+        .from('notifications')
+        .insert([payload])
+        .select('*');
+      data = res.data;
+      error = res.error;
+    }
+
+    if (error) {
+      console.warn("createNotification notice:", error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true, data: data ? data[0] : null };
   } catch (err) {
     console.warn("createNotification notice:", err.message);
     return { success: false, error: err.message };
