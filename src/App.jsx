@@ -271,6 +271,9 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         syncSupabaseProfile(session.user);
+      } else if (currentUser?.email || currentUser?.id) {
+        // Also sync profile & PRO status if user is restored from cookie session
+        syncSupabaseProfile({ id: currentUser.id, email: currentUser.email });
       }
     });
 
@@ -298,24 +301,37 @@ export default function App() {
 
   const syncSupabaseProfile = async (supabaseUser) => {
     try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', supabaseUser.id)
-        .single();
+      const userEmail = (supabaseUser.email || '').trim().toLowerCase();
+      const userIdStr = String(supabaseUser.id || '').toLowerCase();
+
+      let profile = null;
+      if (supabaseUser.id) {
+        const { data: pData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', supabaseUser.id)
+          .maybeSingle();
+        profile = pData;
+      }
+      if (!profile && userEmail) {
+        const { data: pData } = await supabase
+          .from('profiles')
+          .select('*')
+          .ilike('email', userEmail)
+          .maybeSingle();
+        profile = pData;
+      }
 
       // Deactivation Enforcement Check
       const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]').map(i => String(i).toLowerCase());
-      const lowerEmail = (supabaseUser.email || '').toLowerCase();
-      const userIdStr = String(supabaseUser.id).toLowerCase();
 
       const isDeactivated =
         profile?.status === 'INACTIVE' ||
         profile?.status === 'DEACTIVATED' ||
         profile?.is_active === false ||
         profile?.isactive === false ||
-        deactivatedList.includes(lowerEmail) ||
-        deactivatedList.includes(userIdStr);
+        deactivatedList.includes(userEmail) ||
+        (userIdStr && deactivatedList.includes(userIdStr));
 
       if (isDeactivated) {
         console.warn("Account deactivated by administrator. Signing out immediately.");
@@ -333,17 +349,17 @@ export default function App() {
       }
 
       const userRole = profile?.role || supabaseUser.user_metadata?.role || 'driver';
-      let userName = profile?.full_name || supabaseUser.user_metadata?.full_name || (supabaseUser.email ? supabaseUser.email.split('@')[0] : 'User');
-      if (userName === 'Jane A. Driver' && supabaseUser.email && supabaseUser.email !== 'driver@routek9.com') {
-        userName = supabaseUser.user_metadata?.full_name || supabaseUser.email.split('@')[0];
+      let userName = profile?.full_name || supabaseUser.user_metadata?.full_name || (userEmail ? userEmail.split('@')[0] : 'User');
+      if (userName === 'Jane A. Driver' && userEmail && userEmail !== 'driver@routek9.com') {
+        userName = supabaseUser.user_metadata?.full_name || userEmail.split('@')[0];
       }
 
       // Create profile row if it doesn't exist yet (e.g. Google OAuth)
-      if (!profile) {
+      if (!profile && supabaseUser.id && userEmail) {
         try {
           const { error: upsertErr } = await supabase.from('profiles').upsert({
             id: supabaseUser.id,
-            email: supabaseUser.email,
+            email: userEmail,
             full_name: userName,
             role: userRole,
             updated_at: new Date().toISOString()
@@ -376,8 +392,8 @@ export default function App() {
         }
       }
 
-      let isPro = false;
-      let subscriptionPlan = 'free';
+      let isPro = Boolean(profile?.is_pro || profile?.ispro || profile?.isPro);
+      let subscriptionPlan = isPro ? 'pro' : 'free';
       let subscribedAt = null;
       let nextRenewal = null;
 
@@ -388,9 +404,9 @@ export default function App() {
 
         if (txs && !txError) {
           const userSubs = txs.filter(tx => 
-            String(tx.user_id) === String(supabaseUser.id) && 
             tx.status === 'Succeeded' && 
-            (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro'))
+            (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
+            ((tx.user_id && String(tx.user_id).toLowerCase() === userIdStr) || (tx.email && userEmail && tx.email.toLowerCase() === userEmail))
           );
 
           if (userSubs.length > 0) {
@@ -415,9 +431,9 @@ export default function App() {
       setCurrentUser((prev) => {
         const updated = {
           ...(prev || {}),
-          id: supabaseUser.id,
+          id: supabaseUser.id || profile?.id || prev?.id,
           name: profile?.full_name || userName,
-          email: profile?.email || supabaseUser.email,
+          email: profile?.email || userEmail || prev?.email,
           role: userRole,
           vehicle: profile?.vehicle || prev?.vehicle || (userRole === 'driver' ? 'Cargo Van' : 'Company Fleet'),
           stateCode: profile?.state_code || prev?.stateCode || '',

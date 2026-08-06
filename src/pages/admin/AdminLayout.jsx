@@ -16,7 +16,8 @@ import {
   DollarSign,
   Activity,
   HelpCircle,
-  Package
+  Package,
+  ShieldCheck
 } from 'lucide-react';
 
 import AdminLoginPage from './AdminLoginPage';
@@ -28,12 +29,14 @@ import AdminExamQuestions from './AdminExamQuestions';
 import AdminDispatchOrders from './AdminDispatchOrders';
 import AdminRevenue from './AdminRevenue';
 import AdminSettings from './AdminSettings';
+import AdminGovContracts from './AdminGovContracts';
 
 // ─── SIDEBAR NAV CONFIG ─────────────────────────────────────────
 const SIDEBAR_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'drivers', label: 'Driver List', icon: Truck },
   { key: 'companies', label: 'Company List', icon: Building2 },
+  { key: 'gov_contracts', label: 'Gov Contracts', icon: ShieldCheck },
   { key: 'dispatch_orders', label: 'Dispatch Orders', icon: Package },
   { key: 'courses', label: 'Courses', icon: BookOpen },
   { key: 'exam_questions', label: 'Exam Questions', icon: HelpCircle },
@@ -337,6 +340,8 @@ export default function AdminLayout({ currentUser, onLogout }) {
         return <AdminDriverList users={getFilteredItems(drivers)} {...listProps} />;
       case 'companies':
         return <AdminCompanyList users={getFilteredItems(companies)} {...listProps} />;
+      case 'gov_contracts':
+        return <AdminGovContracts />;
       case 'courses':
         return <AdminCourses />;
       case 'exam_questions':
