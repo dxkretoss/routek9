@@ -150,9 +150,16 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
                 <div className="space-y-3">
                   {course.outline && course.outline.map((mod, idx) => {
                     const isExpanded = expandedModules[idx];
+                    const moduleTitle = typeof mod === 'string' ? mod : (mod.moduleTitle || mod.title || `Module ${idx + 1}`);
+                    const bodyText = typeof mod === 'object' ? mod.body : null;
+                    const lessonsList = typeof mod === 'object'
+                      ? (Array.isArray(mod.lessons) ? mod.lessons : (Array.isArray(mod.steps) ? mod.steps : []))
+                      : [];
+
                     return (
                       <div key={idx} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
                         <button
+                          type="button"
                           onClick={() => toggleModule(idx)}
                           className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors cursor-pointer"
                         >
@@ -161,7 +168,7 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
                               Module 0{mod.moduleNumber || idx + 1}
                             </div>
                             <div className="text-sm font-bold text-[#0b132b]">
-                              {mod.moduleTitle}
+                              {moduleTitle}
                             </div>
                           </div>
                           {isExpanded ? (
@@ -171,14 +178,24 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
                           )}
                         </button>
 
-                        {isExpanded && mod.lessons && (
-                          <div className="px-5 pb-5 pt-1 border-t border-slate-100 bg-slate-50/50 space-y-2">
-                            {mod.lessons.map((lesson, lIdx) => (
-                              <div key={lIdx} className="flex items-start gap-2 text-xs text-slate-600 font-medium">
-                                <span className="text-rose-500 font-bold">•</span>
-                                <span>{lesson}</span>
+                        {isExpanded && (
+                          <div className="px-5 pb-5 pt-3 border-t border-slate-100 bg-slate-50/50 space-y-3">
+                            {bodyText && (
+                              <p className="text-xs text-slate-700 font-medium leading-relaxed">
+                                {bodyText}
+                              </p>
+                            )}
+
+                            {lessonsList.length > 0 && (
+                              <div className="space-y-2 pt-1">
+                                {lessonsList.map((lesson, lIdx) => (
+                                  <div key={lIdx} className="flex items-start gap-2.5 text-xs text-slate-600 font-medium bg-white p-2.5 rounded-xl border border-slate-200/60">
+                                    <span className="text-rose-600 font-extrabold shrink-0">•</span>
+                                    <span>{typeof lesson === 'string' ? lesson : (lesson.title || lesson.body || JSON.stringify(lesson))}</span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
                           </div>
                         )}
                       </div>

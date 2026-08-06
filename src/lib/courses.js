@@ -9,25 +9,44 @@ export const DEFAULT_COURSE_IMAGES = {
   "courier-dispatcher": "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?auto=format&fit=crop&w=1600&q=80"
 };
 
-
-
 // Format DB record to course object
 function formatCourse(c, index) {
   const imageUrl = c.image_url || c.image || DEFAULT_COURSE_IMAGES[c.id] || "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1600&q=80";
+
+  let parsedLessons = [];
+  if (Array.isArray(c.lessons) && c.lessons.length > 0) {
+    parsedLessons = c.lessons;
+  } else if (typeof c.lessons === 'string') {
+    try { parsedLessons = JSON.parse(c.lessons); } catch (e) {}
+  } else if (Array.isArray(c.outline) && c.outline.length > 0) {
+    parsedLessons = c.outline;
+  } else if (typeof c.outline === 'string') {
+    try { parsedLessons = JSON.parse(c.outline); } catch (e) {}
+  }
+
+  let parsedOutcomes = [];
+  if (Array.isArray(c.outcomes) && c.outcomes.length > 0) {
+    parsedOutcomes = c.outcomes;
+  } else if (typeof c.outcomes === 'string') {
+    try { parsedOutcomes = JSON.parse(c.outcomes); } catch (e) {}
+  }
 
   return {
     id: c.id || `c-${index + 1}`,
     number: index + 1,
     title: c.title,
-    subtitle: c.subtitle || c.description,
-    description: c.description || c.subtitle,
+    subtitle: c.subtitle || c.description || c.summary,
+    summary: c.summary || c.subtitle || c.description,
+    description: c.description || c.subtitle || c.summary,
     price: c.price || 49,
-    projectedPay: c.projected_pay || c.projectedPay || "$50,000 – $150,000+ / year",
+    projectedPay: c.projected_pay || c.projectedPay || c.earnings || "$50,000 – $150,000+ / year",
+    earnings: c.earnings || c.projected_pay || c.projectedPay || "$50,000 – $150,000+ / year",
     access: c.access || "One-time • Lifetime access • Certificate on completion",
     image: imageUrl,
     image_url: imageUrl,
-    outcomes: Array.isArray(c.outcomes) ? c.outcomes : (typeof c.outcomes === 'string' ? JSON.parse(c.outcomes) : []),
-    outline: Array.isArray(c.outline) ? c.outline : (typeof c.outline === 'string' ? JSON.parse(c.outline) : []),
+    outcomes: parsedOutcomes,
+    outline: parsedLessons,
+    lessons: parsedLessons,
     created_at: c.created_at,
     status: c.status || 'ACTIVE'
   };
@@ -37,7 +56,6 @@ function formatCourse(c, index) {
 async function safeInsert(table, payload) {
   const { data, error } = await supabase.from(table).insert([payload]).select();
   if (error) {
-    // If column doesn't exist, remove it and retry
     if (error.code === 'PGRST204' || error.message?.includes('column')) {
       const match = error.message?.match(/column "(\w+)"/);
       const missingColumn = match ? match[1] : null;
@@ -47,7 +65,6 @@ async function safeInsert(table, payload) {
         return await safeInsert(table, nextPayload);
       }
     }
-    // Specific known schema fallbacks
     if (payload.hasOwnProperty('status')) {
       const nextPayload = { ...payload };
       delete nextPayload.status;
@@ -72,38 +89,36 @@ async function safeInsert(table, payload) {
 async function safeUpdate(table, id, payload) {
   const { data, error } = await supabase.from(table).update(payload).eq('id', id).select();
   if (error) {
-    // If column doesn't exist, remove it and retry
     if (error.code === 'PGRST204' || error.message?.includes('column')) {
       const match = error.message?.match(/column "(\w+)"/);
       const missingColumn = match ? match[1] : null;
       if (missingColumn && payload.hasOwnProperty(missingColumn)) {
         const nextPayload = { ...payload };
         delete nextPayload[missingColumn];
-        return await safeUpdate(table, id, nextPayload);
+        return await safeUpdate(table, id, payload);
       }
     }
-    // Specific known schema fallbacks
     if (payload.hasOwnProperty('status')) {
       const nextPayload = { ...payload };
       delete nextPayload.status;
-      return await safeUpdate(table, id, nextPayload);
+      return await safeUpdate(table, id, payload);
     }
     if (payload.hasOwnProperty('image_url')) {
       const nextPayload = { ...payload };
       delete nextPayload.image_url;
-      return await safeUpdate(table, id, nextPayload);
+      return await safeUpdate(table, id, payload);
     }
     if (payload.hasOwnProperty('image')) {
       const nextPayload = { ...payload };
       delete nextPayload.image;
-      return await safeUpdate(table, id, nextPayload);
+      return await safeUpdate(table, id, payload);
     }
     throw error;
   }
   return data;
 }
 
-// Helper to get all courses from Supabase
+// Helper to get all courses 100% dynamically from Supabase database
 export async function getCourses() {
   try {
     const { data, error } = await supabase
@@ -125,6 +140,32 @@ export async function getCourses() {
     console.error('Error fetching courses:', err);
     return [];
   }
+}
+
+// Helper to get course lessons dynamically from Supabase database by course ID
+export async function getCourseLessonsFromDB(courseId) {
+  if (!courseId) return null;
+  const cleanId = String(courseId).toLowerCase().trim();
+
+  try {
+    const { data: dbCourse } = await supabase
+      .from('courses')
+      .select('*')
+      .or(`id.eq.${cleanId},id.ilike.%${cleanId}%`)
+      .maybeSingle();
+
+    if (dbCourse) {
+      return formatCourse(dbCourse, 0);
+    }
+  } catch (err) {
+    console.warn("Supabase course lessons query notice:", err);
+  }
+
+  const allCourses = await getCourses();
+  const match = allCourses.find(c => String(c.id).toLowerCase() === cleanId || cleanId.includes(String(c.id).toLowerCase()));
+  if (match) return match;
+
+  return null;
 }
 
 // Helper to save a new course to Supabase with schema fallback

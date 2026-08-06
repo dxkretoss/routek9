@@ -19,18 +19,46 @@ export default function LoginPage({ onLogin }) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState(null);
 
+
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
 
     try {
+      // 0. Pre-check: Verify if email belongs to an Admin/SuperAdmin BEFORE authenticating
+      try {
+        const { data: preCheck } = await supabase
+          .from('profiles')
+          .select('role')
+          .ilike('email', cleanEmail)
+          .maybeSingle();
+
+        if (preCheck) {
+          const role = (preCheck.role || '').toLowerCase();
+          const isAdmin =
+            role === 'admin' ||
+            role === 'superadmin' ||
+            role === 'super_admin';
+
+          if (isAdmin) {
+            throw new Error("⛔ Access Denied: Super Admin accounts cannot log in through the public login portal. Please use the dedicated Admin Portal.");
+          }
+        }
+      } catch (preErr) {
+        if (preErr.message?.includes('Access Denied')) {
+          throw preErr;
+        }
+      }
+
       // 1. Supabase Auth Login
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
-        password: password
+        password: cleanPassword
       });
 
       if (authError) {
@@ -55,20 +83,19 @@ export default function LoginPage({ onLogin }) {
       const metadata = data.user?.user_metadata || {};
       const userName = profileData?.full_name || metadata.full_name || (cleanEmail ? cleanEmail.split('@')[0] : 'Driver User');
       const userRole = profileData?.role || metadata.role || 'driver';
-      const userVehicle = profileData?.vehicle || metadata.vehicle || (userRole === 'driver' ? 'Cargo Van' : 'Company Fleet');
+      const userVehicle = profileData?.vehicle || metadata.vehicle || '';
 
-      // Check if account (driver or company) is Deactivated by Admin
-      const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]').map(i => String(i).toLowerCase());
-      const lowerCleanEmail = cleanEmail ? cleanEmail.toLowerCase() : '';
-      const userIdStr = userId ? String(userId).toLowerCase() : '';
+      const isSuperAdmin =
+        userRole.toLowerCase() === 'admin' ||
+        userRole.toLowerCase() === 'superadmin' ||
+        userRole.toLowerCase() === 'super_admin';
 
+      // Check if account (driver or company) is Deactivated by Admin (from Supabase profile)
       const isDeactivated =
         profileData?.status === 'INACTIVE' ||
         profileData?.status === 'DEACTIVATED' ||
         profileData?.is_active === false ||
-        profileData?.isactive === false ||
-        deactivatedList.includes(lowerCleanEmail) ||
-        (userIdStr && deactivatedList.includes(userIdStr));
+        profileData?.isactive === false;
 
       if (isDeactivated) {
         try {
@@ -79,20 +106,78 @@ export default function LoginPage({ onLogin }) {
         throw new Error("⛔ Account Deactivated: Your account has been deactivated by the administrator. Access is blocked. Please contact support@routek9.com for assistance.");
       }
 
+      // 3. Verify PRO Subscription Status from transactions table
+      let isPro = Boolean(profileData?.is_pro || profileData?.ispro || profileData?.isPro);
+      let subscriptionPlan = isPro ? 'pro' : 'free';
+      let subscribedAt = null;
+      let nextRenewal = null;
+
+      try {
+        const { data: txs } = await supabase
+          .from('transactions')
+          .select('*');
+
+        if (txs && txs.length > 0) {
+          const userIdStr = String(userId).toLowerCase();
+          const userSubs = txs.filter(tx =>
+            tx.status === 'Succeeded' &&
+            (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
+            ((tx.user_id && String(tx.user_id).toLowerCase() === userIdStr) || (tx.email && cleanEmail && tx.email.toLowerCase() === cleanEmail))
+          );
+
+          if (userSubs.length > 0) {
+            userSubs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestSub = userSubs[0];
+            const createdTime = new Date(latestSub.created_at).getTime();
+            const isYearly = latestSub.course_id === 'pro-yearly' || latestSub.description?.toLowerCase().includes('yearly') || latestSub.amount?.includes('299');
+            const validityPeriod = isYearly ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+
+            if (Date.now() - createdTime < validityPeriod) {
+              isPro = true;
+              subscriptionPlan = isYearly ? 'yearly' : 'pro';
+              subscribedAt = new Date(createdTime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+              nextRenewal = new Date(createdTime + validityPeriod).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            }
+          }
+        }
+      } catch (txErr) {
+        console.warn("Transaction check notice during login:", txErr);
+      }
+
       const loggedInUser = {
         id: userId,
-        name: userName,
-        email: cleanEmail,
+        name: profileData?.full_name || userName,
+        email: profileData?.email || cleanEmail,
         role: userRole,
-        vehicle: userVehicle,
-        stateCode: profileData?.state_code || 'TX',
-        city: profileData?.city || 'Houston'
+        vehicle: profileData?.vehicle || userVehicle || '',
+        stateCode: profileData?.state_code || profileData?.stateCode || '',
+        city: profileData?.city || '',
+        phone: profileData?.phone || '',
+        dotNumber: profileData?.dot_number || profileData?.dotNumber || '',
+        insurancePolicy: profileData?.insurance_policy || profileData?.insurancePolicy || '',
+        experience: profileData?.experience || '',
+        availability: profileData?.availability || '',
+        hasCDL: profileData?.has_cdl !== undefined ? profileData?.has_cdl : false,
+        readyToWork: profileData?.ready_to_work !== undefined ? profileData?.ready_to_work : false,
+        websiteUrl: profileData?.website_url || profileData?.website || '',
+        avatarUrl: profileData?.avatar_url || profileData?.avatarUrl || '',
+        bio: profileData?.bio || '',
+        isPro: isPro,
+        subscriptionPlan: subscriptionPlan,
+        subscribedAt: subscribedAt,
+        nextRenewal: nextRenewal
       };
 
       if (onLogin) {
         onLogin(loggedInUser);
       }
-      navigate(redirectPath);
+
+      // Route Super Admins to /admin portal and regular users to /dashboard
+      if (isSuperAdmin) {
+        navigate('/admin');
+      } else {
+        navigate(redirectPath);
+      }
     } catch (err) {
       console.error("Login error:", err);
       setError(err.message || "Invalid login credentials. Please try again.");

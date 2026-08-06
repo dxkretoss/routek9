@@ -39,7 +39,7 @@ import NotFoundPage from './pages/NotFoundPage';
 
 import { US_STATES } from './data/statesData';
 import { mockRoutes as initialRoutes } from './data/mockRoutes';
-import { Truck, ShieldCheck, MapPin, DollarSign } from 'lucide-react';
+import { Truck, ShieldCheck, MapPin, DollarSign, Loader2 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 // Cookie Helpers
@@ -50,6 +50,8 @@ const getCookie = (name) => {
   try {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
     if (match) return JSON.parse(decodeURIComponent(match[2]));
+    const lsVal = localStorage.getItem(name);
+    if (lsVal) return JSON.parse(lsVal);
   } catch (e) {
     console.warn("Cookie parse error:", e);
   }
@@ -60,13 +62,19 @@ const setCookie = (name, value, days = 30) => {
   try {
     const expires = new Date(Date.now() + days * 864e5).toUTCString();
     document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))}; expires=${expires}; path=/; SameSite=Lax`;
+    localStorage.setItem(name, JSON.stringify(value));
   } catch (e) {
     console.warn("Cookie set error:", e);
   }
 };
 
 const deleteCookie = (name) => {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  try {
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    localStorage.removeItem(name);
+  } catch (e) {
+    console.warn("Cookie delete error:", e);
+  }
 };
 
 function HomePage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) {
@@ -174,13 +182,14 @@ function HomePage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) 
         <OwnEstablishedRouteSection
           selectedState={selectedBuyState}
           onSelectState={setSelectedBuyState}
+          currentUser={currentUser}
         />
 
         {/* 7. Local Courier Directory Section */}
         <LocalCourierDirectorySection selectedState={selectedState} />
 
         {/* 8. Contract Readiness & Vehicle Qualifications — merged */}
-        <ContractReadinessSection />
+        <ContractReadinessSection currentUser={currentUser} />
 
         {/* 9. Who's Hiring Section — Delivery Apps & Regional Couriers */}
         <WhosHiringSection />
@@ -226,10 +235,10 @@ export default function App() {
 
           if (data && !error) {
             const courseIds = data
-              .filter(tx => 
-                tx.status === 'Succeeded' && 
-                (String(tx.user_id) === String(currentUser.id) || 
-                 (tx.email && currentUser.email && tx.email.toLowerCase() === currentUser.email.toLowerCase()))
+              .filter(tx =>
+                tx.status === 'Succeeded' &&
+                (String(tx.user_id) === String(currentUser.id) ||
+                  (tx.email && currentUser.email && tx.email.toLowerCase() === currentUser.email.toLowerCase()))
               )
               .map(tx => tx.course_id)
               .filter(Boolean);
@@ -280,12 +289,22 @@ export default function App() {
     // 2. Subscribe to auth state changes (Google OAuth login, Email confirmation, Sign in, Sign out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const isActive = await syncSupabaseProfile(session.user);
-        // Navigate to dashboard only if user account is active and verified!
-        if (isActive && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
+        const syncResult = await syncSupabaseProfile(session.user);
+        if (syncResult?.isActive) {
+          const hasHash = typeof window !== 'undefined' && (
+            window.location.hash.includes('access_token=') ||
+            window.location.hash.includes('type=signup') ||
+            window.location.hash.includes('type=recovery')
+          );
           const currentPath = window.location.pathname;
-          if (currentPath === '/login' || currentPath === '/signup') {
-            navigate('/dashboard');
+          if (hasHash || currentPath === '/login' || currentPath === '/signup') {
+            const role = (syncResult.role || '').toLowerCase();
+            const isAdmin = role === 'admin' || role === 'superadmin' || role === 'super_admin';
+            const targetPath = isAdmin ? '/admin' : '/dashboard';
+            if (window.location.hash) {
+              window.history.replaceState(null, '', targetPath);
+            }
+            navigate(targetPath, { replace: true });
           }
         }
       } else if (event === 'SIGNED_OUT') {
@@ -322,16 +341,12 @@ export default function App() {
         profile = pData;
       }
 
-      // Deactivation Enforcement Check
-      const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]').map(i => String(i).toLowerCase());
-
+      // Deactivation Enforcement Check (from Supabase profile)
       const isDeactivated =
         profile?.status === 'INACTIVE' ||
         profile?.status === 'DEACTIVATED' ||
         profile?.is_active === false ||
-        profile?.isactive === false ||
-        deactivatedList.includes(userEmail) ||
-        (userIdStr && deactivatedList.includes(userIdStr));
+        profile?.isactive === false;
 
       if (isDeactivated) {
         console.warn("Account deactivated by administrator. Signing out immediately.");
@@ -345,7 +360,7 @@ export default function App() {
         if (window.location.pathname === '/dashboard') {
           navigate('/login');
         }
-        return false;
+        return { isActive: false, role: null };
       }
 
       const userRole = profile?.role || supabaseUser.user_metadata?.role || 'driver';
@@ -354,41 +369,24 @@ export default function App() {
         userName = supabaseUser.user_metadata?.full_name || userEmail.split('@')[0];
       }
 
-      // Create profile row if it doesn't exist yet (e.g. Google OAuth)
+      // Create profile row if it doesn't exist yet (e.g. Google OAuth or newly verified email)
       if (!profile && supabaseUser.id && userEmail) {
         try {
-          const { error: upsertErr } = await supabase.from('profiles').upsert({
+          const { data: inserted, error: upsertErr } = await supabase.from('profiles').upsert({
             id: supabaseUser.id,
             email: userEmail,
             full_name: userName,
             role: userRole,
             updated_at: new Date().toISOString()
-          });
+          }).select('*').maybeSingle();
 
-          if (upsertErr && (upsertErr.code === '23503' || upsertErr.message?.includes('foreign key'))) {
-            console.warn("User ID not found in auth.users. Signing out client session.");
-            try {
-              await supabase.auth.signOut({ scope: 'local' });
-            } catch (soErr) {
-              console.warn("Server-side signout failed, clearing local session cache:", soErr);
-            }
-            try {
-              for (let i = localStorage.length - 1; i >= 0; i--) {
-                const key = localStorage.key(i);
-                if (key && (key.startsWith('sb-') || key.includes('auth-token'))) {
-                  localStorage.removeItem(key);
-                }
-              }
-            } catch (lsErr) {
-              console.warn("LocalStorage clear error:", lsErr);
-            }
-            setCurrentUser(null);
-            deleteCookie(SESSION_COOKIE_NAME);
-            window.location.reload();
-            return false;
+          if (inserted) {
+            profile = inserted;
+          } else if (upsertErr) {
+            console.warn("Notice: Profile table upsert skipped, using user metadata:", upsertErr.message);
           }
-        } catch (e) {
-          console.warn("RLS notice: profile insert skipped, using user metadata instead.", e);
+        } catch (uErr) {
+          console.warn("Could not upsert profile for verified user:", uErr);
         }
       }
 
@@ -398,13 +396,13 @@ export default function App() {
       let nextRenewal = null;
 
       try {
-        const { data: txs, error: txError } = await supabase
+        const { data: txs } = await supabase
           .from('transactions')
           .select('*');
 
-        if (txs && !txError) {
-          const userSubs = txs.filter(tx => 
-            tx.status === 'Succeeded' && 
+        if (txs && txs.length > 0) {
+          const userSubs = txs.filter(tx =>
+            tx.status === 'Succeeded' &&
             (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
             ((tx.user_id && String(tx.user_id).toLowerCase() === userIdStr) || (tx.email && userEmail && tx.email.toLowerCase() === userEmail))
           );
@@ -424,42 +422,43 @@ export default function App() {
             }
           }
         }
-      } catch (subErr) {
-        console.warn("Could not check subscription status:", subErr);
+      } catch (txErr) {
+        console.warn("Transaction check notice during sync:", txErr);
       }
 
       setCurrentUser((prev) => {
+        const isSameUser = prev && (String(prev.id) === String(supabaseUser.id) || String(prev.email || '').toLowerCase() === userEmail);
+
         const updated = {
-          ...(prev || {}),
-          id: supabaseUser.id || profile?.id || prev?.id,
+          id: supabaseUser.id || profile?.id || (isSameUser ? prev?.id : null),
           name: profile?.full_name || userName,
-          email: profile?.email || userEmail || prev?.email,
+          email: profile?.email || userEmail,
           role: userRole,
-          vehicle: profile?.vehicle || prev?.vehicle || (userRole === 'driver' ? 'Cargo Van' : 'Company Fleet'),
-          stateCode: profile?.state_code || prev?.stateCode || '',
-          city: profile?.city || prev?.city || '',
-          phone: profile?.phone || prev?.phone || '',
-          dotNumber: profile?.dot_number || prev?.dotNumber || '',
-          insurancePolicy: profile?.insurance_policy || prev?.insurancePolicy || '',
-          experience: profile?.experience || prev?.experience || '1-3 Years',
-          availability: profile?.availability || prev?.availability || 'Immediate',
-          hasCDL: profile?.has_cdl !== undefined ? profile?.has_cdl : (prev?.hasCDL || false),
-          readyToWork: profile?.ready_to_work !== undefined ? profile?.ready_to_work : (prev?.readyToWork ?? true),
-          websiteUrl: profile?.website_url || profile?.website || prev?.websiteUrl || '',
-          avatarUrl: profile?.avatar_url || profile?.avatarUrl || prev?.avatarUrl || '',
-          bio: profile?.bio || prev?.bio || '',
-          isPro: isPro || prev?.isPro || false,
-          subscriptionPlan: subscriptionPlan || prev?.subscriptionPlan || 'free',
-          subscribedAt: subscribedAt || prev?.subscribedAt || null,
-          nextRenewal: nextRenewal || prev?.nextRenewal || null
+          vehicle: profile ? (profile.vehicle || '') : (isSameUser ? prev?.vehicle || '' : ''),
+          stateCode: profile ? (profile.state_code || profile.stateCode || '') : (isSameUser ? prev?.stateCode || '' : ''),
+          city: profile ? (profile.city || '') : (isSameUser ? prev?.city || '' : ''),
+          phone: profile ? (profile.phone || '') : (isSameUser ? prev?.phone || '' : ''),
+          dotNumber: profile ? (profile.dot_number || profile.dotNumber || '') : (isSameUser ? prev?.dotNumber || '' : ''),
+          insurancePolicy: profile ? (profile.insurance_policy || profile.insurancePolicy || '') : (isSameUser ? prev?.insurancePolicy || '' : ''),
+          experience: profile ? (profile.experience || '') : (isSameUser ? prev?.experience || '' : ''),
+          availability: profile ? (profile.availability || '') : (isSameUser ? prev?.availability || '' : ''),
+          hasCDL: profile?.has_cdl !== undefined ? profile.has_cdl : (isSameUser ? prev?.hasCDL || false : false),
+          readyToWork: profile?.ready_to_work !== undefined ? profile.ready_to_work : (isSameUser ? prev?.readyToWork ?? false : false),
+          websiteUrl: profile ? (profile.website_url || profile.website || '') : (isSameUser ? prev?.websiteUrl || '' : ''),
+          avatarUrl: profile ? (profile.avatar_url || profile.avatarUrl || '') : (isSameUser ? prev?.avatarUrl || '' : ''),
+          bio: profile ? (profile.bio || '') : (isSameUser ? prev?.bio || '' : ''),
+          isPro: isPro || (isSameUser ? prev?.isPro || false : false),
+          subscriptionPlan: subscriptionPlan || (isSameUser ? prev?.subscriptionPlan || 'free' : 'free'),
+          subscribedAt: subscribedAt || (isSameUser ? prev?.subscribedAt || null : null),
+          nextRenewal: nextRenewal || (isSameUser ? prev?.nextRenewal || null : null)
         };
         setCookie(SESSION_COOKIE_NAME, updated, 30);
         return updated;
       });
-      return true;
+      return { isActive: true, role: userRole };
     } catch (err) {
       console.error("Error syncing Supabase user profile:", err);
-      return false;
+      return { isActive: false, role: null };
     }
   };
 
@@ -578,10 +577,10 @@ export default function App() {
           phone: updatedUser.phone || '',
           dot_number: updatedUser.dotNumber || '',
           insurance_policy: updatedUser.insurancePolicy || '',
-          experience: updatedUser.experience || '1-3 Years',
-          availability: updatedUser.availability || 'Immediate',
+          experience: updatedUser.experience || '',
+          availability: updatedUser.availability || '',
           has_cdl: updatedUser.hasCDL !== undefined ? updatedUser.hasCDL : false,
-          ready_to_work: updatedUser.readyToWork !== undefined ? updatedUser.readyToWork : true,
+          ready_to_work: updatedUser.readyToWork !== undefined ? updatedUser.readyToWork : false,
           website_url: updatedUser.websiteUrl || updatedUser.website || '',
           avatar_url: updatedUser.avatarUrl || updatedUser.avatar_url || updatedUser.avatar || '',
           bio: updatedUser.bio || '',
@@ -602,6 +601,28 @@ export default function App() {
     }
     return { success: true };
   };
+
+  const hasAuthHash = typeof window !== 'undefined' && (
+    window.location.hash.includes('access_token=') ||
+    window.location.hash.includes('type=signup') ||
+    window.location.hash.includes('type=recovery')
+  );
+
+  if (!currentUser && hasAuthHash) {
+    return (
+      <div className="min-h-screen bg-[#0b132b] flex flex-col items-center justify-center p-6 text-center text-white space-y-4 animate-fadeIn">
+        <div className="w-16 h-16 rounded-3xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center shadow-xl">
+          <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black font-serif-heading">Verifying Email & Authenticating...</h2>
+          <p className="text-xs text-slate-400 font-medium mt-1.5 max-w-sm">
+            Please wait a moment while we confirm your email and load your dashboard.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

@@ -3,24 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://qgriomlngioeiterbeii.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-// Clean any invalid stale Supabase auth tokens from localStorage before initializing
-if (typeof window !== 'undefined') {
-  try {
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('sb-') && key.includes('-auth-token')) {
-        localStorage.removeItem(key);
-      }
-    });
-  } catch {
-    // ignore
-  }
-}
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-    detectSessionInUrl: false
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
   }
 });
 
@@ -290,4 +277,64 @@ export async function deleteNotificationRecord(notifId) {
     console.warn("deleteNotificationRecord notice:", err.message);
     return { success: false, error: err.message };
   }
+}
+
+/**
+ * Save user checklist state (readiness_checklist / diligence_checklist) directly to Supabase DB
+ */
+export async function saveUserChecklistToDb(userId, checklistKey, checkedItemsMap) {
+  if (!userId) return { success: false, error: 'User not logged in' };
+
+  try {
+    const updateObj = {};
+    updateObj[checklistKey] = checkedItemsMap;
+
+    // 1. Update Supabase Auth User Metadata (persisted in auth.users)
+    await supabase.auth.updateUser({ data: updateObj });
+
+    // 2. Also attempt updating profiles table in Supabase
+    try {
+      await supabase
+        .from('profiles')
+        .update(updateObj)
+        .eq('id', userId);
+    } catch {
+      // Column notice ignored if schema doesn't match
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.warn(`Error saving ${checklistKey} to Supabase DB:`, err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Load user checklist state directly from Supabase DB
+ */
+export async function loadUserChecklistFromDb(userId, checklistKey) {
+  if (!userId) return {};
+
+  try {
+    // 1. Load from Supabase Auth User Metadata
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.user_metadata?.[checklistKey]) {
+      return user.user_metadata[checklistKey];
+    }
+
+    // 2. Fallback to profiles table in Supabase
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile?.[checklistKey]) {
+      return profile[checklistKey];
+    }
+  } catch (err) {
+    console.warn(`Error loading ${checklistKey} from Supabase DB:`, err);
+  }
+
+  return {};
 }

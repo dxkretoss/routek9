@@ -13,9 +13,9 @@ export default function SignupPage({ onSignup }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [vehicleType, setVehicleType] = useState('Cargo Van');
+  const [vehicleType, setVehicleType] = useState('');
   const [city, setCity] = useState('');
-  const [stateCode, setStateCode] = useState('TX');
+  const [stateCode, setStateCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -56,6 +56,7 @@ export default function SignupPage({ onSignup }) {
     setError(null);
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
     let nameToSave = fullName.trim();
 
     // Company Validation
@@ -76,16 +77,16 @@ export default function SignupPage({ onSignup }) {
     nameToSave = nameToSave || cleanEmail.split('@')[0] || 'User';
 
     // Password Validation for Non-Technical Users
-    if (password.length < 8) {
+    if (cleanPassword.length < 8) {
       setError("Password must be at least 8 characters long.");
       setLoading(false);
       return;
     }
 
-    const hasUpper = /[A-Z]/.test(password);
-    const hasLower = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+    const hasUpper = /[A-Z]/.test(cleanPassword);
+    const hasLower = /[a-z]/.test(cleanPassword);
+    const hasNumber = /[0-9]/.test(cleanPassword);
+    const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(cleanPassword);
 
     if (!hasUpper || !hasLower || !hasNumber || !hasSymbol) {
       setError("Your password needs at least 1 uppercase letter (A-Z), 1 lowercase letter (a-z), 1 number (0-9), and 1 special symbol (e.g. @, #, $, !).");
@@ -95,7 +96,7 @@ export default function SignupPage({ onSignup }) {
 
     // Check for common sequence patterns like 'Test@123', 'Password123'
     const commonWords = ['test', 'password', 'admin', 'user', '1234', 'qwerty', 'abc123'];
-    const lowerPw = password.toLowerCase();
+    const lowerPw = cleanPassword.toLowerCase();
     if (commonWords.some(word => lowerPw.includes(word))) {
       setError("This password contains a common pattern (like 'Test', 'Password', or '1234') that is easy to guess. Please choose a more unique password.");
       setLoading(false);
@@ -103,8 +104,8 @@ export default function SignupPage({ onSignup }) {
     }
 
     try {
-      const cleanCity = city.trim() || 'Houston';
-      const cleanState = stateCode.trim().toUpperCase() || 'TX';
+      const cleanCity = city.trim();
+      const cleanState = stateCode.trim().toUpperCase();
 
       // 0. Pre-Signup Validation: Ensure email is unique in the database
       const { data: existingProfiles, error: checkError } = await supabase
@@ -120,12 +121,12 @@ export default function SignupPage({ onSignup }) {
       // 1. Supabase Auth Registration
       const { data, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
-        password: password,
+        password: cleanPassword,
         options: {
           data: {
             full_name: nameToSave,
             role: signupRole,
-            vehicle: vehicleType,
+            vehicle: signupRole === 'driver' ? vehicleType : '',
             city: cleanCity,
             state_code: cleanState
           },
@@ -153,9 +154,11 @@ export default function SignupPage({ onSignup }) {
           full_name: nameToSave,
           email: cleanEmail,
           role: signupRole,
-          vehicle: vehicleType,
-          city: cleanCity,
-          state_code: cleanState,
+          vehicle: signupRole === 'driver' ? (vehicleType || '') : '',
+          city: cleanCity || '',
+          state_code: cleanState || '',
+          experience: '',
+          availability: '',
           created_at: new Date().toISOString()
         });
 
@@ -174,8 +177,6 @@ export default function SignupPage({ onSignup }) {
             message: `Hello ${nameToSave}! Welcome to RouteK9. Your ${signupRole === 'driver' ? 'driver profile' : 'dispatch company account'} has been successfully registered. Complete compliance training to get verified.`,
             category: 'System',
             important: true,
-            actionUrl: '/dashboard',
-            actionText: 'Get Started'
           });
         } catch (notifErr) {
           console.warn("Could not save welcome notification:", notifErr);

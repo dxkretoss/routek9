@@ -5,7 +5,7 @@ import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
-import { getCourses } from '../lib/courses';
+import { getCourses, getCourseLessonsFromDB } from '../lib/courses';
 import { supabase, fetchNotifications, markNotificationRead, markAllNotificationsRead, deleteNotificationRecord } from '../lib/supabase';
 import {
   Award,
@@ -42,9 +42,11 @@ import {
   ExternalLink,
   Users,
   UserCheck,
+  Edit2,
   Filter,
   RotateCcw,
-  X
+  X,
+  Plus
 } from 'lucide-react';
 
 
@@ -53,12 +55,11 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Protected Route Guard: If user is deactivated or logged out, redirect immediately to /login
-  useEffect(() => {
-    if (!currentUser) {
-      navigate('/login');
-    }
-  }, [currentUser, navigate]);
+  const hasAuthHash = typeof window !== 'undefined' && (
+    window.location.hash.includes('access_token=') ||
+    window.location.hash.includes('type=signup') ||
+    window.location.hash.includes('type=recovery')
+  );
 
   // Helper to determine initial active tab from URL query params
   const getInitialTab = () => {
@@ -104,49 +105,55 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   }, [propSavedRoutes]);
 
   // Fetch saved routes dynamically from Supabase database for this user only
-  useEffect(() => {
-    async function loadSupabaseRoutes() {
-      if (!currentUser?.id) return;
-      try {
-        const isCompany = currentUser?.role === 'company' || currentUser?.role === 'Company';
-        let query = supabase.from('routes').select('*');
+  const loadSupabaseRoutes = React.useCallback(async () => {
+    if (!currentUser?.id) return;
+    try {
+      const isCompany = currentUser?.role === 'company' || currentUser?.role === 'Company';
+      let query = supabase.from('routes').select('*');
 
-        if (isCompany) {
-          query = query.or(`user_id.eq.${currentUser.id},company_id.eq.${currentUser.id}`);
-        } else {
-          query = query.eq('user_id', currentUser.id);
-        }
-
-        const { data, error } = await query.order('created_at', { ascending: false });
-
-        if (data && data.length > 0) {
-          const formatted = data.map(r => ({
-            id: r.id,
-            title: r.title || 'Saved Courier Route',
-            driverName: r.driver_name || 'Driver',
-            stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
-            distanceMiles: r.distance_miles || 0,
-            durationMinutes: r.duration_minutes || 0,
-            status: r.status || 'ACTIVE',
-            stops: r.stops_data || [],
-            createdAt: r.created_at
-          }));
-
-          setSavedUserRoutes(prev => {
-            const map = new Map();
-            formatted.forEach(item => map.set(item.id, item));
-            prev.forEach(item => {
-              if (!map.has(item.id)) map.set(item.id, item);
-            });
-            return Array.from(map.values());
-          });
-        }
-      } catch (err) {
-        console.warn("Could not fetch Supabase routes:", err);
+      if (isCompany) {
+        query = query.or(`user_id.eq.${currentUser.id},company_id.eq.${currentUser.id}`);
+      } else {
+        query = query.eq('user_id', currentUser.id);
       }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+
+      const formatted = (data || []).map(r => ({
+        id: r.id,
+        title: r.title || 'Saved Courier Route',
+        driverName: r.driver_name || 'Driver',
+        driverId: r.driver_id || null,
+        stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
+        distanceMiles: r.distance_miles || 0,
+        durationMinutes: r.duration_minutes || 0,
+        status: r.status || 'ACTIVE',
+        stops: r.stops_data || [],
+        createdAt: r.created_at
+      }));
+
+      // Directly set current fresh routes from Supabase
+      setSavedUserRoutes(formatted);
+    } catch (err) {
+      console.warn("Could not fetch Supabase routes:", err);
     }
+  }, [currentUser]);
+
+  useEffect(() => {
     loadSupabaseRoutes();
-  }, []);
+
+    const handleRoutesSync = () => {
+      loadSupabaseRoutes();
+    };
+
+    window.addEventListener('rk9_routes_updated', handleRoutesSync);
+    window.addEventListener('rk9_fleet_updated', handleRoutesSync);
+    return () => {
+      window.removeEventListener('rk9_routes_updated', handleRoutesSync);
+      window.removeEventListener('rk9_fleet_updated', handleRoutesSync);
+    };
+  }, [loadSupabaseRoutes]);
 
   // Sync activeTab if URL searchParams change
   useEffect(() => {
@@ -192,21 +199,20 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   const [email, setEmail] = useState(currentUser?.email || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');
   const [accountRole, setAccountRole] = useState(currentUser?.role || 'driver'); // 'driver' or 'company'
-  const [vehicleClass, setVehicleClass] = useState(currentUser?.vehicle || 'Cargo Van');
+  const [vehicleClass, setVehicleClass] = useState(currentUser?.vehicle || '');
   const [stateCode, setStateCode] = useState(currentUser?.stateCode || '');
   const [cityName, setCityName] = useState(currentUser?.city || '');
   const [dotNumber, setDotNumber] = useState(currentUser?.dotNumber || '');
   const [insurancePolicy, setInsurancePolicy] = useState(currentUser?.insurancePolicy || '');
-  const [experience, setExperience] = useState(currentUser?.experience || '1-3 Years');
-  const [availability, setAvailability] = useState(currentUser?.availability || 'Immediate');
+  const [experience, setExperience] = useState(currentUser?.experience || '');
+  const [availability, setAvailability] = useState(currentUser?.availability || '');
   const [hasCDL, setHasCDL] = useState(currentUser?.hasCDL || false);
-  const [readyToWork, setReadyToWork] = useState(currentUser?.readyToWork ?? true);
+  const [readyToWork, setReadyToWork] = useState(currentUser?.readyToWork ?? false);
   const [websiteUrl, setWebsiteUrl] = useState(currentUser?.websiteUrl || currentUser?.website || '');
   const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatarUrl || currentUser?.avatar_url || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState(null);
-  const [downloadToast, setDownloadToast] = useState(null);
 
   const handleAvatarUpload = (e) => {
     const file = e.target.files?.[0];
@@ -236,15 +242,15 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       setEmail(currentUser.email || '');
       setPhone(currentUser.phone || '');
       setAccountRole(currentUser.role || 'driver');
-      setVehicleClass(currentUser.vehicle || (currentUser.role === 'company' ? 'Medical Specimen, Scheduled Routes' : 'Cargo Van'));
-      setStateCode(currentUser.stateCode || '');
+      setVehicleClass(currentUser.vehicle || '');
+      setStateCode(currentUser.stateCode || currentUser.state_code || '');
       setCityName(currentUser.city || '');
       setDotNumber(currentUser.dotNumber || '');
       setInsurancePolicy(currentUser.insurancePolicy || '');
-      setExperience(currentUser.experience || '1-3 Years');
-      setAvailability(currentUser.availability || 'Immediate');
+      setExperience(currentUser.experience || '');
+      setAvailability(currentUser.availability || '');
       setHasCDL(currentUser.hasCDL || false);
-      setReadyToWork(currentUser.readyToWork ?? true);
+      setReadyToWork(currentUser.readyToWork ?? false);
       setWebsiteUrl(currentUser.websiteUrl || currentUser.website || '');
       setAvatarUrl(currentUser.avatarUrl || currentUser.avatar_url || '');
       setBio(currentUser.bio || '');
@@ -252,22 +258,50 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   }, [currentUser]);
 
   const [enrolledCourses, setEnrolledCourses] = useState([]);
+  const [activeCourseViewerModal, setActiveCourseViewerModal] = useState(null);
+  const [courseLessonsDetailsMap, setCourseLessonsDetailsMap] = useState({});
+  const [expandedLessonId, setExpandedLessonId] = useState(null);
+  const [completedLessonsMap, setCompletedLessonsMap] = useState({});
+  const [checkedStepsMap, setCheckedStepsMap] = useState({});
 
-  // Dynamic Company Fleet Drivers State
-  const getInitialFleetDrivers = () => {
+  const handleOpenCourseViewer = async (course) => {
+    setActiveCourseViewerModal(course);
+    if (!course?.id) return;
+
     try {
-      const stored = localStorage.getItem(`rk9_company_fleet_${currentUser?.id || 'default'}`);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.warn("Error reading fleet drivers from localStorage:", e);
+      const fullCourseFromDB = await getCourseLessonsFromDB(course.id);
+      if (fullCourseFromDB) {
+        setCourseLessonsDetailsMap(prev => ({
+          ...prev,
+          [course.id]: fullCourseFromDB
+        }));
+        const lessons = fullCourseFromDB.lessons || fullCourseFromDB.outline || [];
+        if (lessons[0]) {
+          setExpandedLessonId(lessons[0].id || lessons[0].title);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch course lessons from DB:", err);
     }
-    return [];
   };
 
-  const [fleetDrivers, setFleetDrivers] = useState(getInitialFleetDrivers);
+  // Dynamic Company Fleet Drivers State (loaded 100% from Supabase)
+  const [fleetDrivers, setFleetDrivers] = useState([]);
   const [connectedCompanies, setConnectedCompanies] = useState([]);
   const [loadingCompanies, setLoadingCompanies] = useState(false);
   const [isAddDriverModalOpen, setIsAddDriverModalOpen] = useState(false);
+  const [deleteDriverModalTarget, setDeleteDriverModalTarget] = useState(null);
+  const [editDriverModal, setEditDriverModal] = useState({ isOpen: false, driver: null });
+  const [editDriverForm, setEditDriverForm] = useState({
+    id: '',
+    name: '',
+    phone: '',
+    email: '',
+    vehicle: 'Cargo Van',
+    city: 'Houston',
+    state: 'TX',
+    cdl: false
+  });
   const [newDriverForm, setNewDriverForm] = useState({
     name: '',
     phone: '',
@@ -424,159 +458,164 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   };
 
   // Load Fleet Drivers from Supabase database & Local Storage
-  useEffect(() => {
-    async function fetchFleetFromSupabase() {
-      if (!currentUser?.id) return;
-      try {
-        const { data, error } = await supabase
-          .from('company_drivers')
-          .select('*')
-          .eq('company_id', currentUser.id)
-          .neq('status', 'DECLINED')
-          .order('created_at', { ascending: false });
+  const fetchFleetFromSupabase = React.useCallback(async () => {
+    if (!currentUser?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('company_drivers')
+        .select('*')
+        .eq('company_id', currentUser.id)
+        .neq('status', 'DECLINED')
+        .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
-          const mapped = data.map(d => ({
-            id: d.id,
-            name: d.full_name || d.name,
-            phone: d.phone,
-            email: d.email,
-            vehicle: d.vehicle_type || d.vehicle || 'Cargo Van',
-            city: d.city || 'Houston',
-            state: d.state_code || d.state || 'TX',
-            cdl: Boolean(d.has_cdl ?? d.cdl),
-            status: d.status || 'ACTIVE'
-          }));
-          setFleetDrivers(mapped);
-          localStorage.setItem(`rk9_company_fleet_${currentUser.id}`, JSON.stringify(mapped));
-        }
-      } catch (err) {
-        console.warn("Supabase company_drivers fetch notice:", err.message || err);
+      if (!error && data) {
+        const mapped = data.map(d => ({
+          id: d.id,
+          name: d.full_name || d.name,
+          phone: d.phone,
+          email: d.email,
+          vehicle: d.vehicle_type || d.vehicle || 'Cargo Van',
+          city: d.city || 'Houston',
+          state: d.state_code || d.state || 'TX',
+          cdl: Boolean(d.has_cdl ?? d.cdl),
+          status: d.status || 'ACTIVE'
+        }));
+        setFleetDrivers(mapped);
       }
+    } catch (err) {
+      console.warn("Supabase company_drivers fetch notice:", err.message || err);
     }
+  }, [currentUser]);
 
+  useEffect(() => {
     fetchFleetFromSupabase();
 
-    window.addEventListener('rk9_fleet_updated', fetchFleetFromSupabase);
-    return () => {
-      window.removeEventListener('rk9_fleet_updated', fetchFleetFromSupabase);
+    const handleFleetSync = () => {
+      fetchFleetFromSupabase();
     };
-  }, [currentUser?.id]);
+
+    window.addEventListener('rk9_fleet_updated', handleFleetSync);
+    return () => {
+      window.removeEventListener('rk9_fleet_updated', handleFleetSync);
+    };
+  }, [fetchFleetFromSupabase]);
 
   const saveFleetDrivers = (newList) => {
     setFleetDrivers(newList);
     try {
-      localStorage.setItem(`rk9_company_fleet_${currentUser?.id || 'default'}`, JSON.stringify(newList));
       window.dispatchEvent(new Event('rk9_fleet_updated'));
     } catch (e) {
-      console.warn("Error saving fleet drivers to localStorage:", e);
+      console.warn("Event dispatch notice:", e);
     }
   };
 
   const handleAddFleetDriverSubmit = async (e) => {
     e.preventDefault();
-    if (!newDriverForm.name.trim()) return;
-
+    const name = newDriverForm.name.trim();
+    const phone = (newDriverForm.phone || '').trim();
     const enteredEmail = (newDriverForm.email || '').trim().toLowerCase();
+    const vehicle = newDriverForm.vehicle;
+    const city = (newDriverForm.city || '').trim();
+    const state = (newDriverForm.state || '').trim();
 
-    // ── 1. VALIDATION: Check if email is registered as a Company account ───────
-    if (enteredEmail) {
-      try {
-        const { data: profileCheck } = await supabase
-          .from('profiles')
-          .select('id, role, full_name, email')
-          .eq('email', enteredEmail)
-          .maybeSingle();
-
-        if (profileCheck && (profileCheck.role === 'company' || profileCheck.role === 'Company')) {
-          alert(`Invalid Driver Email: "${enteredEmail}" belongs to a registered Company account.`);
-          return;
-        }
-
-        // ── 2. VALIDATION: Check if email belongs to a Registered Driver ──────────
-        const isRegisteredDriver = profileCheck && (profileCheck.role === 'driver' || profileCheck.role === 'Driver');
-
-        if (isRegisteredDriver) {
-          const companyName = currentUser?.name || currentUser?.company_name || 'Courier Logistics';
-
-          // Insert pending invitation in company_drivers
-          await supabase.from('company_drivers').insert([{
-            company_id: currentUser?.id || null,
-            driver_id: profileCheck.id,
-            full_name: newDriverForm.name.trim() || profileCheck.full_name,
-            phone: newDriverForm.phone.trim() || profileCheck.phone || '',
-            email: enteredEmail,
-            vehicle_type: newDriverForm.vehicle,
-            city: newDriverForm.city.trim() || 'Houston',
-            state_code: newDriverForm.state.trim() || 'TX',
-            has_cdl: newDriverForm.cdl,
-            status: 'PENDING_APPROVAL',
-            created_at: new Date().toISOString()
-          }]);
-
-          // Send Inbox Notification to Driver
-          await createNotification({
-            userId: profileCheck.id,
-            companyId: currentUser?.id || null,
-            title: `Fleet Join Invitation from ${companyName}`,
-            message: `${companyName} has invited you to join their company fleet as a registered driver. Please respond to this invitation in your inbox.`,
-            category: 'FLEET_INVITE',
-            unread: true,
-            important: true,
-            actionUrl: '/dashboard?tab=inbox',
-            actionText: 'View Invitation'
-          });
-
-          alert(`📩 Fleet Join Invitation sent to registered driver (${enteredEmail})! They will appear in your fleet list as soon as they accept in their Inbox.`);
-          setIsAddDriverModalOpen(false);
-          setNewDriverForm({ name: '', phone: '', email: '', vehicle: 'Cargo Van', city: 'Houston', state: 'TX', cdl: false });
-          return;
-        }
-      } catch (err) {
-        console.warn("Validation check notice:", err);
-      }
+    // ── 0. STRICT FIELD VALIDATION: All fields required! ────────────────────
+    if (!name || !phone || !enteredEmail || !vehicle || !city || !state) {
+      alert("❌ All fields are required! Please fill in Driver Name, Phone Number, Email, Vehicle Class, City, and State Code.");
+      return;
     }
 
-    // ── 3. OFFLINE / NEW DRIVER: Direct Add ────────────────────────────────────
-    const newId = `fleet_${Date.now()}`;
-    const created = {
-      id: newId,
-      name: newDriverForm.name.trim(),
-      phone: newDriverForm.phone.trim() || '+1 (555) 000-0000',
-      email: enteredEmail || 'driver@company.com',
-      vehicle: newDriverForm.vehicle,
-      city: newDriverForm.city.trim() || 'Houston',
-      state: newDriverForm.state.trim() || 'TX',
-      cdl: newDriverForm.cdl
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(enteredEmail)) {
+      alert("❌ Please enter a valid email address.");
+      return;
+    }
+
+    const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+
+    // ── 1. VALIDATION: Check if email is registered as a Company account ───────
+    try {
+      const { data: profileCheck } = await supabase
+        .from('profiles')
+        .select('id, role, full_name, email')
+        .eq('email', enteredEmail)
+        .maybeSingle();
+
+      if (profileCheck && (profileCheck.role === 'company' || profileCheck.role === 'Company')) {
+        alert(`❌ Invalid Driver Email: "${enteredEmail}" belongs to a registered Company account.`);
+        return;
+      }
+
+      // ── 2. VALIDATION: Check if email belongs to a Registered Driver ──────────
+      const isRegisteredDriver = profileCheck && (profileCheck.role === 'driver' || profileCheck.role === 'Driver');
+
+      if (isRegisteredDriver) {
+        const companyName = currentUser?.name || currentUser?.company_name || 'Courier Logistics';
+
+        // Insert pending invitation in company_drivers
+        await supabase.from('company_drivers').insert([{
+          company_id: currentUser?.id || null,
+          driver_id: profileCheck.id,
+          full_name: name || profileCheck.full_name,
+          phone: formattedPhone || profileCheck.phone || '',
+          email: enteredEmail,
+          vehicle_type: vehicle,
+          city: city,
+          state_code: state,
+          has_cdl: newDriverForm.cdl,
+          status: 'PENDING_APPROVAL',
+          created_at: new Date().toISOString()
+        }]);
+
+        // Send Inbox Notification to Driver
+        await createNotification({
+          userId: profileCheck.id,
+          companyId: currentUser?.id || null,
+          title: `Fleet Join Invitation from ${companyName}`,
+          message: `${companyName} has invited you to join their company fleet as a registered driver. Please respond to this invitation in your inbox.`,
+          category: 'FLEET_INVITE',
+          unread: true,
+          important: true,
+          actionUrl: '/dashboard?tab=inbox',
+          actionText: 'View Invitation'
+        });
+
+        alert(`📩 Fleet Join Invitation sent to registered driver (${enteredEmail})! They will appear in your fleet list as soon as they accept in their Inbox.`);
+        setIsAddDriverModalOpen(false);
+        setNewDriverForm({ name: '', phone: '', email: '', vehicle: 'Cargo Van', city: 'Houston', state: 'TX', cdl: false });
+        await fetchFleetFromSupabase();
+        return;
+      }
+    } catch (err) {
+      console.warn("Validation check notice:", err);
+    }
+
+    // ── 3. OFFLINE / NEW DRIVER: Direct Add to Supabase PostgreSQL DB ──────────
+    const payload = {
+      company_id: currentUser?.id || null,
+      full_name: name,
+      phone: formattedPhone,
+      email: enteredEmail,
+      vehicle_type: vehicle,
+      city: city,
+      state_code: state,
+      has_cdl: newDriverForm.cdl,
+      status: 'ACTIVE',
+      created_at: new Date().toISOString()
     };
 
-    const updated = [created, ...fleetDrivers];
-    saveFleetDrivers(updated);
-    setIsAddDriverModalOpen(false);
-
     try {
-      const payload = {
-        company_id: currentUser?.id || null,
-        full_name: created.name,
-        phone: created.phone,
-        email: created.email,
-        vehicle_type: created.vehicle,
-        city: created.city,
-        state_code: created.state,
-        has_cdl: created.cdl,
-        status: 'ACTIVE',
-        created_at: new Date().toISOString()
-      };
-
-      const { data, error } = await supabase.from('company_drivers').insert([payload]);
-      if (!error && data && data[0]?.id) {
-        const synced = updated.map(d => d.id === newId ? { ...d, id: data[0].id } : d);
-        saveFleetDrivers(synced);
+      const { error } = await supabase.from('company_drivers').insert([payload]).select('*');
+      if (error) {
+        console.error("Error saving fleet driver to DB:", error);
       }
     } catch (dbErr) {
       console.warn("Supabase database fleet driver save warning:", dbErr);
     }
 
+    // ── 4. Re-fetch Fleet Drivers directly from Supabase DB to update UI INSTANTLY ─
+    await fetchFleetFromSupabase();
+
+    setIsAddDriverModalOpen(false);
     setNewDriverForm({
       name: '',
       phone: '',
@@ -588,19 +627,153 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     });
   };
 
+  const handleOpenEditDriverModal = (driver) => {
+    setEditDriverForm({
+      id: driver.id,
+      name: driver.name || '',
+      phone: driver.phone || '',
+      email: driver.email || '',
+      vehicle: driver.vehicle || 'Cargo Van',
+      city: driver.city || 'Houston',
+      state: driver.state || 'TX',
+      cdl: Boolean(driver.cdl)
+    });
+    setEditDriverModal({ isOpen: true, driver });
+  };
+
+  const handleEditFleetDriverSubmit = async (e) => {
+    e.preventDefault();
+    if (!editDriverForm.name.trim()) return;
+
+    const updatedList = fleetDrivers.map(d => {
+      if (d.id === editDriverForm.id) {
+        return {
+          ...d,
+          name: editDriverForm.name.trim(),
+          phone: editDriverForm.phone.trim(),
+          email: editDriverForm.email.trim(),
+          vehicle: editDriverForm.vehicle,
+          city: editDriverForm.city.trim(),
+          state: editDriverForm.state.trim(),
+          cdl: editDriverForm.cdl
+        };
+      }
+      return d;
+    });
+
+    saveFleetDrivers(updatedList);
+    setEditDriverModal({ isOpen: false, driver: null });
+
+    try {
+      if (editDriverForm.id && !String(editDriverForm.id).startsWith('fleet_')) {
+        await supabase
+          .from('company_drivers')
+          .update({
+            full_name: editDriverForm.name.trim(),
+            phone: editDriverForm.phone.trim(),
+            email: editDriverForm.email.trim(),
+            vehicle_type: editDriverForm.vehicle,
+            city: editDriverForm.city.trim(),
+            state_code: editDriverForm.state.trim(),
+            has_cdl: editDriverForm.cdl
+          })
+          .eq('id', editDriverForm.id);
+      }
+    } catch (err) {
+      console.warn("Supabase update company_driver error:", err);
+    }
+
+    try {
+      window.dispatchEvent(new Event('rk9_fleet_updated'));
+      window.dispatchEvent(new Event('rk9_routes_updated'));
+    } catch (e) { }
+
+    fetchFleetFromSupabase();
+    loadSupabaseRoutes();
+  };
+
+  const handleStopStatusChange = async (routeId, stopIndex, newStatus) => {
+    const updatedRoutes = savedUserRoutes.map(route => {
+      if (route.id === routeId && Array.isArray(route.stops)) {
+        const newStops = route.stops.map((stop, idx) => {
+          if (idx === stopIndex) {
+            return { ...stop, status: newStatus };
+          }
+          return stop;
+        });
+
+        const completedCount = newStops.filter(s => String(s.status).toLowerCase() === 'complete' || String(s.status).toLowerCase() === 'completed').length;
+        const ongoingCount = newStops.filter(s => String(s.status).toLowerCase() === 'ongoing').length;
+        let overall = 'ACTIVE';
+        if (newStops.length > 0 && completedCount === newStops.length) {
+          overall = 'COMPLETED';
+        } else if (ongoingCount > 0 || completedCount > 0) {
+          overall = 'ONGOING';
+        }
+
+        return { ...route, stops: newStops, status: overall };
+      }
+      return route;
+    });
+
+    setSavedUserRoutes(updatedRoutes);
+
+    try {
+      const targetRoute = updatedRoutes.find(r => r.id === routeId);
+      if (targetRoute) {
+        await supabase
+          .from('routes')
+          .update({
+            stops_data: targetRoute.stops,
+            status: targetRoute.status
+          })
+          .eq('id', routeId);
+      }
+    } catch (err) {
+      console.warn("Could not save updated stop status to Supabase DB:", err);
+    }
+  };
+
+  const getAssignedRoutesCount = (driver) => {
+    if (!savedUserRoutes || savedUserRoutes.length === 0 || !driver) return 0;
+    const dName = (driver.name || '').trim().toLowerCase();
+    const dId = String(driver.id || '');
+
+    return savedUserRoutes.filter(route => {
+      const rDriverName = (route.driverName || '').trim().toLowerCase();
+      const rDriverId = String(route.driverId || '');
+
+      // 1. Exact driver ID match
+      if (rDriverId && dId && rDriverId === dId) return true;
+
+      // 2. Exact driver Name match
+      if (rDriverName && dName && rDriverName === dName) return true;
+
+      // 3. Exact stop level driver match
+      if (Array.isArray(route.stops)) {
+        return route.stops.some(stop => {
+          const sDriverName = (stop.driverName || '').trim().toLowerCase();
+          const sDriverId = String(stop.driverId || '');
+          if (sDriverId && dId && sDriverId === dId) return true;
+          if (sDriverName && dName && sDriverName === dName) return true;
+          return false;
+        });
+      }
+
+      return false;
+    }).length;
+  };
+
   const handleDeleteFleetDriver = async (driverId) => {
     const targetDriver = fleetDrivers.find(d => d.id === driverId);
 
-    // 1. Immediately update UI state & localStorage
+    // 1. Immediately update UI state
     const updated = fleetDrivers.filter(d => d.id !== driverId);
-    saveFleetDrivers(updated);
+    setFleetDrivers(updated);
 
-    // 2. Broadcast fleet sync event
-    window.dispatchEvent(new Event('rk9_fleet_updated'));
-
-    // 3. Delete from Supabase Database
+    // 2. Delete from Supabase Database
     try {
-      if (driverId && !driverId.startsWith('fleet_')) {
+      if (driverId && !String(driverId).startsWith('fleet_')) {
         await supabase.from('company_drivers').delete().eq('id', driverId);
       }
       if (targetDriver?.email && currentUser?.id) {
@@ -613,6 +786,15 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     } catch (dbErr) {
       console.warn("Supabase database delete warning:", dbErr);
     }
+
+    // 3. Broadcast fleet & route sync events & re-fetch
+    try {
+      window.dispatchEvent(new Event('rk9_fleet_updated'));
+      window.dispatchEvent(new Event('rk9_routes_updated'));
+    } catch (e) { }
+
+    fetchFleetFromSupabase();
+    loadSupabaseRoutes();
   };
 
   const handleAcceptFleetInvite = async (notif) => {
@@ -852,11 +1034,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     loadEnrolled();
   }, [purchasedCourses]);
 
-  const handleDownloadCertificate = (courseTitle) => {
-    setDownloadToast(`📜 Downloading RouteK9 Completion Certificate for "${courseTitle}"`);
-    setTimeout(() => setDownloadToast(null), 4000);
-  };
-
   const handlePasswordChangeSubmit = async (e) => {
     e.preventDefault();
     setPasswordError(null);
@@ -973,17 +1150,45 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     }
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-[#0b132b] flex flex-col items-center justify-center p-6 text-center text-white space-y-5 animate-fadeIn">
+        <div className="w-16 h-16 rounded-3xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center shadow-xl">
+          <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
+        </div>
+        <div className="max-w-md space-y-2">
+          <h2 className="text-2xl font-black font-serif-heading">
+            {hasAuthHash ? 'Verifying Email & Authenticating...' : 'Authentication Required'}
+          </h2>
+          <p className="text-xs text-slate-400 font-medium leading-relaxed max-w-sm mx-auto">
+            {hasAuthHash
+              ? 'Please wait a moment while we confirm your email and load your dashboard.'
+              : 'Please log in or create an account to access your RouteK9 dashboard.'}
+          </p>
+        </div>
+        {!hasAuthHash && (
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={() => navigate('/login')}
+              className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-lg transition-all cursor-pointer"
+            >
+              Log In to RouteK9
+            </button>
+            <button
+              onClick={() => navigate('/signup')}
+              className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold transition-all cursor-pointer"
+            >
+              Create Account
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Floating Toast Notifications */}
-      {downloadToast && (
-        <Toast
-          message={downloadToast}
-          type="info"
-          duration={4000}
-          onClose={() => setDownloadToast(null)}
-        />
-      )}
       {passwordError && (
         <Toast
           message={passwordError}
@@ -1276,21 +1481,15 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                         </p>
                       </div>
 
-                      <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                      <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
                         <button
-                          onClick={() => handleDownloadCertificate(course.title)}
-                          className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-2 cursor-pointer"
+                          type="button"
+                          onClick={() => handleOpenCourseViewer(course)}
+                          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                         >
-                          <Download className="w-4 h-4" />
-                          <span>Download Certificate</span>
+                          <BookOpen className="w-4 h-4" />
+                          <span>View Modules & Lessons →</span>
                         </button>
-
-                        <Link
-                          to={`/training/${course.id}`}
-                          className="text-xs font-extrabold text-slate-700 hover:text-rose-600 transition-colors"
-                        >
-                          Review Lessons →
-                        </Link>
                       </div>
                     </div>
                   ))}
@@ -1317,7 +1516,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                   className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-all"
                 >
                   <Truck className="w-4 h-4" />
-                  <span>+ Plan New Route</span>
+                  <span>Plan New Route</span>
                 </Link>
               </div>
 
@@ -1347,24 +1546,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                             </span>
                             <h4 className="font-extrabold text-slate-900 text-sm">{route.title}</h4>
                           </div>
-                          {/* Status dropdown (only when logged in) */}
-                          {currentUser && (
-                            <div className="relative">
-                              <select
-                                value={routeStatuses[route.id] || route.status || 'ACTIVE'}
-                                onChange={e => setRouteStatuses(prev => ({ ...prev, [route.id]: e.target.value }))}
-                                className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none ${(routeStatuses[route.id] || route.status) === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                  (routeStatuses[route.id] || route.status) === 'ONGOING' ? 'bg-amber-50  text-amber-700  border-amber-200' :
-                                    'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  }`}
-                              >
-                                <option value="ACTIVE">Active</option>
-                                <option value="ONGOING">Ongoing</option>
-                                <option value="COMPLETED">Completed</option>
-                              </select>
-                              <ChevronDown className="w-2.5 h-2.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-current" />
-                            </div>
-                          )}
                         </div>
 
                         {/* Stats Badges */}
@@ -1383,47 +1564,133 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                           </div>
                         </div>
 
-                        {/* Stops List */}
+                        {/* Stops List Grouped by Zone */}
                         {route.stops && route.stops.length > 0 && (
-                          <div className="bg-slate-50/80 p-3 rounded-2xl border border-slate-200/80 space-y-1.5 text-xs">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stops List:</span>
-                            <ul className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
-                              {route.stops.map((s, idx) => (
-                                <li key={idx} className="flex items-start justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-2 rounded-lg border border-slate-200/60">
-                                  <div className="flex items-start gap-2 min-w-0 flex-1">
-                                    <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">{s.step || idx + 1}</span>
-                                    <div className="min-w-0 flex-1">
-                                      <span className="truncate block" title={s.label}>{s.label}</span>
-                                      {(s.zoneName || s.zoneId || s.driverName) && (
-                                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                          {(s.zoneName || s.zoneId) && (
-                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-50 text-[9px] font-bold text-rose-700 border border-rose-100">
-                                              {getFriendlyZoneName(s, route.stops || [])}
-                                            </span>
-                                          )}
-                                          {s.driverName && (
-                                            <button
-                                              type="button"
-                                              onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
-                                              className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-50 text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors"
-                                              title="Click to view driver contact details"
-                                            >
-                                              {s.driverName}
-                                            </button>
-                                          )}
+                          <div className="bg-slate-50/80 p-3 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stops & Zone Breakdown:</span>
+
+                            {(() => {
+                              const stops = route.stops || [];
+                              const hasZones = stops.some(s => s.zoneName || s.zoneId);
+
+                              if (!hasZones) {
+                                return (
+                                  <ul className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                    {stops.map((s, idx) => (
+                                      <li key={idx} className="flex items-start justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-2 rounded-lg border border-slate-200/60">
+                                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                                          <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">{s.step || idx + 1}</span>
+                                          <div className="min-w-0 flex-1">
+                                            <span className="truncate block" title={s.label}>{s.label}</span>
+                                            {s.driverName && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
+                                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-50 text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors mt-1"
+                                                title="Click to view driver contact details"
+                                              >
+                                                {s.driverName}
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
-                                      )}
+                                        <div className="relative inline-block shrink-0">
+                                          <select
+                                            value={s.status || 'pending'}
+                                            onChange={(e) => handleStopStatusChange(route.id, idx, e.target.value)}
+                                            className={`appearance-none pl-2.5 pr-6 py-0.5 rounded-full text-[9px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${s.status === 'complete' || s.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                              s.status === 'ongoing' || s.status === 'ONGOING' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                                'bg-slate-100 text-slate-600 border-slate-300'
+                                              }`}
+                                          >
+                                            <option value="pending">PENDING</option>
+                                            <option value="ongoing">ONGOING</option>
+                                            <option value="complete">COMPLETE</option>
+                                          </select>
+                                          <ChevronDown className={`w-2.5 h-2.5 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${s.status === 'complete' || s.status === 'COMPLETED' ? 'text-emerald-600' :
+                                            s.status === 'ongoing' || s.status === 'ONGOING' ? 'text-amber-600' :
+                                              'text-slate-500'
+                                            }`} />
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                );
+                              }
+
+                              const zoneGroupsMap = {};
+                              stops.forEach((s, idx) => {
+                                const zName = getFriendlyZoneName(s, stops) || 'Unzoned';
+                                if (!zoneGroupsMap[zName]) {
+                                  zoneGroupsMap[zName] = {
+                                    zoneName: zName,
+                                    driverName: s.driverName || '',
+                                    driverPhone: s.driverPhone || '',
+                                    stops: []
+                                  };
+                                }
+                                zoneGroupsMap[zName].stops.push({ ...s, originalIdx: idx });
+                              });
+
+                              const zoneGroups = Object.values(zoneGroupsMap);
+
+                              return (
+                                <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                                  {zoneGroups.map((group, gIdx) => (
+                                    <div key={gIdx} className="bg-white rounded-xl border border-slate-200 p-2.5 shadow-2xs space-y-2">
+                                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-extrabold border border-rose-200">
+                                            {group.zoneName}
+                                          </span>
+                                          <span className="text-[10px] text-slate-400 font-bold">
+                                            ({group.stops.length} {group.stops.length === 1 ? 'stop' : 'stops'})
+                                          </span>
+                                        </div>
+                                        {group.driverName && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveDriverModal({ name: group.driverName, phone: group.driverPhone })}
+                                            className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-colors"
+                                          >
+                                            <span>Driver: {group.driverName}</span>
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <ul className="space-y-1.5">
+                                        {group.stops.map((s, idx) => (
+                                          <li key={idx} className="flex items-start justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-slate-50/70 p-2 rounded-lg border border-slate-200/60">
+                                            <div className="flex items-start gap-2 min-w-0 flex-1">
+                                              <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">{s.step || s.originalIdx + 1}</span>
+                                              <span className="truncate block leading-snug" title={s.label}>{s.label}</span>
+                                            </div>
+                                            <div className="relative inline-block shrink-0">
+                                              <select
+                                                value={s.status || 'pending'}
+                                                onChange={(e) => handleStopStatusChange(route.id, s.originalIdx !== undefined ? s.originalIdx : idx, e.target.value)}
+                                                className={`appearance-none pl-2.5 pr-6 py-0.5 rounded-full text-[9px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${s.status === 'complete' || s.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                                  s.status === 'ongoing' || s.status === 'ONGOING' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                                    'bg-slate-100 text-slate-600 border-slate-300'
+                                                  }`}
+                                              >
+                                                <option value="pending">PENDING</option>
+                                                <option value="ongoing">ONGOING</option>
+                                                <option value="complete">COMPLETE</option>
+                                              </select>
+                                              <ChevronDown className={`w-2.5 h-2.5 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${s.status === 'complete' || s.status === 'COMPLETED' ? 'text-emerald-600' :
+                                                s.status === 'ongoing' || s.status === 'ONGOING' ? 'text-amber-600' :
+                                                  'text-slate-500'
+                                                }`} />
+                                            </div>
+                                          </li>
+                                        ))}
+                                      </ul>
                                     </div>
-                                  </div>
-                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                    s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                      'bg-slate-100 text-slate-600 border-slate-200'
-                                    }`}>
-                                    {s.status || 'pending'}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -2249,14 +2516,16 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsAddDriverModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  <span>+ Add Fleet Driver</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddDriverModalOpen(true)}
+                    className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Fleet Driver</span>
+                  </button>
+                </div>
               </div>
 
               {fleetDrivers.length === 0 ? (
@@ -2266,13 +2535,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                   <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                     Add your company's drivers here so you can assign them to optimized routes and dispatches in the Route Planner.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddDriverModalOpen(true)}
-                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer"
-                  >
-                    + Add Your First Driver
-                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -2315,6 +2577,13 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                             <span className="text-slate-800 font-bold">{driver.vehicle}</span>
                           </div>
                           <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Assigned Routes:</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-600 text-[11px] font-extrabold border border-rose-100">
+                              <Truck className="w-3 h-3 text-rose-500" />
+                              <span>{getAssignedRoutesCount(driver)} Assigned</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
                             <span className="text-slate-400 font-medium">Phone:</span>
                             <span className="text-slate-800 font-bold">{driver.phone}</span>
                           </div>
@@ -2329,7 +2598,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                         {driver.status === 'PENDING_APPROVAL' ? (
                           <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100/80 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
-                            <span>⏳ Pending Driver Approval</span>
+                            <span> Pending Driver Approval</span>
                           </span>
                         ) : (
                           <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
@@ -2337,13 +2606,22 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                           </span>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteFleetDriver(driver.id)}
-                          className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer hover:underline"
-                        >
-                          Delete
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditDriverModal(driver)}
+                            className="text-xs font-bold text-slate-600 hover:text-rose-600 cursor-pointer hover:underline flex items-center gap-1"
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-slate-500 hover:text-rose-600" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteDriverModalTarget(driver)} className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer hover:underline"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -2547,7 +2825,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Phone Number</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Phone Number *</label>
                   <PhoneInput
                     country={'us'}
                     value={newDriverForm.phone}
@@ -2578,9 +2856,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Email Address</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Email Address *</label>
                   <input
                     type="email"
+                    required
                     placeholder="e.g. driver@company.com"
                     value={newDriverForm.email}
                     onChange={(e) => setNewDriverForm(prev => ({ ...prev, email: e.target.value }))}
@@ -2590,8 +2869,9 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Vehicle Class</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Vehicle Class *</label>
                 <select
+                  required
                   value={newDriverForm.vehicle}
                   onChange={(e) => setNewDriverForm(prev => ({ ...prev, vehicle: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
@@ -2607,9 +2887,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">City</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">City *</label>
                   <input
                     type="text"
+                    required
                     placeholder="e.g. Houston"
                     value={newDriverForm.city}
                     onChange={(e) => setNewDriverForm(prev => ({ ...prev, city: e.target.value }))}
@@ -2618,9 +2899,10 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">State Code</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">State Code *</label>
                   <input
                     type="text"
+                    required
                     placeholder="e.g. TX"
                     value={newDriverForm.state}
                     onChange={(e) => setNewDriverForm(prev => ({ ...prev, state: e.target.value.toUpperCase() }))}
@@ -2662,9 +2944,411 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
         </div>
       )}
 
-      {/* Active Driver Info Modal Popup */}
-      {activeDriverModal && (
+      {/* Edit Fleet Driver Modal */}
+      {editDriverModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-6 text-left space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-extrabold text-[#0b132b] font-serif-heading">Edit Fleet Driver Info</h3>
+              <button
+                type="button"
+                onClick={() => setEditDriverModal({ isOpen: false, driver: null })}
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleEditFleetDriverSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Driver Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. John Doe"
+                  value={editDriverForm.name}
+                  onChange={(e) => setEditDriverForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Phone</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. +1 555-0199"
+                    value={editDriverForm.phone}
+                    onChange={(e) => setEditDriverForm(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Email</label>
+                  <input
+                    type="email"
+                    placeholder="driver@email.com"
+                    value={editDriverForm.email}
+                    onChange={(e) => setEditDriverForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Vehicle Class</label>
+                <select
+                  value={editDriverForm.vehicle}
+                  onChange={(e) => setEditDriverForm(prev => ({ ...prev, vehicle: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
+                >
+                  <option value="Cargo Van">Cargo Van</option>
+                  <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
+                  <option value="16ft Box Truck">16ft Box Truck</option>
+                  <option value="26ft Box Truck">26ft Box Truck</option>
+                  <option value="Sedan / Hatchback">Sedan / Hatchback</option>
+                  <option value="Minivan / SUV">Minivan / SUV</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">City</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Houston"
+                    value={editDriverForm.city}
+                    onChange={(e) => setEditDriverForm(prev => ({ ...prev, city: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">State Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. TX"
+                    value={editDriverForm.state}
+                    onChange={(e) => setEditDriverForm(prev => ({ ...prev, state: e.target.value.toUpperCase() }))}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="editCdlCheck"
+                  checked={editDriverForm.cdl}
+                  onChange={(e) => setEditDriverForm(prev => ({ ...prev, cdl: e.target.checked }))}
+                  className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
+                />
+                <label htmlFor="editCdlCheck" className="text-xs font-bold text-slate-700 cursor-pointer">
+                  Driver holds CDL Certification
+                </label>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditDriverModal({ isOpen: false, driver: null })}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer"
+                >
+                  Update Driver Info
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Driver Confirmation Modal */}
+      {deleteDriverModalTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 text-left space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-rose-600 font-extrabold text-sm">
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Fleet Driver?</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteDriverModalTarget(null)}
+                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Are you sure you want to remove <strong className="text-slate-900">{deleteDriverModalTarget.name}</strong> from your company fleet?
+              </p>
+              <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-[11px] text-rose-700 font-medium">
+                ⚠️ This driver will be permanently unassigned from your company fleet.
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteDriverModalTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const idToDelete = deleteDriverModalTarget.id;
+                  setDeleteDriverModalTarget(null);
+                  handleDeleteFleetDriver(idToDelete);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Driver</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Interactive Course Viewer Modal */}
+      {activeCourseViewerModal && (() => {
+        const courseData = courseLessonsDetailsMap[activeCourseViewerModal.id] || activeCourseViewerModal;
+        const lessons = courseData?.lessons || courseData?.outline || [];
+        const outcomes = courseData?.outcomes || [
+          "Master industry standards and best practices.",
+          "Get direct access to route opportunities.",
+          "Earn official completion certificate."
+        ];
+
+        const completedCount = lessons.filter(l => completedLessonsMap[`${activeCourseViewerModal.id}_${l.id}`]).length;
+        const progressPct = lessons.length > 0 ? Math.round((completedCount / lessons.length) * 100) : 100;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-xs animate-fadeIn overflow-y-auto">
+            <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl border border-slate-100 flex flex-col overflow-hidden text-left my-auto">
+
+              {/* Modal Header */}
+              <div className="bg-[#0b132b] text-white p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden shrink-0">
+                <div className="space-y-2 relative z-10">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-rose-600 text-white font-extrabold text-[10px] uppercase tracking-wider">
+                      Purchased Course • Lifetime Access
+                    </span>
+                    <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px] border border-emerald-400/30">
+                      {courseData?.earnings || "$50,000 – $150,000+ / yr"}
+                    </span>
+                  </div>
+
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-serif-heading">
+                    {courseData?.title || activeCourseViewerModal.title}
+                  </h2>
+                  <p className="text-xs text-slate-300 font-normal max-w-2xl leading-relaxed">
+                    {courseData?.summary || activeCourseViewerModal.subtitle}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0 relative z-10 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setActiveCourseViewerModal(null)}
+                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold flex items-center justify-center cursor-pointer transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 sm:p-8 overflow-y-auto space-y-8 flex-1">
+
+                {/* Course Progress Banner */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-xs font-extrabold text-[#0b132b] flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Course Completion Progress</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Complete all module lessons and action steps to verify your completion status.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="w-32 bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                      <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${progressPct > 0 ? progressPct : 100}%` }} />
+                    </div>
+                    <span className="text-xs font-extrabold text-emerald-700">
+                      {progressPct > 0 ? `${progressPct}%` : '100% Verified'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Key Outcomes */}
+                <div className="space-y-3">
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0b132b]">
+                    What You Will Achieve & Master
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {outcomes.map((item, idx) => (
+                      <div key={idx} className="p-3.5 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-700 flex items-start gap-2.5">
+                        <CheckCircle2 className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Course Modules & Interactive Action Guides */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <h3 className="text-base font-extrabold text-[#0b132b] font-serif-heading">
+                      Course Modules & Step-by-Step Action Guides
+                    </h3>
+                    <span className="text-xs font-bold text-slate-500">
+                      {lessons.length} Modules Included
+                    </span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {lessons.map((lesson, idx) => {
+                      const isExpanded = expandedLessonId === lesson.id || (expandedLessonId === null && idx === 0);
+                      const isCompleted = Boolean(completedLessonsMap[`${activeCourseViewerModal.id}_${lesson.id}`]);
+
+                      return (
+                        <div
+                          key={lesson.id}
+                          className={`rounded-2xl border transition-all overflow-hidden ${isCompleted ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200 bg-white'
+                            }`}
+                        >
+                          <div
+                            onClick={() => setExpandedLessonId(isExpanded ? null : lesson.id)}
+                            className="p-5 flex items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/80 transition-colors"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-extrabold shrink-0 mt-0.5 ${isCompleted ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-white'
+                                }`}>
+                                {isCompleted ? '✓' : idx + 1}
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-bold text-[#0b132b]">{lesson.title}</h4>
+                                <p className="text-xs text-slate-500 font-medium line-clamp-1 mt-0.5">
+                                  {lesson.body}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 shrink-0">
+                              {isCompleted && (
+                                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+                                  Completed
+                                </span>
+                              )}
+                              {isExpanded ? (
+                                <ChevronDown className="w-5 h-5 text-slate-400 transform rotate-180 transition-transform" />
+                              ) : (
+                                <ChevronDown className="w-5 h-5 text-slate-400 transition-transform" />
+                              )}
+                            </div>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="p-5 pt-2 border-t border-slate-100 bg-slate-50/50 space-y-4 animate-fadeIn">
+                              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                                {lesson.body}
+                              </p>
+
+                              {lesson.steps && lesson.steps.length > 0 && (
+                                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-3">
+                                  <div className="text-[10px] font-extrabold uppercase tracking-widest text-rose-600 flex items-center gap-1.5">
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>Step-by-Step Action Items</span>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    {lesson.steps.map((step, sIdx) => {
+                                      const stepKey = `${activeCourseViewerModal.id}_${lesson.id}_step_${sIdx}`;
+                                      const isChecked = Boolean(checkedStepsMap[stepKey]);
+
+                                      return (
+                                        <label
+                                          key={sIdx}
+                                          className="flex items-start gap-3 text-xs text-slate-700 font-medium cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={(e) => {
+                                              setCheckedStepsMap(prev => ({
+                                                ...prev,
+                                                [stepKey]: e.target.checked
+                                              }));
+                                            }}
+                                            className="w-4 h-4 accent-rose-600 rounded cursor-pointer shrink-0 mt-0.5"
+                                          />
+                                          <span className={isChecked ? 'line-through text-slate-400' : ''}>
+                                            <strong className="text-rose-600 mr-1">Step {sIdx + 1}:</strong>
+                                            {step}
+                                          </span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="pt-2 flex items-center justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const key = `${activeCourseViewerModal.id}_${lesson.id}`;
+                                    setCompletedLessonsMap(prev => ({
+                                      ...prev,
+                                      [key]: !prev[key]
+                                    }));
+                                  }}
+                                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${isCompleted
+                                    ? 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'
+                                    }`}
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span>{isCompleted ? 'Completed ✓' : 'Mark Lesson Completed'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-500 font-medium">
+                  Need assistance? Contact support@routek9.com
+                </span>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+      {activeDriverModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
@@ -2712,13 +3396,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
         </div>
       )}
 
-      {/* Download Toast Notification */}
-      {downloadToast && (
-        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-[#0b132b] text-white shadow-2xl border border-slate-700 flex items-center gap-3 text-xs font-bold animate-slideUp">
-          <Download className="w-5 h-5 text-rose-500 shrink-0" />
-          <span>{downloadToast}</span>
-        </div>
-      )}
+
     </>
   );
 }

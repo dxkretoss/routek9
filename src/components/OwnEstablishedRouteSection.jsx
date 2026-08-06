@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ExternalLink, CheckCircle2, ArrowRight } from 'lucide-react';
+import { saveUserChecklistToDb, loadUserChecklistFromDb } from '../lib/supabase';
 
 const ALL_STATES_ORDERED = [
   { code: 'AL', name: 'Alabama' },
@@ -119,16 +121,41 @@ const DUE_DILIGENCE_CHECKLIST = [
   "A broker or attorney experienced specifically in this route type, not general business sales"
 ];
 
-export default function OwnEstablishedRouteSection({ selectedState: propState, onSelectState }) {
+export default function OwnEstablishedRouteSection({ selectedState: propState, onSelectState, currentUser }) {
+  const navigate = useNavigate();
   const [checkedItems, setCheckedItems] = useState({});
 
   const selectedState = propState;
 
+  // 1. Load checked items from Supabase database when user is logged in
+  useEffect(() => {
+    async function fetchChecklist() {
+      if (currentUser?.id) {
+        const savedMap = await loadUserChecklistFromDb(currentUser.id, 'diligence_checklist');
+        setCheckedItems(savedMap || {});
+      } else {
+        setCheckedItems({});
+      }
+    }
+    fetchChecklist();
+  }, [currentUser]);
+
+  // 2. Handle Checkbox Click with Login Validation & Database Persistence
   const toggleCheck = (idx) => {
-    setCheckedItems((prev) => ({
-      ...prev,
-      [idx]: !prev[idx]
-    }));
+    // Validation: If user is not logged in / registered, redirect to login page
+    if (!currentUser) {
+      navigate('/login?redirect=/#buy-a-route-section');
+      return;
+    }
+
+    const updatedMap = {
+      ...checkedItems,
+      [idx]: !checkedItems[idx]
+    };
+
+    setCheckedItems(updatedMap);
+    // Save directly to Supabase PostgreSQL database (NO localstorage)
+    saveUserChecklistToDb(currentUser.id, 'diligence_checklist', updatedMap);
   };
 
   const verifiedCount = Object.values(checkedItems).filter(Boolean).length;

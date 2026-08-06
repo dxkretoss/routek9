@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   Calendar,
   Sparkles,
-  Building2
+  Building2,
+  Globe
 } from 'lucide-react';
 import { supabase, updateDriverVerification, fetchAllRouteBids, updateBidStatus, fetchDriverCertifications } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
@@ -39,6 +40,17 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
   const [selectedDriverRoutesModal, setSelectedDriverRoutesModal] = useState(null);
   const [expandedRouteId, setExpandedRouteId] = useState(null);
   const [activeDriverModal, setActiveDriverModal] = useState(null);
+  function getFriendlyZoneName(stop, stopsList = []) {
+    if (!stop) return '';
+    if (stop.zoneName) return stop.zoneName;
+    if (!stop.zoneId) return '';
+    if (stop.zoneId.startsWith('zone-')) {
+      return stop.zoneId.replace('zone-', 'Zone ');
+    }
+    const uniqueZoneIds = Array.from(new Set(stopsList.map(s => s.zoneId).filter(Boolean)));
+    const index = uniqueZoneIds.indexOf(stop.zoneId);
+    return index >= 0 ? `Zone ${index + 1}` : 'Zone';
+  }
 
   // Group Saved Routes by Driver
   const groupedRoutesByDriver = React.useMemo(() => {
@@ -46,9 +58,17 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
     routes.forEach((r) => {
       const key = (r.user_id || r.driverName || 'unknown').toLowerCase();
       if (!groupsMap[key]) {
+        const matchingDriver = drivers.find(d =>
+          (r.user_id && String(d.id) === String(r.user_id)) ||
+          (d.email && d.email.toLowerCase() === key) ||
+          (d.full_name && d.full_name.toLowerCase() === key)
+        );
         groupsMap[key] = {
           key,
-          driverName: r.driverName || 'Route Driver',
+          driverName: matchingDriver?.full_name || r.driverName || 'Route Driver',
+          driverEmail: matchingDriver?.email || '',
+          driverAvatar: matchingDriver?.avatar_url || matchingDriver?.avatar || matchingDriver?.profile_picture || null,
+          driverMembership: matchingDriver?.membership || 'Free',
           userId: r.user_id,
           routes: []
         };
@@ -67,7 +87,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
     });
 
     return groups.sort((a, b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
-  }, [routes]);
+  }, [routes, drivers]);
 
   const filteredGroupedRoutes = groupedRoutesByDriver.filter(g => {
     if (!searchQuery) return true;
@@ -112,14 +132,9 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
         return acc;
       }, {});
 
-      // Read deactivated list from localStorage for sync
-      const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]');
-
       const combinedDrivers = (profilesData || []).map((p) => {
         const isDeactivated = p.status === 'INACTIVE' ||
-          metaMap[p.id]?.status === 'INACTIVE' ||
-          deactivatedList.includes(p.email?.toLowerCase()) ||
-          deactivatedList.includes(p.id);
+          metaMap[p.id]?.status === 'INACTIVE';
 
         const vehicleVal = p.vehicle || metaMap[p.id]?.vehicle_type || p.vehicle_type || 'Cargo Van';
         const cityVal = p.city || metaMap[p.id]?.city || 'Houston';
@@ -133,7 +148,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
           phone: metaMap[p.id]?.phone || p.phone || p.phone_number || '',
           verified: metaMap[p.id]?.verified || p.verified || false,
           status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
-          ready_to_work: p.ready_to_work !== undefined ? p.ready_to_work : (p.readyToWork !== undefined ? p.readyToWork : true),
+          ready_to_work: p.ready_to_work !== undefined ? p.ready_to_work : (p.readyToWork !== undefined ? p.readyToWork : false),
           website_url: p.website_url || p.website || '',
           experience: p.experience || '1-3 Years',
           availability: p.availability || 'Immediate',
@@ -242,20 +257,26 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
           .order('created_at', { ascending: false });
 
         if (routesData) {
-          const driverOnlyRoutes = routesData.filter(r => !r.company_id);
-          setRoutes(driverOnlyRoutes.map(r => ({
-            id: r.id,
-            user_id: r.user_id,
-            title: r.title || 'Saved Courier Route',
-            driverName: r.driver_name || 'Solo Driver',
-            vehicle: 'Cargo Van',
-            stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
-            distanceMiles: r.distance_miles || 0,
-            durationMinutes: r.duration_minutes || 0,
-            status: r.status || 'ACTIVE',
-            stops: r.stops_data || [],
-            createdAt: r.created_at
-          })));
+          const driverIdsSet = new Set(finalDrivers.map(d => d.id));
+          const driverOnlyRoutes = routesData.filter(r =>
+            !r.company_id || driverIdsSet.has(r.user_id) || driverIdsSet.has(r.company_id)
+          );
+          setRoutes(driverOnlyRoutes.map(r => {
+            const matchingDriver = finalDrivers.find(d => d.id === r.user_id || d.id === r.company_id);
+            return {
+              id: r.id,
+              user_id: r.user_id,
+              title: r.title || 'Saved Courier Route',
+              driverName: r.driver_name || matchingDriver?.full_name || 'Solo Driver',
+              vehicle: matchingDriver?.vehicle || 'Cargo Van',
+              stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
+              distanceMiles: r.distance_miles || 0,
+              durationMinutes: r.duration_minutes || 0,
+              status: r.status || 'ACTIVE',
+              stops: r.stops_data || [],
+              createdAt: r.created_at
+            };
+          }));
         }
       } catch (rErr) {
         console.warn("Could not load Supabase routes for admin:", rErr);
@@ -317,22 +338,6 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
         });
       } catch (sbErr2) {
         console.warn("Supabase driver_profiles update warning:", sbErr2);
-      }
-
-      // 3. Sync to localStorage for instant auth blocking
-      try {
-        const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]');
-        let updated = [];
-        const cleanEmail = driverEmail ? driverEmail.toLowerCase() : '';
-
-        if (newStatus === 'INACTIVE') {
-          updated = Array.from(new Set([...deactivatedList, cleanEmail, driverId]));
-        } else {
-          updated = deactivatedList.filter(item => item !== cleanEmail && item !== driverId);
-        }
-        localStorage.setItem('rk9_deactivated_drivers', JSON.stringify(updated));
-      } catch (e) {
-        console.warn("LocalStorage status sync error:", e);
       }
     } finally {
       setUpdatingId(null);
@@ -419,7 +424,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
         >
           Saved Routes ({routes.length})
         </button>
-        <button
+        {/* <button
           onClick={() => setActiveTab('bids')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'bids'
             ? 'border-rose-600 text-rose-600'
@@ -427,7 +432,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
             }`}
         >
           Route Bids ({bids.length})
-        </button>
+        </button> */}
       </div>
 
       {/* Search Filter Input */}
@@ -486,7 +491,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                 <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">
                   <th className="px-6 py-4">Driver Name</th>
                   <th className="px-6 py-4">Vehicle Type</th>
-                  <th className="px-6 py-4">Location</th>
+                  {/* <th className="px-6 py-4">Location</th> */}
                   <th className="px-6 py-4">Directory Listing</th>
                   <th className="px-6 py-4 text-center">Account Access</th>
                   <th className="px-6 py-4 text-right">Admin Actions</th>
@@ -532,7 +537,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 font-medium text-slate-600">
+                      {/* <td className="px-6 py-4 font-medium text-slate-600">
                         <div className="flex items-center gap-1">
                           <MapPin className="w-3.5 h-3.5 text-slate-400" />
                           <span>
@@ -541,12 +546,12 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                               : 'Houston, TX'}
                           </span>
                         </div>
-                      </td>
+                      </td> */}
 
                       <td className="px-6 py-4 font-bold">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${driver.ready_to_work !== false
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-black'
-                            : 'bg-slate-100 text-slate-500 border-slate-300'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-black'
+                          : 'bg-slate-100 text-slate-500 border-slate-300'
                           }`}>
                           {driver.ready_to_work !== false ? '● Listed' : '○ Hidden'}
                         </span>
@@ -670,11 +675,31 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                     return (
                       <tr key={group.key} className="hover:bg-slate-50/60 transition-colors">
                         <td className="px-6 py-4 font-bold text-slate-900">
-                          <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-full bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center shadow-2xs">
-                              {(group.driverName || 'D').charAt(0).toUpperCase()}
-                            </span>
-                            <span>{group.driverName}</span>
+                          <div className="flex items-center gap-3">
+                            {group.driverAvatar ? (
+                              <img
+                                src={group.driverAvatar}
+                                alt={group.driverName || 'Driver'}
+                                className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-xs shrink-0"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center shadow-2xs shrink-0">
+                                {(group.driverName || group.driverEmail || 'D').charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                                <span>{group.driverName}</span>
+                                {group.driverMembership === 'Pro' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-300">
+                                    ★ Pro
+                                  </span>
+                                )}
+                              </div>
+                              {group.driverEmail && (
+                                <div className="text-[11px] text-slate-400 font-medium">{group.driverEmail}</div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 font-extrabold text-slate-800">
@@ -690,8 +715,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${String(overallStatus).toLowerCase() === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              String(overallStatus).toLowerCase() === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                'bg-slate-100 text-slate-600 border-slate-200'
+                            String(overallStatus).toLowerCase() === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              'bg-slate-100 text-slate-600 border-slate-200'
                             }`}>
                             {overallStatus}
                           </span>
@@ -1012,8 +1037,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                     Directory Listing & Driver Qualifications
                   </span>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${selectedDriverModal.ready_to_work !== false
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : 'bg-slate-200 text-slate-700 border-slate-300'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-slate-200 text-slate-700 border-slate-300'
                     }`}>
                     {selectedDriverModal.ready_to_work !== false ? '● Listed on Directory' : '○ Hidden from Directory'}
                   </span>
@@ -1280,8 +1305,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                       </div>
 
                       <span className={`self-start sm:self-auto px-3 py-1 rounded-full text-[10px] font-black uppercase border ${String(statusText).toLowerCase() === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
-                          String(statusText).toLowerCase() === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                            'bg-slate-100 text-slate-600 border-slate-200'
+                        String(statusText).toLowerCase() === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                          'bg-slate-100 text-slate-600 border-slate-200'
                         }`}>
                         ● {statusText}
                       </span>
@@ -1316,45 +1341,105 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                         </button>
 
                         {isExpanded && (
-                          <div className="mt-2.5 bg-white p-3 rounded-2xl border border-slate-200 space-y-2 animate-fadeIn">
-                            <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                              {routeStops.map((s, idx) => (
-                                <li key={idx} className="flex items-start justify-between gap-3 text-[11px] font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
-                                  <div className="flex items-start gap-2 min-w-0 flex-1">
-                                    <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">
-                                      {s.step || idx + 1}
-                                    </span>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="truncate text-slate-800 font-semibold" title={s.label}>{s.label}</div>
-                                      {(s.zoneName || s.zoneId || s.driverName) && (
-                                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                          {(s.zoneName || s.zoneId) && (
-                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-50 text-[9px] font-bold text-rose-700 border border-rose-100">
-                                              {getFriendlyZoneName(s, routeStops)}
-                                            </span>
-                                          )}
-                                          {s.driverName && (
-                                            <button
-                                              type="button"
-                                              onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
-                                              className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors"
-                                            >
-                                              {s.driverName}
-                                            </button>
-                                          )}
+                          <div className="mt-2.5 bg-white p-3 rounded-2xl border border-slate-200 space-y-2 animate-fadeIn text-xs">
+                            {(() => {
+                              const hasZones = routeStops.some(s => s.zoneName || s.zoneId);
+
+                              if (!hasZones) {
+                                return (
+                                  <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                    {routeStops.map((s, idx) => (
+                                      <li key={idx} className="flex items-start justify-between gap-3 text-[11px] font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                                          <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">
+                                            {s.step || idx + 1}
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-slate-800 font-semibold" title={s.label}>{s.label}</div>
+                                            {s.driverName && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
+                                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors mt-1"
+                                              >
+                                                {s.driverName}
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
-                                      )}
+                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                          s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                            'bg-slate-100 text-slate-600 border-slate-200'
+                                          }`}>
+                                          {s.status || 'pending'}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                );
+                              }
+
+                              const zoneGroupsMap = {};
+                              routeStops.forEach((s, idx) => {
+                                const zName = getFriendlyZoneName(s, routeStops) || 'Unzoned';
+                                if (!zoneGroupsMap[zName]) {
+                                  zoneGroupsMap[zName] = {
+                                    zoneName: zName,
+                                    driverName: s.driverName || '',
+                                    driverPhone: s.driverPhone || '',
+                                    stops: []
+                                  };
+                                }
+                                zoneGroupsMap[zName].stops.push({ ...s, originalIdx: idx });
+                              });
+
+                              const zoneGroups = Object.values(zoneGroupsMap);
+
+                              return (
+                                <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                                  {zoneGroups.map((group, gIdx) => (
+                                    <div key={gIdx} className="bg-slate-50/80 rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2">
+                                      <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-extrabold border border-rose-200">
+                                            {group.zoneName}
+                                          </span>
+                                          <span className="text-[10px] text-slate-400 font-bold">
+                                            ({group.stops.length} {group.stops.length === 1 ? 'stop' : 'stops'})
+                                          </span>
+                                        </div>
+                                        {group.driverName && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveDriverModal({ name: group.driverName, phone: group.driverPhone })}
+                                            className="inline-flex items-center px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200 cursor-pointer transition-colors"
+                                          >
+                                            <span>Driver: {group.driverName}</span>
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <ul className="space-y-1.5">
+                                        {group.stops.map((s, idx) => (
+                                          <li key={idx} className="flex items-start justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white p-2 rounded-lg border border-slate-200/60">
+                                            <div className="flex items-start gap-2 min-w-0 flex-1">
+                                              <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">{s.step || s.originalIdx + 1}</span>
+                                              <span className="truncate block leading-snug" title={s.label}>{s.label}</span>
+                                            </div>
+                                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                              s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                'bg-slate-100 text-slate-600 border-slate-200'
+                                              }`}>
+                                              {s.status || 'pending'}
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ul>
                                     </div>
-                                  </div>
-                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                      s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                        'bg-slate-100 text-slate-600 border-slate-200'
-                                    }`}>
-                                    {s.status || 'pending'}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1362,6 +1447,56 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Driver Info Modal Popup (highest z-index to float over all open modals) */}
+      {activeDriverModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-base">
+                👤
+              </div>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm">{activeDriverModal.name}</h4>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Contract Driver</span>
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Phone Number</span>
+                <span className="font-extrabold text-slate-800 text-xs">{activeDriverModal.phone || 'No phone number provided'}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              {activeDriverModal.phone && (
+                <a
+                  href={`tel:${activeDriverModal.phone}`}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <span>Call Driver</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

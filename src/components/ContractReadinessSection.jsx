@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, ShieldCheck, Sparkles, Truck } from 'lucide-react';
+import { saveUserChecklistToDb, loadUserChecklistFromDb } from '../lib/supabase';
 
 const READINESS_CHECKLIST = [
   "Valid driver's license with clean motor vehicle record",
@@ -44,15 +46,40 @@ const VEHICLE_QUALIFICATIONS = [
   }
 ];
 
-export default function ContractReadinessSection() {
+export default function ContractReadinessSection({ currentUser }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('checklist');
   const [checkedItems, setCheckedItems] = useState({});
 
+  // 1. Load checked items from Supabase database when user is logged in
+  useEffect(() => {
+    async function fetchChecklist() {
+      if (currentUser?.id) {
+        const savedMap = await loadUserChecklistFromDb(currentUser.id, 'readiness_checklist');
+        setCheckedItems(savedMap || {});
+      } else {
+        setCheckedItems({});
+      }
+    }
+    fetchChecklist();
+  }, [currentUser]);
+
+  // 2. Handle Checkbox Click with Login Validation & Database Persistence
   const toggleCheck = (idx) => {
-    setCheckedItems((prev) => ({
-      ...prev,
-      [idx]: !prev[idx]
-    }));
+    // Validation: If user is not logged in / registered, redirect to login page
+    if (!currentUser) {
+      navigate('/login?redirect=/#readiness-section');
+      return;
+    }
+
+    const updatedMap = {
+      ...checkedItems,
+      [idx]: !checkedItems[idx]
+    };
+
+    setCheckedItems(updatedMap);
+    // Save directly to Supabase PostgreSQL database (NO localstorage)
+    saveUserChecklistToDb(currentUser.id, 'readiness_checklist', updatedMap);
   };
 
   const readyCount = Object.values(checkedItems).filter(Boolean).length;

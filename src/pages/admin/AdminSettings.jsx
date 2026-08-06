@@ -16,8 +16,8 @@ export default function AdminSettings({ currentUser }) {
   const [activeTab, setActiveTab] = useState('profile');
 
   // Profile Form State
-  const [adminName, setAdminName] = useState(currentUser?.name || 'RouteK9 Admin');
-  const [adminEmail, setAdminEmail] = useState(currentUser?.email || 'routek9@admin.com');
+  const [adminName, setAdminName] = useState(currentUser?.name || '');
+  const [adminEmail, setAdminEmail] = useState(currentUser?.email || '');
   const [adminRole, setAdminRole] = useState('Super Administrator');
   const [profileSuccessMsg, setProfileSuccessMsg] = useState(null);
 
@@ -85,8 +85,8 @@ export default function AdminSettings({ currentUser }) {
         <button
           onClick={() => setActiveTab('profile')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${activeTab === 'profile'
-              ? 'border-rose-600 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+            ? 'border-rose-600 text-rose-600'
+            : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
           <UserCircle className="w-3.5 h-3.5" />
@@ -96,8 +96,8 @@ export default function AdminSettings({ currentUser }) {
         <button
           onClick={() => setActiveTab('security')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${activeTab === 'security'
-              ? 'border-rose-600 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+            ? 'border-rose-600 text-rose-600'
+            : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
           <KeyRound className="w-3.5 h-3.5" />

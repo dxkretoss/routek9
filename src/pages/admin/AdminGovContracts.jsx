@@ -35,7 +35,7 @@ export default function AdminGovContracts() {
   // Modal State for Add / Edit
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingContract, setEditingContract] = useState(null);
-  
+
   // Custom Delete Modal State
   const [deleteTargetContract, setDeleteTargetContract] = useState(null);
 
@@ -159,7 +159,7 @@ export default function AdminGovContracts() {
     if (!deleteTargetContract) return;
     const targetId = deleteTargetContract.noticeId || deleteTargetContract.id;
     const targetTitle = deleteTargetContract.title;
-    
+
     setDeleteTargetContract(null);
     const res = await deleteGovContractFromDb(targetId);
     if (res.success) {
@@ -202,14 +202,13 @@ export default function AdminGovContracts() {
 
   return (
     <div className="space-y-6">
-      
+
       {/* Toast Notification Banner */}
       {notification && (
-        <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-md transition-all ${
-          notification.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
+        <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-md transition-all ${notification.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
           notification.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-900' :
-          'bg-blue-50 border-blue-200 text-blue-900'
-        }`}>
+            'bg-blue-50 border-blue-200 text-blue-900'
+          }`}>
           <div className="flex items-center gap-2">
             {notification.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />}
             <span>{notification.message}</span>
@@ -230,7 +229,7 @@ export default function AdminGovContracts() {
             </span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
-            Government Contracts Database
+            Government Contracts ({contracts.length})
           </h2>
           <p className="text-slate-500 text-xs mt-1 max-w-xl font-medium">
             Connect to SAM.gov API to fetch, update, and persist federal courier contracts in the database for public users.
@@ -239,13 +238,13 @@ export default function AdminGovContracts() {
 
         {/* Action Buttons: Add Button & Refresh/Update API Button */}
         <div className="flex flex-wrap items-center gap-3">
-          <button
+          {/* <button
             onClick={handleOpenAddModal}
             className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add Contract</span>
-          </button>
+          </button> */}
 
           <button
             onClick={handleRefreshAndSave}
@@ -259,7 +258,7 @@ export default function AdminGovContracts() {
       </div>
 
       {/* Stats Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between">
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total DB Contracts</div>
@@ -292,7 +291,7 @@ export default function AdminGovContracts() {
             <RefreshCw className="w-5 h-5" />
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* Search & Filter Bar */}
       <div className="bg-[#0b132b] p-4 rounded-2xl border border-slate-800 shadow-2xs flex items-center gap-3">
@@ -341,7 +340,7 @@ export default function AdminGovContracts() {
               ) : (
                 paginatedContracts.map((item) => (
                   <tr key={item.noticeId || item.id} className="hover:bg-slate-50/80 transition-colors group">
-                    
+
                     {/* Combined Title, Solicitation # & Agency */}
                     <td className="py-4 px-4 space-y-1.5">
                       <div className="font-bold text-sm text-[#0b132b] leading-snug">
@@ -445,11 +444,10 @@ export default function AdminGovContracts() {
                     <button
                       key={pageNum}
                       onClick={() => handlePageChange(pageNum)}
-                      className={`w-8 h-8 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${
-                        currentPage === pageNum
-                          ? 'bg-rose-600 text-white shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
+                      className={`w-8 h-8 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${currentPage === pageNum
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
                     >
                       {pageNum}
                     </button>
@@ -471,184 +469,188 @@ export default function AdminGovContracts() {
       </div>
 
       {/* Add / Edit Contract Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-6 border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div>
-                <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">
-                  {editingContract ? 'Edit Government Contract' : 'Add Government Contract'}
-                </h3>
-                <p className="text-xs text-slate-500 font-medium">
-                  This contract will be saved directly into the database for all users.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmitForm} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {
+        isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-6 border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <label className="block font-extrabold text-slate-700 mb-1">Solicitation # / Notice ID *</label>
+                  <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">
+                    {editingContract ? 'Edit Government Contract' : 'Add Government Contract'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    This contract will be saved directly into the database for all users.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmitForm} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">Solicitation # / Notice ID *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.noticeId}
+                      onChange={(e) => setFormData({ ...formData, noticeId: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      placeholder="e.g. 36C24524Q0189"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">Est. Value</label>
+                    <input
+                      type="text"
+                      value={formData.estimatedValue}
+                      onChange={(e) => setFormData({ ...formData, estimatedValue: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      placeholder="e.g. $240,000 – $480,000 / yr"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-slate-700 mb-1">Contract Title *</label>
                   <input
                     type="text"
                     required
-                    value={formData.noticeId}
-                    onChange={(e) => setFormData({ ...formData, noticeId: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    placeholder="e.g. 36C24524Q0189"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    placeholder="e.g. VA Healthcare System - Daily Courier & Medical Specimen Transport"
                   />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">Agency / Department</label>
+                    <input
+                      type="text"
+                      value={formData.agency}
+                      onChange={(e) => setFormData({ ...formData, agency: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      placeholder="e.g. Department of Veterans Affairs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">Contracting Office</label>
+                    <input
+                      type="text"
+                      value={formData.office}
+                      onChange={(e) => setFormData({ ...formData, office: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      placeholder="e.g. 245-NETWORK CONTRACT OFFICE 05"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">Place of Performance / Location</label>
+                    <input
+                      type="text"
+                      value={formData.placeOfPerformance}
+                      onChange={(e) => setFormData({ ...formData, placeOfPerformance: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      placeholder="e.g. Baltimore, MD 21201"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">Response Deadline</label>
+                    <input
+                      type="text"
+                      value={formData.responseDeadline}
+                      onChange={(e) => setFormData({ ...formData, responseDeadline: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      placeholder="e.g. 2026-08-15"
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block font-extrabold text-slate-700 mb-1">Est. Value</label>
+                  <label className="block font-extrabold text-slate-700 mb-1">SAM.gov / Opportunity Link</label>
                   <input
-                    type="text"
-                    value={formData.estimatedValue}
-                    onChange={(e) => setFormData({ ...formData, estimatedValue: e.target.value })}
+                    type="url"
+                    value={formData.url}
+                    onChange={(e) => setFormData({ ...formData, url: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    placeholder="e.g. $240,000 – $480,000 / yr"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-extrabold text-slate-700 mb-1">Contract Title *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                  placeholder="e.g. VA Healthcare System - Daily Courier & Medical Specimen Transport"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-extrabold text-slate-700 mb-1">Agency / Department</label>
-                  <input
-                    type="text"
-                    value={formData.agency}
-                    onChange={(e) => setFormData({ ...formData, agency: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    placeholder="e.g. Department of Veterans Affairs"
+                    placeholder="https://sam.gov/search/..."
                   />
                 </div>
 
-                <div>
-                  <label className="block font-extrabold text-slate-700 mb-1">Contracting Office</label>
-                  <input
-                    type="text"
-                    value={formData.office}
-                    onChange={(e) => setFormData({ ...formData, office: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    placeholder="e.g. 245-NETWORK CONTRACT OFFICE 05"
-                  />
+                <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold shadow-md shadow-rose-600/20 transition-all cursor-pointer"
+                  >
+                    {editingContract ? 'Save Changes' : 'Save to Database'}
+                  </button>
                 </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Custom Delete Confirmation Dialog Modal */}
+      {
+        deleteTargetContract && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-6 border border-slate-200 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mx-auto text-rose-600 shadow-xs">
+                <AlertTriangle className="w-7 h-7" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-extrabold text-slate-700 mb-1">Place of Performance / Location</label>
-                  <input
-                    type="text"
-                    value={formData.placeOfPerformance}
-                    onChange={(e) => setFormData({ ...formData, placeOfPerformance: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    placeholder="e.g. Baltimore, MD 21201"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-extrabold text-slate-700 mb-1">Response Deadline</label>
-                  <input
-                    type="text"
-                    value={formData.responseDeadline}
-                    onChange={(e) => setFormData({ ...formData, responseDeadline: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                    placeholder="e.g. 2026-08-15"
-                  />
-                </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">
+                  Delete Government Contract?
+                </h3>
+                <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                  Are you sure you want to delete <span className="font-extrabold text-slate-900 font-mono text-[11px] block mt-1 py-1 px-2.5 rounded-lg bg-slate-100 truncate border border-slate-200">{deleteTargetContract.title}</span>
+                </p>
+                <p className="text-[11px] text-rose-600 font-semibold pt-1">
+                  This action will permanently remove the contract from the database.
+                </p>
               </div>
 
-              <div>
-                <label className="block font-extrabold text-slate-700 mb-1">SAM.gov / Opportunity Link</label>
-                <input
-                  type="url"
-                  value={formData.url}
-                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                  placeholder="https://sam.gov/search/..."
-                />
-              </div>
-
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+              <div className="pt-2 flex items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-all cursor-pointer"
+                  onClick={() => setDeleteTargetContract(null)}
+                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold shadow-md shadow-rose-600/20 transition-all cursor-pointer"
+                  type="button"
+                  onClick={confirmDeleteContract}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md shadow-rose-600/30 transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  {editingContract ? 'Save Changes' : 'Save to Database'}
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Contract</span>
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Custom Delete Confirmation Dialog Modal */}
-      {deleteTargetContract && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-6 border border-slate-200 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mx-auto text-rose-600 shadow-xs">
-              <AlertTriangle className="w-7 h-7" />
-            </div>
-            
-            <div className="space-y-2">
-              <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">
-                Delete Government Contract?
-              </h3>
-              <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                Are you sure you want to delete <span className="font-extrabold text-slate-900 font-mono text-[11px] block mt-1 py-1 px-2.5 rounded-lg bg-slate-100 truncate border border-slate-200">{deleteTargetContract.title}</span>
-              </p>
-              <p className="text-[11px] text-rose-600 font-semibold pt-1">
-                This action will permanently remove the contract from the database.
-              </p>
-            </div>
-
-            <div className="pt-2 flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteTargetContract(null)}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteContract}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md shadow-rose-600/30 transition-all cursor-pointer flex items-center gap-1.5"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Delete Contract</span>
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-    </div>
+    </div >
   );
 }

@@ -31,10 +31,40 @@ export default function GovernmentContractsSection({ currentUser, onOpenPricing,
     return `https://sam.gov/search/?index=opp&sort=-modifiedDate&page=1&keyword=492110`;
   };
 
+  const formatDeadlineDate = (deadlineStr) => {
+    if (!deadlineStr) return { formatted: 'Open Bidding', isPast: false };
+    if (typeof deadlineStr === 'string' && deadlineStr.toLowerCase().includes('open')) {
+      return { formatted: 'Open Bidding', isPast: false };
+    }
+
+    try {
+      const d = new Date(deadlineStr);
+      if (!isNaN(d.getTime())) {
+        const formatted = d.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        const isPast = d.getTime() < Date.now() - (24 * 60 * 60 * 1000); // 1 day tolerance
+        return { formatted, isPast };
+      }
+    } catch {
+      // fallback
+    }
+    return { formatted: String(deadlineStr), isPast: false };
+  };
+
+  // Filter active contracts (hide past expired deadlines)
+  const activeContractsList = contracts.filter((c) => {
+    const info = formatDeadlineDate(c.responseDeadline);
+    return !info.isPast;
+  });
+
   // Pagination Calculations
-  const totalPages = Math.ceil(contracts.length / itemsPerPage) || 1;
+  const displayList = activeContractsList.length > 0 ? activeContractsList : contracts;
+  const totalPages = Math.ceil(displayList.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedContracts = contracts.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedContracts = displayList.slice(startIndex, startIndex + itemsPerPage);
 
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
@@ -139,10 +169,22 @@ export default function GovernmentContractsSection({ currentUser, onOpenPricing,
 
                       {/* Deadline */}
                       <td className="py-4 px-4 text-slate-600 font-bold whitespace-nowrap">
-                        <div className="flex items-center gap-1 text-slate-700">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{item.responseDeadline}</span>
-                        </div>
+                        {(() => {
+                          const info = formatDeadlineDate(item.responseDeadline);
+                          return (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5 text-slate-900 font-extrabold text-xs">
+                                <Calendar className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <span>{info.formatted}</span>
+                              </div>
+                              <div>
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${info.isPast ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                                  {info.isPast ? 'Closed' : 'Active / Bidding Open'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Action Link (100% SINGLE LINE BUTTON) */}
@@ -186,12 +228,12 @@ export default function GovernmentContractsSection({ currentUser, onOpenPricing,
           </div>
 
           {/* Pagination Controls */}
-          {contracts.length > 0 && (
+          {displayList.length > 0 && (
             <div className="mt-4 pt-4 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
               <div className="text-slate-500 font-semibold">
                 Showing <span className="font-extrabold text-slate-900">{startIndex + 1}</span> to{' '}
-                <span className="font-extrabold text-slate-900">{Math.min(startIndex + itemsPerPage, contracts.length)}</span> of{' '}
-                <span className="font-extrabold text-slate-900">{contracts.length}</span> contracts
+                <span className="font-extrabold text-slate-900">{Math.min(startIndex + itemsPerPage, displayList.length)}</span> of{' '}
+                <span className="font-extrabold text-slate-900">{displayList.length}</span> active contracts
               </div>
 
               {totalPages > 1 && (

@@ -166,48 +166,16 @@ export async function addGovContractToDb(contractData) {
     url: contractData.url || "https://sam.gov"
   };
 
-  let dbSaved = null;
   try {
-    const { data, error } = await supabase
+    await supabase
       .from('gov_contracts')
-      .upsert([payload], { onConflict: 'notice_id' })
-      .select('*');
-
-    if (!error && data && data.length > 0) {
-      dbSaved = data[0];
-    }
+      .upsert([payload], { onConflict: 'notice_id' });
   } catch (err) {
     console.warn("addGovContractToDb notice:", err);
   }
 
-  const current = getLocalContractsFallback();
-  const existingIndex = current.findIndex(c => c.noticeId === payload.notice_id);
-  const formattedObj = {
-    id: dbSaved?.id || `local-${Date.now()}`,
-    noticeId: payload.notice_id,
-    title: payload.title,
-    agency: payload.agency,
-    office: payload.office,
-    type: payload.type,
-    naicsCode: payload.naics_code,
-    setAside: payload.set_aside,
-    postedDate: payload.posted_date,
-    responseDeadline: payload.response_deadline,
-    placeOfPerformance: payload.place_of_performance,
-    estimatedValue: payload.estimated_value,
-    url: payload.url,
-    createdAt: dbSaved?.created_at || new Date().toISOString()
-  };
-
-  let updatedList;
-  if (existingIndex >= 0) {
-    updatedList = [...current];
-    updatedList[existingIndex] = formattedObj;
-  } else {
-    updatedList = [formattedObj, ...current];
-  }
-  saveLocalContracts(updatedList);
-  return { success: true, item: formattedObj, list: updatedList };
+  const updatedFromDb = await fetchGovContractsFromDb();
+  return { success: true, list: updatedFromDb };
 }
 
 // 4. Delete contract from DB
@@ -230,10 +198,8 @@ export async function deleteGovContractFromDb(noticeIdOrId) {
     console.warn("deleteGovContractFromDb notice:", err);
   }
 
-  const current = getLocalContractsFallback();
-  const updatedList = current.filter(c => c.noticeId !== noticeIdOrId && c.id !== noticeIdOrId);
-  saveLocalContracts(updatedList);
-  return { success: true, list: updatedList };
+  const updatedFromDb = await fetchGovContractsFromDb();
+  return { success: true, list: updatedFromDb };
 }
 
 // Helper: Save contracts list to Supabase
@@ -276,24 +242,10 @@ async function seedDefaultContractsToDb(contractsList) {
   }
 }
 
-// Helper: Local Storage Storage & Fallbacks
 function getLocalContractsFallback() {
-  try {
-    const raw = localStorage.getItem(GOV_CACHE_KEY);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.warn("getLocalContractsFallback parse error:", e);
-  }
   return [];
 }
 
 function saveLocalContracts(items) {
-  try {
-    localStorage.setItem(GOV_CACHE_KEY, JSON.stringify(items));
-  } catch (e) {
-    console.warn("saveLocalContracts error:", e);
-  }
+  // No-op: Data is maintained 100% dynamically in Supabase database
 }

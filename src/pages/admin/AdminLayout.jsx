@@ -167,7 +167,13 @@ export default function AdminLayout({ currentUser, onLogout }) {
 
       // Helper to check if a user is an admin
       const isAdminUser = (u) => {
-        return u.role === 'admin' || (u.email && u.email.toLowerCase() === 'routek9@admin.com');
+        if (!u) return false;
+        const role = (u.role || '').toLowerCase();
+        return (
+          role === 'admin' ||
+          role === 'superadmin' ||
+          role === 'super_admin'
+        );
       };
 
       // Combine drivers from profiles + driver_profiles (exclude admins)

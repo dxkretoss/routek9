@@ -154,9 +154,21 @@ export default function AdminCourses() {
 
   const handleAddLesson = (modIdx, isEdit = false) => {
     if (isEdit) {
-      setEditOutline(prev => prev.map((m, idx) => idx === modIdx ? { ...m, lessons: [...m.lessons, ''] } : m));
+      setEditOutline(prev => prev.map((m, idx) => {
+        if (idx === modIdx) {
+          const currentLessons = Array.isArray(m?.lessons) ? m.lessons : (Array.isArray(m?.steps) ? m.steps : [m?.body || m?.title || '']);
+          return { ...m, lessons: [...currentLessons, ''] };
+        }
+        return m;
+      }));
     } else {
-      setNewOutline(prev => prev.map((m, idx) => idx === modIdx ? { ...m, lessons: [...m.lessons, ''] } : m));
+      setNewOutline(prev => prev.map((m, idx) => {
+        if (idx === modIdx) {
+          const currentLessons = Array.isArray(m?.lessons) ? m.lessons : (Array.isArray(m?.steps) ? m.steps : [m?.body || m?.title || '']);
+          return { ...m, lessons: [...currentLessons, ''] };
+        }
+        return m;
+      }));
     }
   };
 
@@ -164,18 +176,18 @@ export default function AdminCourses() {
     if (isEdit) {
       setEditOutline(prev => prev.map((m, idx) => {
         if (idx === modIdx) {
-          const nextLessons = [...m.lessons];
-          nextLessons[lesIdx] = val;
-          return { ...m, lessons: nextLessons };
+          const currentLessons = Array.isArray(m?.lessons) ? [...m.lessons] : (Array.isArray(m?.steps) ? [...m.steps] : [m?.body || m?.title || '']);
+          currentLessons[lesIdx] = val;
+          return { ...m, lessons: currentLessons };
         }
         return m;
       }));
     } else {
       setNewOutline(prev => prev.map((m, idx) => {
         if (idx === modIdx) {
-          const nextLessons = [...m.lessons];
-          nextLessons[lesIdx] = val;
-          return { ...m, lessons: nextLessons };
+          const currentLessons = Array.isArray(m?.lessons) ? [...m.lessons] : (Array.isArray(m?.steps) ? [...m.steps] : [m?.body || m?.title || '']);
+          currentLessons[lesIdx] = val;
+          return { ...m, lessons: currentLessons };
         }
         return m;
       }));
@@ -186,14 +198,16 @@ export default function AdminCourses() {
     if (isEdit) {
       setEditOutline(prev => prev.map((m, idx) => {
         if (idx === modIdx) {
-          return { ...m, lessons: m.lessons.filter((_, li) => li !== lesIdx) };
+          const currentLessons = Array.isArray(m?.lessons) ? m.lessons : (Array.isArray(m?.steps) ? m.steps : [m?.body || m?.title || '']);
+          return { ...m, lessons: currentLessons.filter((_, li) => li !== lesIdx) };
         }
         return m;
       }));
     } else {
       setNewOutline(prev => prev.map((m, idx) => {
         if (idx === modIdx) {
-          return { ...m, lessons: m.lessons.filter((_, li) => li !== lesIdx) };
+          const currentLessons = Array.isArray(m?.lessons) ? m.lessons : (Array.isArray(m?.steps) ? m.steps : [m?.body || m?.title || '']);
+          return { ...m, lessons: currentLessons.filter((_, li) => li !== lesIdx) };
         }
         return m;
       }));
@@ -268,7 +282,25 @@ export default function AdminCourses() {
     setEditProjectedPay(course.projectedPay || '');
     setEditImageUrl(course.image_url || course.image || DEFAULT_COURSE_IMAGES[course.id] || '');
     setEditOutcomes(course.outcomes && course.outcomes.length ? [...course.outcomes] : ['', '', '']);
-    setEditOutline(course.outline && course.outline.length ? [...course.outline] : [
+    
+    const rawOutline = course.outline || course.lessons || [];
+    const normalizedOutline = rawOutline.map((mod, idx) => {
+      if (typeof mod === 'string') {
+        return { moduleNumber: idx + 1, moduleTitle: mod, lessons: [mod] };
+      }
+      const lessonsList = Array.isArray(mod?.lessons) 
+        ? mod.lessons 
+        : (Array.isArray(mod?.steps) ? mod.steps : [mod?.body || mod?.title || 'Lesson 1']);
+
+      return {
+        ...mod,
+        moduleNumber: mod?.moduleNumber || idx + 1,
+        moduleTitle: mod?.moduleTitle || mod?.title || `Module ${idx + 1}`,
+        lessons: lessonsList
+      };
+    });
+
+    setEditOutline(normalizedOutline.length ? normalizedOutline : [
       { moduleNumber: 1, moduleTitle: 'Module 1 Overview', lessons: ['Lesson 1'] }
     ]);
     setEditStatus(course.status || 'ACTIVE');
@@ -706,17 +738,17 @@ export default function AdminCourses() {
                           </button>
                         </div>
                         <div className="space-y-1.5">
-                          {mod.lessons.map((lesson, lIdx) => (
+                          {(Array.isArray(mod?.lessons) ? mod.lessons : (Array.isArray(mod?.steps) ? mod.steps : [mod?.body || mod?.title || 'Lesson 1'])).map((lesson, lIdx) => (
                             <div key={lIdx} className="flex items-center gap-2">
                               <input
                                 type="text"
                                 required
                                 placeholder={`Lesson #${lIdx + 1}`}
-                                value={lesson}
+                                value={typeof lesson === 'string' ? lesson : (lesson?.title || lesson?.body || '')}
                                 onChange={(e) => handleLessonChange(mIdx, lIdx, e.target.value, false)}
                                 className="flex-1 px-3 py-1.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                               />
-                              {mod.lessons.length > 1 && (
+                              {(Array.isArray(mod?.lessons) ? mod.lessons : (Array.isArray(mod?.steps) ? mod.steps : [mod?.body || mod?.title || 'Lesson 1'])).length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveLesson(mIdx, lIdx, false)}
@@ -1011,17 +1043,17 @@ export default function AdminCourses() {
                           </button>
                         </div>
                         <div className="space-y-1.5">
-                          {mod.lessons.map((lesson, lIdx) => (
+                          {(Array.isArray(mod?.lessons) ? mod.lessons : (Array.isArray(mod?.steps) ? mod.steps : [mod?.body || mod?.title || 'Lesson 1'])).map((lesson, lIdx) => (
                             <div key={lIdx} className="flex items-center gap-2">
                               <input
                                 type="text"
                                 required
                                 placeholder={`Lesson #${lIdx + 1}`}
-                                value={lesson}
+                                value={typeof lesson === 'string' ? lesson : (lesson?.title || lesson?.body || '')}
                                 onChange={(e) => handleLessonChange(mIdx, lIdx, e.target.value, true)}
                                 className="flex-1 px-3 py-1.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                               />
-                              {mod.lessons.length > 1 && (
+                              {(Array.isArray(mod?.lessons) ? mod.lessons : (Array.isArray(mod?.steps) ? mod.steps : [mod?.body || mod?.title || 'Lesson 1'])).length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveLesson(mIdx, lIdx, true)}

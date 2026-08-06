@@ -15,12 +15,13 @@ export default function AdminLoginPage({ onAdminLogin }) {
     setLoading(true);
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
 
     try {
       // 1. Authenticate via Supabase Auth
       const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
-        password: password
+        password: cleanPassword
       });
 
       if (supabaseError) {

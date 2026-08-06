@@ -17,7 +17,8 @@ import {
   Truck,
   CheckCircle2,
   ChevronUp,
-  Globe
+  Globe,
+  UserCheck
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
@@ -40,9 +41,18 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
     routes.forEach((r) => {
       const key = (r.companyId || r.companyName || 'unknown').toLowerCase();
       if (!groupsMap[key]) {
+        const matchingCompany = companies.find(c =>
+          (r.companyId && String(c.id) === String(r.companyId)) ||
+          (c.company_name && c.company_name.toLowerCase() === key) ||
+          (c.full_name && c.full_name.toLowerCase() === key) ||
+          (c.email && c.email.toLowerCase() === key)
+        );
         groupsMap[key] = {
           key,
-          companyName: r.companyName || 'Partner Company',
+          companyName: matchingCompany?.company_name || r.companyName || 'Partner Company',
+          companyEmail: matchingCompany?.email || '',
+          companyAvatar: matchingCompany?.avatar_url || null,
+          companyMembership: matchingCompany?.membership || 'Free',
           companyId: r.companyId,
           routes: []
         };
@@ -61,7 +71,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
     });
 
     return groups.sort((a, b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
-  }, [routes]);
+  }, [routes, companies]);
 
   const filteredGroupedRoutes = groupedRoutesByCompany.filter(g => {
     if (!searchQuery) return true;
@@ -105,13 +115,8 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
         .eq('role', 'company')
         .order('created_at', { ascending: false });
 
-      // Read deactivated list from localStorage for instant sync
-      const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]');
-
       const list = (profilesData || []).map((p) => {
-        const isDeactivated = p.status === 'INACTIVE' ||
-          deactivatedList.includes(p.email?.toLowerCase()) ||
-          deactivatedList.includes(p.id);
+        const isDeactivated = p.status === 'INACTIVE';
 
         return {
           ...p,
@@ -120,7 +125,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
           state_code: p.state_code || 'TX',
           phone: p.phone || '',
           status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
-          ready_to_work: p.ready_to_work !== undefined ? p.ready_to_work : (p.readyToWork !== undefined ? p.readyToWork : true),
+          ready_to_work: p.ready_to_work !== undefined ? p.ready_to_work : (p.readyToWork !== undefined ? p.readyToWork : false),
           website_url: p.website_url || p.website || '',
           contract_types: p.vehicle || p.contract_types || 'Medical Specimen, Scheduled Routes',
           service_area: p.availability || p.service_area || 'Regional & Statewide Logistics',
@@ -213,20 +218,23 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
           .order('created_at', { ascending: false });
 
         if (!routesErr && routesData) {
-          const mappedRoutes = routesData.map(r => {
-            const creator = finalList.find(c => c.id === r.company_id || c.id === r.user_id);
-            return {
-              id: r.id,
-              title: r.title || 'Corporate Dispatched Route',
-              companyId: r.company_id || r.user_id,
-              companyName: creator ? creator.company_name : 'Partner Company',
-              stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
-              distanceMiles: r.distance_miles || 0,
-              durationMinutes: r.duration_minutes || 0,
-              createdAt: r.created_at,
-              stops: r.stops_data || []
-            };
-          });
+          const companyIdsSet = new Set(finalList.map(c => c.id));
+          const mappedRoutes = routesData
+            .filter(r => r.company_id && companyIdsSet.has(r.company_id))
+            .map(r => {
+              const creator = finalList.find(c => c.id === r.company_id || c.id === r.user_id);
+              return {
+                id: r.id,
+                title: r.title || 'Corporate Dispatched Route',
+                companyId: r.company_id || r.user_id,
+                companyName: creator ? creator.company_name : 'Partner Company',
+                stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
+                distanceMiles: r.distance_miles || 0,
+                durationMinutes: r.duration_minutes || 0,
+                createdAt: r.created_at,
+                stops: r.stops_data || []
+              };
+            });
           setRoutes(mappedRoutes);
         }
       } catch (rErr) {
@@ -262,22 +270,6 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
         }).eq('id', companyId);
       } catch (sbErr) {
         console.warn("Supabase profile status update error:", sbErr);
-      }
-
-      // 3. Sync to localStorage for instant auth enforcement
-      try {
-        const deactivatedList = JSON.parse(localStorage.getItem('rk9_deactivated_drivers') || '[]');
-        let updated = [];
-        const cleanEmail = companyEmail ? companyEmail.toLowerCase() : '';
-
-        if (newStatus === 'INACTIVE') {
-          updated = Array.from(new Set([...deactivatedList, cleanEmail, companyId]));
-        } else {
-          updated = deactivatedList.filter(item => item !== cleanEmail && item !== companyId);
-        }
-        localStorage.setItem('rk9_deactivated_drivers', JSON.stringify(updated));
-      } catch (e) {
-        console.warn("LocalStorage status sync error:", e);
       }
     } finally {
       setUpdatingId(null);
@@ -475,10 +467,11 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                             {(() => {
                               const compRoutes = routes.filter(r =>
                                 (r.companyId && String(r.companyId) === String(comp.id)) ||
-                                (r.companyName && comp.company_name && r.companyName.toLowerCase() === comp.company_name.toLowerCase()) ||
-                                (r.companyName && comp.full_name && r.companyName.toLowerCase() === comp.full_name.toLowerCase()) ||
-                                (r.companyName && comp.email && r.companyName.toLowerCase() === comp.email.toLowerCase())
-                              ).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+                                (r.company_id && String(r.company_id) === String(comp.id)) ||
+                                (r.user_id && String(r.user_id) === String(comp.id)) ||
+                                (r.companyEmail && comp.email && r.companyEmail.toLowerCase() === comp.email.toLowerCase()) ||
+                                (r.email && comp.email && r.email.toLowerCase() === comp.email.toLowerCase())
+                              ).sort((a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0));
 
                               return compRoutes.length > 0 && (
                                 <button
@@ -563,22 +556,42 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
 
                     const formattedTime = latestRoute?.createdAt
                       ? new Date(latestRoute.createdAt).toLocaleString('en-US', {
-                          month: 'numeric',
-                          day: 'numeric',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })
+                        month: 'numeric',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
                       : 'N/A';
 
                     return (
                       <tr key={group.key} className="hover:bg-slate-50/60 transition-colors">
                         <td className="px-6 py-4 font-bold text-slate-900">
-                          <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-xl bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center shadow-2xs">
-                              {getCompanyInitials(group.companyName)}
-                            </span>
-                            <span>{group.companyName}</span>
+                          <div className="flex items-center gap-3">
+                            {group.companyAvatar ? (
+                              <img
+                                src={group.companyAvatar}
+                                alt={group.companyName}
+                                className="w-8 h-8 rounded-xl object-cover border border-slate-200 shadow-xs shrink-0"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-xl bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center shadow-2xs shrink-0">
+                                {getCompanyInitials(group.companyName)}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                                <span>{group.companyName}</span>
+                                {group.companyMembership === 'Pro' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-300">
+                                    ★ Pro
+                                  </span>
+                                )}
+                              </div>
+                              {group.companyEmail && (
+                                <div className="text-[11px] text-slate-400 font-medium">{group.companyEmail}</div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 font-extrabold text-slate-800">
@@ -593,11 +606,10 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                           {formattedTime}
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
-                            String(overallStatus).toLowerCase() === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${String(overallStatus).toLowerCase() === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                             String(overallStatus).toLowerCase() === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}>
+                              'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
                             {overallStatus}
                           </span>
                         </td>
@@ -612,8 +624,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                             }}
                             className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5"
                           >
-                            <Truck className="w-3.5 h-3.5" />
-                            <span>View All Dispatched Routes ({group.routes.length}) →</span>
+                            <span>View All Dispatched Routes ({group.routes.length})</span>
                           </button>
                         </td>
                       </tr>
@@ -713,8 +724,8 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                     Directory Listing & Corporate Profile
                   </span>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${selectedCompanyModal.ready_to_work !== false
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : 'bg-slate-200 text-slate-700 border-slate-300'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-slate-200 text-slate-700 border-slate-300'
                     }`}>
                     {selectedCompanyModal.ready_to_work !== false ? '● Listed on Directory' : '○ Hidden from Directory'}
                   </span>
@@ -893,55 +904,6 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
         </div>
       )}
 
-      {/* Active Driver Info Modal Popup */}
-      {activeDriverModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
-              <button
-                type="button"
-                onClick={() => setActiveDriverModal(null)}
-                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-base">
-                👤
-              </div>
-              <div>
-                <h4 className="font-extrabold text-slate-900 text-sm">{activeDriverModal.name}</h4>
-                <span className="text-[10px] text-slate-400 font-bold uppercase">Contract Driver</span>
-              </div>
-            </div>
-            <div className="space-y-2.5">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
-                <span className="text-[10px] text-slate-400 font-bold uppercase">Phone Number</span>
-                <span className="font-extrabold text-slate-800 text-xs">{activeDriverModal.phone || 'No phone number provided'}</span>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              {activeDriverModal.phone && (
-                <a
-                  href={`tel:${activeDriverModal.phone}`}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
-                >
-                  <span>Call Driver</span>
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={() => setActiveDriverModal(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* ── COMPANY ALL ROUTES MODAL ── */}
       {selectedCompanyRoutesModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
@@ -985,12 +947,12 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
 
                 const formattedDateTime = route.createdAt
                   ? new Date(route.createdAt).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
                   : 'Date unavailable';
 
                 const isExpanded = expandedRouteId === route.id;
@@ -1015,11 +977,10 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                         </div>
                       </div>
 
-                      <span className={`self-start sm:self-auto px-3 py-1 rounded-full text-[10px] font-black uppercase border ${
-                        String(statusText).toLowerCase() === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                      <span className={`self-start sm:self-auto px-3 py-1 rounded-full text-[10px] font-black uppercase border ${String(statusText).toLowerCase() === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                         String(statusText).toLowerCase() === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                        'bg-slate-100 text-slate-600 border-slate-200'
-                      }`}>
+                          'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}>
                         ● {statusText}
                       </span>
                     </div>
@@ -1053,46 +1014,105 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                         </button>
 
                         {isExpanded && (
-                          <div className="mt-2.5 bg-white p-3 rounded-2xl border border-slate-200 space-y-2 animate-fadeIn">
-                            <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                              {routeStops.map((s, idx) => (
-                                <li key={idx} className="flex items-start justify-between gap-3 text-[11px] font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
-                                  <div className="flex items-start gap-2 min-w-0 flex-1">
-                                    <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">
-                                      {s.step || idx + 1}
-                                    </span>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="truncate text-slate-800 font-semibold" title={s.label}>{s.label}</div>
-                                      {(s.zoneName || s.zoneId || s.driverName) && (
-                                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                          {(s.zoneName || s.zoneId) && (
-                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-50 text-[9px] font-bold text-rose-700 border border-rose-100">
-                                              {getFriendlyZoneName(s, routeStops)}
-                                            </span>
-                                          )}
-                                          {s.driverName && (
-                                            <button
-                                              type="button"
-                                              onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
-                                              className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors"
-                                            >
-                                              {s.driverName}
-                                            </button>
-                                          )}
+                          <div className="mt-2.5 bg-white p-3 rounded-2xl border border-slate-200 space-y-2 animate-fadeIn text-xs">
+                            {(() => {
+                              const hasZones = routeStops.some(s => s.zoneName || s.zoneId);
+
+                              if (!hasZones) {
+                                return (
+                                  <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                    {routeStops.map((s, idx) => (
+                                      <li key={idx} className="flex items-start justify-between gap-3 text-[11px] font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+                                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                                          <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">
+                                            {s.step || idx + 1}
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-slate-800 font-semibold" title={s.label}>{s.label}</div>
+                                            {s.driverName && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveDriverModal({ name: s.driverName, phone: s.driverPhone })}
+                                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white text-[9px] font-bold text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors mt-1"
+                                              >
+                                                {s.driverName}
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
-                                      )}
+                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                          s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                            'bg-slate-100 text-slate-600 border-slate-200'
+                                          }`}>
+                                          {s.status || 'pending'}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                );
+                              }
+
+                              const zoneGroupsMap = {};
+                              routeStops.forEach((s, idx) => {
+                                const zName = getFriendlyZoneName(s, routeStops) || 'Unzoned';
+                                if (!zoneGroupsMap[zName]) {
+                                  zoneGroupsMap[zName] = {
+                                    zoneName: zName,
+                                    driverName: s.driverName || '',
+                                    driverPhone: s.driverPhone || '',
+                                    stops: []
+                                  };
+                                }
+                                zoneGroupsMap[zName].stops.push({ ...s, originalIdx: idx });
+                              });
+
+                              const zoneGroups = Object.values(zoneGroupsMap);
+
+                              return (
+                                <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                                  {zoneGroups.map((group, gIdx) => (
+                                    <div key={gIdx} className="bg-slate-50/80 rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2">
+                                      <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-extrabold border border-rose-200">
+                                            {group.zoneName}
+                                          </span>
+                                          <span className="text-[10px] text-slate-400 font-bold">
+                                            ({group.stops.length} {group.stops.length === 1 ? 'stop' : 'stops'})
+                                          </span>
+                                        </div>
+                                        {group.driverName && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveDriverModal({ name: group.driverName, phone: group.driverPhone })}
+                                            className="inline-flex items-center px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200 cursor-pointer transition-colors"
+                                          >
+                                            <span>Driver: {group.driverName}</span>
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <ul className="space-y-1.5">
+                                        {group.stops.map((s, idx) => (
+                                          <li key={idx} className="flex items-start justify-between gap-2 text-[11px] font-semibold text-slate-700 bg-white p-2 rounded-lg border border-slate-200/60">
+                                            <div className="flex items-start gap-2 min-w-0 flex-1">
+                                              <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">{s.step || s.originalIdx + 1}</span>
+                                              <span className="truncate block leading-snug" title={s.label}>{s.label}</span>
+                                            </div>
+                                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                              s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                'bg-slate-100 text-slate-600 border-slate-200'
+                                              }`}>
+                                              {s.status || 'pending'}
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ul>
                                     </div>
-                                  </div>
-                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border shrink-0 ${
-                                    s.status === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                    s.status === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                    'bg-slate-100 text-slate-600 border-slate-200'
-                                  }`}>
-                                    {s.status || 'pending'}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1100,6 +1120,56 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Driver Info Modal Popup (highest z-index to float over all open modals) */}
+      {activeDriverModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center cursor-pointer transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-base">
+                👤
+              </div>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm">{activeDriverModal.name}</h4>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Contract Driver</span>
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Phone Number</span>
+                <span className="font-extrabold text-slate-800 text-xs">{activeDriverModal.phone || 'No phone number provided'}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              {activeDriverModal.phone && (
+                <a
+                  href={`tel:${activeDriverModal.phone}`}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <span>Call Driver</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveDriverModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
