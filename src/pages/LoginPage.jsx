@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ShieldCheck, ArrowRight, Lock, Mail, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Lock, Mail, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck, X, KeyRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Toast from '../components/Toast';
 
@@ -18,8 +18,117 @@ export default function LoginPage({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [resetLoading, setResetLoading] = useState(false);
 
+  // Reset Password Flow (from Recovery Email link)
+  const [newResetPw, setNewResetPw] = useState('');
+  const [confirmResetPw, setConfirmResetPw] = useState('');
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
+  const [resetSuccessMsg, setResetSuccessMsg] = useState(false);
 
+  const isResetMode = searchParams.get('reset') === 'true' || searchParams.get('type') === 'recovery' || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'));
+
+  const handleSetNewPassword = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setResetSuccessMsg(false);
+
+    const cleanPw = newResetPw.trim();
+    const cleanConfirm = confirmResetPw.trim();
+
+    if (!cleanPw) {
+      setError("Please enter a new password.");
+      return;
+    }
+    if (cleanPw.length < 6) {
+      setError("Password must be at least 6 characters long.");
+      return;
+    }
+    if (cleanPw !== cleanConfirm) {
+      setError("Passwords do not match. Please verify.");
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password: cleanPw
+      });
+
+      if (updateErr) {
+        throw updateErr;
+      }
+
+      setResetSuccessMsg(true);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user && onLogin) {
+        await onLogin({ email: session.user.email, id: session.user.id });
+      }
+
+      setTimeout(() => {
+        if (window.location.hash) {
+          window.history.replaceState(null, '', '/dashboard');
+        }
+        navigate('/dashboard', { replace: true });
+      }, 1500);
+    } catch (err) {
+      console.error("Password update error:", err);
+      setError(err.message || "Failed to update password. Please try again.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  // Forgot Password Modal State
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [forgotError, setForgotError] = useState(null);
+
+  const openForgotPasswordModal = (e) => {
+    e.preventDefault();
+    setForgotEmail(email || '');
+    setForgotSuccess(false);
+    setForgotError(null);
+    setShowForgotModal(true);
+  };
+
+  const handleSendPasswordReset = async (e) => {
+    e.preventDefault();
+    setForgotError(null);
+
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setForgotError("Please enter your email address.");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setForgotError("Please enter a valid email address.");
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/resetpass`
+      });
+
+      if (resetErr) {
+        throw resetErr;
+      }
+
+      setForgotSuccess(true);
+    } catch (err) {
+      console.error("Password reset error:", err);
+      setForgotError(err.message || "Failed to send password reset email. Please try again.");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -218,11 +327,7 @@ export default function LoginPage({ onLogin }) {
     }
   };
 
-  const handleForgotPassword = (e) => {
-    e.preventDefault();
-    setResetMessage(true);
-    setTimeout(() => setResetMessage(false), 4000);
-  };
+
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-white font-sans selection:bg-rose-600 selection:text-white">
@@ -315,60 +420,6 @@ export default function LoginPage({ onLogin }) {
 
         {/* Centered Form */}
         <div className="my-auto w-full max-w-md mx-auto space-y-8 animate-fadeIn">
-          <div className="space-y-2 text-center lg:text-left">
-            <h2 className="text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
-              Log in to your account
-            </h2>
-            <p className="text-sm text-slate-500 font-medium">
-              Enter your credentials below to access your route dashboard.
-            </p>
-          </div>
-
-          {/* Continue with Google */}
-          <div className="space-y-4">
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={googleLoading || loading}
-              className="w-full py-3 px-4 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer disabled:opacity-60"
-            >
-              {googleLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin text-slate-600" />
-                  <span>Connecting to Google...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" width="24" height="24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
-                  <span>Continue with Google</span>
-                </>
-              )}
-            </button>
-
-            {/* Divider */}
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-slate-200"></div>
-              <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-widest">Or</span>
-              <div className="flex-grow border-t border-slate-200"></div>
-            </div>
-          </div>
 
           {/* Floating Toast Notifications */}
           {error && (
@@ -380,112 +431,265 @@ export default function LoginPage({ onLogin }) {
             />
           )}
 
-          {resetMessage && (
+          {resetSuccessMsg && (
             <Toast
-              message="Password reset link sent to your email!"
+              message="Password updated successfully! Logging you in..."
               type="success"
               duration={4000}
-              onClose={() => setResetMessage(false)}
             />
           )}
 
-          {confirmedSent && (
-            <Toast
-              message="Confirmation email sent! Please check your inbox and click the link to verify."
-              type="info"
-              duration={6000}
-            />
-          )}
-
-          {confirmedSuccess && (
-            <Toast
-              message="Email verified successfully! You can now log in below."
-              type="success"
-              duration={5000}
-            />
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-            {/* Hidden dummy inputs to capture browser aggressive password autofill */}
-            <input type="text" name="prevent_autofill_email" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="off" />
-            <input type="password" name="prevent_autofill_password" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="new-password" />
-
-            {/* Email Field */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="email"
-                  name="login_email_no_fill"
-                  required
-                  autoComplete="new-password"
-                  placeholder="Enter Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-                />
+          {isResetMode ? (
+            /* Set New Password Form (from Recovery Email link) */
+            <div className="space-y-6">
+              <div className="space-y-2 text-center lg:text-left">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold">
+                  <KeyRound className="w-4 h-4 text-rose-600" />
+                  <span>Password Recovery</span>
+                </div>
+                <h2 className="text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
+                  Set your new password
+                </h2>
+                <p className="text-sm text-slate-500 font-medium">
+                  Enter and confirm your new account password below.
+                </p>
               </div>
-            </div>
 
-            {/* Password Field */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Password
-                </label>
+              <form onSubmit={handleSetNewPassword} className="space-y-4">
+                {/* New Password */}
+                <div className="space-y-1.5 text-left">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      placeholder="At least 6 characters"
+                      value={newResetPw}
+                      onChange={(e) => setNewResetPw(e.target.value)}
+                      className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password */}
+                <div className="space-y-1.5 text-left">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                    Confirm New Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type={showConfirmPw ? "text" : "password"}
+                      required
+                      placeholder="Re-enter new password"
+                      value={confirmResetPw}
+                      onChange={(e) => setConfirmResetPw(e.target.value)}
+                      className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPw(!showConfirmPw)}
+                      className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-sm rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer disabled:opacity-60 mt-2"
+                >
+                  {resetLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin text-white" />
+                      <span>Updating Password...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Update Password & Save →</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          ) : (
+            /* Standard Login Form */
+            <>
+              <div className="space-y-2 text-center lg:text-left">
+                <h2 className="text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
+                  Log in to your account
+                </h2>
+                <p className="text-sm text-slate-500 font-medium">
+                  Enter your credentials below to access your route dashboard.
+                </p>
+              </div>
+
+              {/* Continue with Google */}
+              <div className="space-y-4">
                 <button
                   type="button"
-                  onClick={handleForgotPassword}
-                  className="text-xs font-semibold text-rose-600 hover:underline cursor-pointer"
+                  onClick={handleGoogleLogin}
+                  disabled={googleLoading || loading}
+                  className="w-full py-3 px-4 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer disabled:opacity-60"
                 >
-                  Forgot password?
+                  {googleLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin text-slate-600" />
+                      <span>Connecting to Google...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" width="24" height="24">
+                        <path
+                          fill="#4285F4"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                      <span>Continue with Google</span>
+                    </>
+                  )}
                 </button>
-              </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="login_password_no_fill"
-                  required
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] disabled:opacity-75 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Logging in...</span>
-                </>
-              ) : (
-                <>
-                  <span>Log in to RouteK9</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
+                {/* Divider */}
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-slate-200"></div>
+                  <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-widest">Or</span>
+                  <div className="flex-grow border-t border-slate-200"></div>
+                </div>
+              </div>
+
+              {resetMessage && (
+                <Toast
+                  message="Password reset link sent to your email!"
+                  type="success"
+                  duration={4000}
+                  onClose={() => setResetMessage(false)}
+                />
               )}
-            </button>
 
-          </form>
+              {confirmedSent && (
+                <Toast
+                  message="Confirmation email sent! Please check your inbox and click the link to verify."
+                  type="info"
+                  duration={6000}
+                />
+              )}
+
+              {confirmedSuccess && (
+                <Toast
+                  message="Email verified successfully! You can now log in below."
+                  type="success"
+                  duration={5000}
+                />
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+                {/* Hidden dummy inputs to capture browser aggressive password autofill */}
+                <input type="text" name="prevent_autofill_email" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="off" />
+                <input type="password" name="prevent_autofill_password" style={{ display: 'none' }} tabIndex="-1" aria-hidden="true" autoComplete="new-password" />
+
+                {/* Email Field */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type="email"
+                      name="login_email_no_fill"
+                      required
+                      autoComplete="new-password"
+                      placeholder="Enter Email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Password Field */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={openForgotPasswordModal}
+                      className="text-xs font-semibold text-rose-600 hover:underline cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      name="login_password_no_fill"
+                      required
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] disabled:opacity-75 text-[#ffffff] font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Logging in...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Log in to RouteK9</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+
+              </form>
+            </>
+          )}
 
           {/* Bottom Signup Prompt */}
           <div className="pt-4 border-t border-slate-100 text-center text-xs font-medium text-slate-600">
@@ -501,6 +705,102 @@ export default function LoginPage({ onLogin }) {
           © 2026 RouteK9 Pro • Contract Drivers of America. All rights reserved.
         </footer>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative space-y-5 animate-scaleUp text-left">
+            <button
+              type="button"
+              onClick={() => setShowForgotModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <KeyRound className="w-6 h-6 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900 font-serif-heading">Reset Password</h3>
+                <p className="text-xs text-slate-500 font-medium">Enter your email to receive a password reset link</p>
+              </div>
+            </div>
+
+            {forgotSuccess ? (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mx-auto">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-emerald-900">Reset Email Sent!</h4>
+                  <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                    We sent a password reset link to <strong className="font-bold">{forgotEmail}</strong>. Please check your email inbox and click the link to update your password.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  Done & Return to Login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSendPasswordReset} className="space-y-4">
+                {forgotError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{forgotError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                    Your Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="name@example.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={forgotLoading}
+                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-md transition-all cursor-pointer flex items-center gap-2 disabled:opacity-60"
+                  >
+                    {forgotLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Sending Reset Link...</span>
+                      </>
+                    ) : (
+                      <span>Send Reset Link</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -35,6 +35,7 @@ import DispatchOrdersPage from './pages/DispatchOrdersPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import PricingPage from './pages/PricingPage';
 import ProCheckoutPage from './pages/ProCheckoutPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import { US_STATES } from './data/statesData';
@@ -274,6 +275,7 @@ export default function App() {
     message: ''
   });
 
+
   // Supabase Auth Session Listener & Profile Sync
   useEffect(() => {
     // 1. Check current session on load
@@ -286,11 +288,30 @@ export default function App() {
       }
     });
 
-    // 2. Subscribe to auth state changes (Google OAuth login, Email confirmation, Sign in, Sign out)
+    if (typeof window !== 'undefined' && window.location.hash.includes('type=recovery')) {
+      if (window.location.pathname !== '/resetpass') {
+        navigate('/resetpass', { replace: true });
+      }
+    }
+
+    // 2. Subscribe to auth state changes (Google OAuth login, Email confirmation, Sign in, Sign out, Password Recovery)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const isRecovery = event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && (window.location.hash.includes('type=recovery') || window.location.pathname === '/resetpass'));
+      if (isRecovery) {
+        if (window.location.pathname !== '/resetpass') {
+          navigate('/resetpass', { replace: true });
+        }
+        return;
+      }
+
       if (session?.user) {
         const syncResult = await syncSupabaseProfile(session.user);
         if (syncResult?.isActive) {
+          const isRec = event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && (window.location.hash.includes('type=recovery') || window.location.pathname === '/resetpass'));
+          if (isRec) {
+            navigate('/resetpass', { replace: true });
+            return;
+          }
           const hasHash = typeof window !== 'undefined' && (
             window.location.hash.includes('access_token=') ||
             window.location.hash.includes('type=signup') ||
@@ -631,6 +652,7 @@ export default function App() {
         {/* Auth pages — no shared layout (own full-screen designs) */}
         <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
         <Route path="/signup" element={<SignupPage onSignup={handleLogin} />} />
+        <Route path="/resetpass" element={<ResetPasswordPage />} />
 
         {/* Admin — has its own AdminLayout */}
         <Route path="/admin" element={<AdminLayout currentUser={currentUser} onLogout={handleLogout} />} />
