@@ -91,14 +91,10 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
   const [customCity, setCustomCity] = useState('');
   const [showSearchSection, setShowSearchSection] = useState(false);
 
-  // Reset customCity and hide search section when selectedState changes
+  // Reset customCity to 'ALL' by default when selectedState changes
   useEffect(() => {
     setShowSearchSection(false);
-    if (selectedState && selectedState.topCities && selectedState.topCities.length > 0) {
-      setCustomCity(selectedState.topCities[0]);
-    } else {
-      setCustomCity('');
-    }
+    setCustomCity('ALL');
   }, [selectedState]);
 
   // Lookup the complete state object including largestCity metadata
@@ -107,8 +103,10 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
     return ALL_STATES_ORDERED.find((st) => st.code === selectedState.code) || null;
   }, [selectedState]);
 
-  const activeCity = customCity.trim() || (selectedStateItem ? selectedStateItem.largestCity : '');
+  const isAllCities = customCity === 'ALL' || !customCity;
+  const activeCity = isAllCities ? '' : customCity.trim();
   const activeStateName = selectedStateItem ? selectedStateItem.name : '';
+  const displayCityLabel = activeCity || activeStateName || 'Entire State';
 
   const locationLabel = selectedStateItem ? (activeCity ? `${activeCity}, ${selectedStateItem.name}` : selectedStateItem.name) : '';
 
@@ -136,7 +134,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
   const getCBDriverUrl = () => {
     if (!selectedStateItem) return 'https://www.cbdriver.com/';
     const stateAbbr = selectedStateItem.code.toLowerCase();
-    const cityClean = (activeCity || selectedStateItem.largestCity || '')
+    const cityClean = (activeCity || (isAllCities ? '' : selectedStateItem.largestCity || ''))
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
@@ -331,12 +329,13 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
 
                       {/* City Select Dropdown */}
                       <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">City (Select a City)</label>
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">City / Region Filter</label>
                         <select
                           value={customCity}
                           onChange={(e) => setCustomCity(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none cursor-pointer"
                         >
+                          <option value="ALL">All Cities ({selectedState.name})</option>
                           {selectedState.topCities?.map((city) => (
                             <option key={city} value={city}>{city}</option>
                           ))}
@@ -351,7 +350,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                       <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
                         <div className="space-y-0.5">
                           <h5 className="font-bold text-xs text-[#0b132b]">Google Jobs</h5>
-                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search matching "{selectedOpportunity.toLowerCase()}" gigs in {activeCity}.</p>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search matching "{selectedOpportunity.toLowerCase()}" gigs in {displayCityLabel}.</p>
                         </div>
                         <a
                           href={getGoogleJobsUrl()}
@@ -368,7 +367,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                       <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
                         <div className="space-y-0.5">
                           <h5 className="font-bold text-xs text-[#0b132b]">Indeed</h5>
-                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search "{selectedOpportunity.toLowerCase()}" listings in {activeCity}.</p>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search "{selectedOpportunity.toLowerCase()}" listings in {displayCityLabel}.</p>
                         </div>
                         <a
                           href={getIndeedUrl()}
@@ -385,7 +384,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                       <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
                         <div className="space-y-0.5">
                           <h5 className="font-bold text-xs text-[#0b132b]">CourierGigs</h5>
-                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search active courier gigs in {activeStateName}.</p>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search active courier gigs in {displayCityLabel}.</p>
                         </div>
                         <a
                           href={getCourierGigsUrl()}
@@ -402,7 +401,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                       <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
                         <div className="space-y-0.5">
                           <h5 className="font-bold text-xs text-[#0b132b]">CBDriver</h5>
-                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search CBDriver contract jobs in {activeStateName}.</p>
+                          <p className="text-[10px] text-slate-400 leading-tight font-medium">Search CBDriver contract jobs in {displayCityLabel}.</p>
                         </div>
                         <a
                           href={getCBDriverUrl()}
