@@ -7,6 +7,8 @@ import {
   Truck,
   Building2,
   ArrowRight,
+  ArrowLeft,
+  LogOut,
   Mail,
   User,
   Phone,
@@ -247,6 +249,18 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
     }
   };
 
+  const handleBackToLogin = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn("Notice signing out from complete profile:", err);
+    }
+    if (typeof window !== 'undefined') {
+      document.cookie = 'routek9_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    }
+    navigate('/login', { replace: true });
+  };
+
   const usStates = US_STATES_LIST;
 
   return (
@@ -314,13 +328,24 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
             />
           )}
 
-          <div className="space-y-2 text-center lg:text-left">
-            <h2 className="text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
-              Complete Your Profile
-            </h2>
-            <p className="text-sm text-slate-500 font-medium">
-              Specify your account role and information to finish setting up your dashboard.
-            </p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
+                Complete Your Profile
+              </h2>
+              <p className="text-sm text-slate-500 font-medium">
+                Specify your account role and information to finish setting up your dashboard.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleBackToLogin}
+              className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs mt-1"
+              title="Sign out and return to login screen"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-500" />
+              <span>Back to Login</span>
+            </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5 text-left">
@@ -517,6 +542,17 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
                 </>
               )}
             </button>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={handleBackToLogin}
+                className="text-xs text-slate-500 hover:text-rose-600 font-semibold cursor-pointer transition-colors inline-flex items-center gap-1.5"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Wrong account? Sign out and return to Login</span>
+              </button>
+            </div>
           </form>
         </div>
 

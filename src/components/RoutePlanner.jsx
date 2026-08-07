@@ -35,7 +35,9 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  RefreshCw
+  RefreshCw,
+  Edit2,
+  Edit
 } from "lucide-react";
 
 const ZONE_COLORS = [
@@ -243,6 +245,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   const [activeDriverModal, setActiveDriverModal] = useState(null);
   const [deleteTargetRoute, setDeleteTargetRoute] = useState(null);
   const [deleteTargetStop, setDeleteTargetStop] = useState(null);
+  const [editingRouteId, setEditingRouteId] = useState(null);
 
   const confirmRemoveStop = () => {
     if (!deleteTargetStop) return;
@@ -341,7 +344,8 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           status: row.status || 'ACTIVE',
           stops: Array.isArray(row.stops_data) ? row.stops_data : [],
           createdAt: row.created_at,
-          savedAt: row.created_at,
+          updatedAt: row.updated_at || row.created_at,
+          savedAt: row.updated_at || row.created_at,
         }));
 
         setRouteHistory(normalized);
@@ -440,6 +444,8 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
   const loadRouteIntoPlanner = (route) => {
     if (!route || !route.stops) return;
+
+    setEditingRouteId(route.id);
 
     // 1. Reconstruct stops
     const stopsWithZones = route.stops.map(s => ({
@@ -635,12 +641,15 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         }
       }
 
-      const newRouteId = `RTE-${Math.floor(1000 + Math.random() * 9000)}`;
+      const isEditing = Boolean(editingRouteId);
+      const existingRouteObj = isEditing ? routeHistory.find(r => r.id === editingRouteId) : null;
+      const targetRouteId = editingRouteId || `RTE-${Math.floor(1000 + Math.random() * 9000)}`;
       const validUuid = currentUser?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id) ? currentUser.id : null;
       const companyUuid = isCompany ? validUuid : null;
 
+      const nowIso = new Date().toISOString();
       const newRoute = {
-        id: newRouteId,
+        id: targetRouteId,
         title: stops[0]?.label ? `Route to ${stops[stops.length - 1]?.label.split(',')[0] || 'Destination'}` : 'Solo Courier Route',
         driverName: masterDriverName,
         driverId: isCompany ? null : (currentUser?.id || 'guest'), // If company, user_id is set to company ID, so company owns it
@@ -652,27 +661,50 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         durationMinutes: Math.round(durMin),
         fuelCost: Number(fuelCostCalc.toFixed(2)),
         status: 'ACTIVE',
-        createdAt: new Date().toISOString()
+        createdAt: existingRouteObj?.createdAt || nowIso,
+        updatedAt: nowIso,
+        savedAt: nowIso
       };
 
       if (onSaveRoute) {
         onSaveRoute(newRoute);
       }
 
-      // Save to Supabase
-      await safeInsertRoute({
-        id: newRoute.id,
-        user_id: validUuid,
-        company_id: companyUuid,
-        title: newRoute.title,
-        driver_name: newRoute.driverName,
-        stops_count: newRoute.stopsCount,
-        distance_miles: newRoute.distanceMiles,
-        duration_minutes: newRoute.durationMinutes,
-        status: newRoute.status,
-        stops_data: newRoute.stops,
-        created_at: newRoute.createdAt
-      });
+      if (isEditing) {
+        // Update existing route in Supabase
+        const { error: updateError } = await supabase
+          .from('routes')
+          .update({
+            title: newRoute.title,
+            driver_name: newRoute.driverName,
+            stops_count: newRoute.stopsCount,
+            distance_miles: newRoute.distanceMiles,
+            duration_minutes: newRoute.durationMinutes,
+            status: newRoute.status,
+            stops_data: newRoute.stops,
+            updated_at: nowIso
+          })
+          .eq('id', editingRouteId);
+
+        if (updateError) {
+          console.warn("Error updating route in DB:", updateError.message || updateError);
+        }
+      } else {
+        // Save new route to Supabase
+        await safeInsertRoute({
+          id: newRoute.id,
+          user_id: validUuid,
+          company_id: companyUuid,
+          title: newRoute.title,
+          driver_name: newRoute.driverName,
+          stops_count: newRoute.stopsCount,
+          distance_miles: newRoute.distanceMiles,
+          duration_minutes: newRoute.durationMinutes,
+          status: newRoute.status,
+          stops_data: newRoute.stops,
+          created_at: newRoute.createdAt
+        });
+      }
 
       // Send notifications to each assigned driver
       const uniqueDriverIds = Array.from(new Set(preparedStops.map(s => s.driverId).filter(Boolean)));
@@ -708,6 +740,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
       setRouteSavedModal({ isOpen: true, route: newRoute });
 
       // Reset planner states and return to Step 1
+      setEditingRouteId(null);
       setStops([]);
       setRouteGeo(null);
       setDistMi(0);
@@ -3231,8 +3264,8 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                               </td>
                               <td className="px-4 py-3.5 text-center">
                                 <span className="text-[10px] text-slate-400 font-medium">
-                                  {new Date(route.savedAt).toLocaleDateString()}<br />
-                                  <span className="text-[9px]">{new Date(route.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  {new Date(route.updatedAt || route.savedAt || route.createdAt).toLocaleDateString()}<br />
+                                  <span className="text-[9px]">{new Date(route.updatedAt || route.savedAt || route.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                 </span>
                               </td>
                               <td className="px-4 py-3.5 text-center">
@@ -3243,8 +3276,8 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                                     onClick={() => loadRouteIntoPlanner(route)}
                                     className="px-2.5 py-1.5 rounded-lg bg-[#0b132b] hover:bg-[#1a264a] text-white font-bold text-[10px] shadow transition-colors cursor-pointer flex items-center gap-1"
                                   >
-                                    <Truck className="w-3 h-3" />
-                                    Load
+                                    <Edit className="w-3 h-3" />
+                                    Edit
                                   </button>
                                   <button
                                     type="button"

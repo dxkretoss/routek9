@@ -1,161 +1,172 @@
 import React, { useState, useMemo } from 'react';
-import { Calculator } from 'lucide-react';
 
-const PAYMENT_MODES = [
-  { id: 'per_week', label: 'Per week (flat)' },
-  { id: 'per_day', label: 'Per day' },
-  { id: 'per_stop', label: 'Per stop' },
-  { id: 'per_load', label: 'Per load / run' },
-  { id: 'per_package', label: 'Per package' },
-  { id: 'per_mile', label: 'Per mile' },
-  { id: 'per_hour', label: 'Per hour' }
+const PAY_UNITS = [
+  { id: 'week', label: 'Per week (flat)', volumeLabel: 'Weeks', volumeHint: 'Flat weekly contract — volume is 1 week.', defaultVolume: 1, defaultRate: 1200 },
+  { id: 'day', label: 'Per day', volumeLabel: 'Days per week', volumeHint: "How many days per week you'll run this route.", defaultVolume: 5, defaultRate: 220 },
+  { id: 'stop', label: 'Per stop', volumeLabel: 'Stops per week', volumeHint: 'Total stops across the whole week.', defaultVolume: 400, defaultRate: 3 },
+  { id: 'load', label: 'Per load / run', volumeLabel: 'Loads per week', volumeHint: "How many complete loads you'll run in a week.", defaultVolume: 10, defaultRate: 120 },
+  { id: 'package', label: 'Per package', volumeLabel: 'Packages per week', volumeHint: 'Total packages delivered in the week.', defaultVolume: 800, defaultRate: 1.5 },
+  { id: 'mile', label: 'Per mile', volumeLabel: 'Paid miles per week', volumeHint: 'Only miles the contract pays for — not deadhead.', defaultVolume: 1200, defaultRate: 1.1 },
+  { id: 'hour', label: 'Per hour', volumeLabel: 'Hours per week', volumeHint: 'Total on-clock hours in a typical week.', defaultVolume: 45, defaultRate: 22 },
 ];
 
-const VEHICLE_MPG_OPTIONS = [
-  { label: 'Chevy Express / GMC Savana (15 mpg)', mpg: 15 },
-  { label: 'Ford Transit Cargo Van (18 mpg)', mpg: 18 },
-  { label: 'Ram ProMaster (17 mpg)', mpg: 17 },
-  { label: 'Mercedes Sprinter High-Roof (20 mpg)', mpg: 20 },
-  { label: 'Sedan / Hatchback (30 mpg)', mpg: 30 },
-  { label: 'SUV / Minivan (22 mpg)', mpg: 22 },
-  { label: '16ft Box Truck (10 mpg)', mpg: 10 },
-  { label: '26ft Box Truck (8 mpg)', mpg: 8 }
+const VEHICLE_MPG_GROUPS = [
+  {
+    group: "Cars & small SUVs",
+    items: [
+      { label: "Toyota Prius", mpg: 52 },
+      { label: "Toyota Corolla / Camry", mpg: 32 },
+      { label: "Honda Civic / Accord", mpg: 32 },
+      { label: "Hyundai Elantra / Kia Forte", mpg: 33 },
+      { label: "Toyota RAV4 / Honda CR-V", mpg: 28 },
+      { label: "Ford Escape / Chevy Equinox", mpg: 26 },
+    ],
+  },
+  {
+    group: "Minivans & large SUVs",
+    items: [
+      { label: "Toyota Sienna / Honda Odyssey", mpg: 22 },
+      { label: "Chrysler Pacifica / Dodge Caravan", mpg: 20 },
+      { label: "Ford Explorer / Chevy Tahoe", mpg: 17 },
+      { label: "Ford Expedition / Chevy Suburban", mpg: 15 },
+    ],
+  },
+  {
+    group: "Cargo vans",
+    items: [
+      { label: "Ford Transit Connect (small)", mpg: 24 },
+      { label: "Ram ProMaster City / Nissan NV200", mpg: 22 },
+      { label: "Ford Transit (gas, mid roof)", mpg: 16 },
+      { label: "Mercedes Sprinter (diesel)", mpg: 18 },
+      { label: "Ram ProMaster (gas)", mpg: 15 },
+      { label: "Chevy Express / GMC Savana", mpg: 14 },
+    ],
+  },
+  {
+    group: "Pickups & box trucks",
+    items: [
+      { label: "Ford F-150 / Chevy Silverado 1500", mpg: 20 },
+      { label: "Ford F-250 / Ram 2500 (diesel)", mpg: 15 },
+      { label: "Isuzu NPR / 16 ft box truck", mpg: 12 },
+      { label: "26 ft box truck", mpg: 9 },
+    ],
+  },
 ];
+
+function num(v, fallback = 0) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 export default function ProfitCalculator() {
-  // Main Pay Mode
-  const [payMode, setPayMode] = useState('per_stop');
+  const [unit, setUnit] = useState('stop');
+  const cfg = PAY_UNITS.find((u) => u.id === unit) || PAY_UNITS[2];
 
-  // Input Fields
-  const [payRate, setPayRate] = useState('3');
-  const [unitsPerWeek, setUnitsPerWeek] = useState('400'); // e.g. stops per week
-  const [milesDrivenPerWeek, setMilesDrivenPerWeek] = useState('1200');
-  const [selectedMpgOption, setSelectedMpgOption] = useState(15);
+  const [rate, setRate] = useState(String(cfg.defaultRate));
+  const [volume, setVolume] = useState(String(cfg.defaultVolume));
+  const [totalMiles, setTotalMiles] = useState('1200');
+  const [mpg, setMpg] = useState('14');
   const [fuelPrice, setFuelPrice] = useState('3.60');
 
-  // Fixed Costs
-  const [insuranceWeekly, setInsuranceWeekly] = useState('110');
-  const [maintenanceWeekly, setMaintenanceWeekly] = useState('90');
-  const [phoneWeekly, setPhoneWeekly] = useState('15');
-  const [otherWeekly, setOtherWeekly] = useState('40');
+  const [insurance, setInsurance] = useState('110');
+  const [maintenance, setMaintenance] = useState('90');
+  const [phone, setPhone] = useState('15');
+  const [otherExpenses, setOtherExpenses] = useState('40');
 
-  // Tax Reserve
-  const [taxPercent, setTaxPercent] = useState('15');
+  const [taxRate, setTaxRate] = useState('15');
 
-  // Bottom Calculator: Pay per mile converter
-  const [calcPayTotal, setCalcPayTotal] = useState('1200');
-  const [calcMilesTotal, setCalcMilesTotal] = useState('1200');
-  const [calcTimeFrame, setCalcTimeFrame] = useState('Per week');
+  // Bottom Helper State
+  const [helperPay, setHelperPay] = useState('1200');
+  const [helperMiles, setHelperMiles] = useState('1200');
+  const [helperPeriod, setHelperPeriod] = useState('week');
 
-  // Calculations
-  const metrics = useMemo(() => {
-    const numPayRate = Number(payRate) || 0;
-    const numUnits = Number(unitsPerWeek) || 0;
-    const numMiles = Number(milesDrivenPerWeek) || 0;
-    const numFuelPrice = Number(fuelPrice) || 0;
-    const numInsurance = Number(insuranceWeekly) || 0;
-    const numMaintenance = Number(maintenanceWeekly) || 0;
-    const numPhone = Number(phoneWeekly) || 0;
-    const numOther = Number(otherWeekly) || 0;
-    const numTaxPercent = Number(taxPercent) || 0;
+  const allVehicleItems = useMemo(() => VEHICLE_MPG_GROUPS.flatMap((g) => g.items), []);
+  const matchedVehicle = allVehicleItems.find((v) => String(v.mpg) === mpg);
+  const [selectedVehiclePick, setSelectedVehiclePick] = useState(matchedVehicle ? matchedVehicle.label : 'Chevy Express / GMC Savana');
 
-    // 1. Calculate Gross Weekly Pay
-    let grossWeeklyPay = 0;
-    if (payMode === 'per_week') {
-      grossWeeklyPay = numPayRate;
-    } else if (payMode === 'per_day') {
-      grossWeeklyPay = numPayRate * Math.min(numUnits, 7);
-    } else if (payMode === 'per_stop' || payMode === 'per_package' || payMode === 'per_load') {
-      grossWeeklyPay = numPayRate * numUnits;
-    } else if (payMode === 'per_mile') {
-      grossWeeklyPay = numPayRate * numMiles;
-    } else if (payMode === 'per_hour') {
-      grossWeeklyPay = numPayRate * numUnits; // hours per week
+  function pickUnit(id) {
+    const next = PAY_UNITS.find((u) => u.id === id) || PAY_UNITS[0];
+    setUnit(id);
+    setRate(String(next.defaultRate));
+    setVolume(String(next.defaultVolume));
+  }
+
+  const calc = useMemo(() => {
+    const r = num(rate);
+    const v = num(volume);
+    const gross = r * v;
+    const miles = num(totalMiles);
+    const mpgN = Math.max(num(mpg), 1);
+    const fuel = (miles / mpgN) * num(fuelPrice);
+    const fixed = num(insurance) + num(maintenance) + num(phone) + num(otherExpenses);
+    const preTax = Math.max(gross - fuel - fixed, 0);
+    const taxReserve = preTax * (num(taxRate) / 100);
+    const totalCost = fuel + fixed + taxReserve;
+    const net = gross - totalCost;
+    const margin = gross > 0 ? (net / gross) * 100 : 0;
+    const revPerMile = miles > 0 ? gross / miles : 0;
+    const costPerMile = miles > 0 ? totalCost / miles : 0;
+
+    return { gross, fuel, fixed, taxReserve, totalCost, net, margin, revPerMile, costPerMile };
+  }, [rate, volume, totalMiles, mpg, fuelPrice, insurance, maintenance, phone, otherExpenses, taxRate]);
+
+  const verdict = useMemo(() => {
+    if (calc.net <= 0 || calc.margin < 15) {
+      return {
+        label: "BAD LOAD — WALK AWAY",
+        tone: "text-rose-700",
+        bg: "bg-rose-50",
+        border: "border-rose-300",
+        reason:
+          "After fuel, insurance, and tax reserve, there's almost nothing (or nothing) left. One flat tire or fuel spike puts you underwater. Negotiate the rate up or pass.",
+      };
     }
-
-    // 2. Fuel Cost
-    const gallonsUsed = numMiles / Math.max(Number(selectedMpgOption), 1);
-    const fuelCostWeekly = gallonsUsed * numFuelPrice;
-
-    // 3. Operating Expenses
-    const operatingExpensesWeekly =
-      numInsurance +
-      numMaintenance +
-      numPhone +
-      numOther;
-
-    const subtotalBeforeTax = grossWeeklyPay - fuelCostWeekly - operatingExpensesWeekly;
-    const profitBeforeTax = Math.max(0, subtotalBeforeTax);
-
-    // 4. Tax Reserve
-    const taxReserveWeekly = profitBeforeTax * (numTaxPercent / 100);
-
-    // 5. Take-Home Pay
-    const takeHomeWeekly = grossWeeklyPay - fuelCostWeekly - operatingExpensesWeekly - taxReserveWeekly;
-
-    // 6. Margin Percentage
-    const netMarginPercent = grossWeeklyPay > 0 ? ((takeHomeWeekly / grossWeeklyPay) * 100) : 0;
-
-    // 7. Per Mile Revenue & Cost
-    const revenuePerMile = numMiles > 0 ? (grossWeeklyPay / numMiles) : 0;
-    const costPerMile = numMiles > 0 ? ((fuelCostWeekly + operatingExpensesWeekly + taxReserveWeekly) / numMiles) : 0;
-
-    // 8. Verdict Classification
-    let verdictTitle = "WALK AWAY";
-    let verdictColorClass = "bg-rose-50 border-rose-200 text-rose-800";
-    let verdictMarginColor = "text-rose-600";
-    let verdictText = "This margin is too thin. One repair bill or slow week puts you in the negative. Negotiate higher pay or pass.";
-
-    if (netMarginPercent >= 40) {
-      verdictTitle = "EXCELLENT — LOCK IT IN";
-      verdictColorClass = "bg-emerald-50 border-emerald-300 text-emerald-900";
-      verdictMarginColor = "text-emerald-600";
-      verdictText = "Above 40% margin is rare. Verify the volume is real (ride the route, ask for settlement statements) — if it holds up, this is the tier of route that builds a real business.";
-    } else if (netMarginPercent >= 25) {
-      verdictTitle = "SOLID CONTRACT";
-      verdictColorClass = "bg-sky-50 border-sky-300 text-sky-900";
-      verdictMarginColor = "text-sky-600";
-      verdictText = "A healthy 25-40% net margin. Provides good income buffer for maintenance and unexpected costs.";
-    } else if (netMarginPercent >= 15) {
-      verdictTitle = "MARGINAL — NEGOTIATE";
-      verdictColorClass = "bg-amber-50 border-amber-300 text-amber-900";
-      verdictMarginColor = "text-amber-600";
-      verdictText = "15-25% margin is workable but thin. Attempt to negotiate fuel surcharges or stop rates.";
+    if (calc.margin < 25) {
+      return {
+        label: "MARGINAL — NEGOTIATE",
+        tone: "text-amber-800",
+        bg: "bg-amber-50",
+        border: "border-amber-300",
+        reason:
+          "You'll cover costs and take something home, but there's no cushion for repairs, downtime, or a slow week. Ask for a higher rate, fewer deadhead miles, or a fuel surcharge before signing.",
+      };
     }
-
+    if (calc.margin < 40) {
+      return {
+        label: "SOLID CONTRACT",
+        tone: "text-sky-900",
+        bg: "bg-sky-50",
+        border: "border-sky-300",
+        reason:
+          "You're above the 25% threshold. Enough cushion to absorb a bad week and still be profitable. Worth signing if the schedule and territory work for you.",
+      };
+    }
     return {
-      grossWeeklyPay: Math.max(0, grossWeeklyPay),
-      fuelCostWeekly,
-      operatingExpensesWeekly,
-      taxReserveWeekly,
-      takeHomeWeekly,
-      netMarginPercent: netMarginPercent.toFixed(1),
-      revenuePerMile: revenuePerMile.toFixed(2),
-      costPerMile: costPerMile.toFixed(2),
-      verdictTitle,
-      verdictColorClass,
-      verdictMarginColor,
-      verdictText
+      label: "EXCELLENT — LOCK IT IN",
+      tone: "text-emerald-900",
+      bg: "bg-emerald-50",
+      border: "border-emerald-400",
+      reason:
+        "Above 40% margin is rare. Verify the volume is real (ride the route, ask for settlement statements) — if it holds up, this is the tier of route that builds a real business.",
     };
-  }, [
-    payMode, payRate, unitsPerWeek, milesDrivenPerWeek, selectedMpgOption, fuelPrice,
-    insuranceWeekly, maintenanceWeekly, phoneWeekly, otherWeekly, taxPercent
-  ]);
+  }, [calc.margin, calc.net]);
 
-  // Bottom Converter
-  const grossPayPerMileCalc = useMemo(() => {
-    if (calcMilesTotal <= 0) return "0.00";
-    return (calcPayTotal / calcMilesTotal).toFixed(2);
-  }, [calcPayTotal, calcMilesTotal]);
+  // Per Mile Helper Calc
+  const helperCalc = useMemo(() => {
+    const m = num(helperMiles);
+    const p = num(helperPay);
+    const perMile = m > 0 ? p / m : 0;
+    const isGood = perMile >= 1.5;
+    const isOk = perMile >= 1.0 && perMile < 1.5;
+    return { perMile, isGood, isOk };
+  }, [helperPay, helperMiles]);
 
   return (
     <section id="calculator-section" className="py-8 sm:py-16 bg-[#FAF9F6] border-t border-slate-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
 
-        {/* Header matching screenshot */}
+        {/* Header Block */}
         <div className="space-y-3">
-
-          {/* Badge Line */}
           <div className="flex items-center gap-2">
             <span className="w-6 h-0.5 bg-rose-600 rounded-full" />
             <span className="text-xs font-bold uppercase tracking-widest text-rose-600 font-sans">
@@ -163,19 +174,16 @@ export default function ProfitCalculator() {
             </span>
           </div>
 
-          {/* Headline matching screenshot */}
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-tight">
             Is this route actually paying?
           </h2>
 
-          {/* Subtitle matching screenshot */}
           <p className="text-slate-600 text-sm max-w-2xl font-normal leading-relaxed font-sans">
-            Plug in what the contract pays and your real costs — we'll show you the profit margin and verdict.
+            Plug in what the contract offers and your real costs. We'll show you the profit margin, the good/bad verdict, and the target margin to hold this route to.
           </p>
-
         </div>
 
-        {/* 2-Column Calculator Grid matching screenshot */}
+        {/* 2-Column Calculator Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
           {/* Left Column: Inputs Form */}
@@ -191,38 +199,39 @@ export default function ProfitCalculator() {
                 </label>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {PAYMENT_MODES.map((mode) => {
-                    const isSelected = payMode === mode.id;
+                  {PAY_UNITS.map((u) => {
+                    const isSelected = unit === u.id;
                     return (
                       <button
-                        key={mode.id}
+                        key={u.id}
                         type="button"
-                        onClick={() => setPayMode(mode.id)}
+                        onClick={() => pickUnit(u.id)}
                         className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${isSelected
                           ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
                           : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                           }`}
                       >
-                        {mode.label}
+                        {u.label}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* 2. PAY RATE & UNITS PER WEEK */}
+              {/* 2. PAY RATE & DYNAMIC VOLUME */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
-                    PAY RATE ($ PER {payMode === 'per_stop' ? 'STOP' : payMode === 'per_day' ? 'DAY' : payMode === 'per_mile' ? 'MILE' : 'UNIT'})
+                    PAY RATE ($ PER {unit.toUpperCase()})
                   </label>
                   <div className="relative">
                     <span className="absolute left-3.5 top-3 text-slate-400 text-sm font-bold">$</span>
                     <input
                       type="number"
-                      step="0.10"
-                      value={payRate}
-                      onChange={(e) => setPayRate(e.target.value)}
+                      step="0.01"
+                      value={rate}
+                      onChange={(e) => setRate(e.target.value)}
+                      onWheel={(e) => e.target.blur()}
                       className="w-full pl-8 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                     />
                   </div>
@@ -230,19 +239,21 @@ export default function ProfitCalculator() {
 
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
-                    STOPS / UNITS PER WEEK
+                    {cfg.volumeLabel.toUpperCase()}
                   </label>
                   <input
                     type="number"
-                    value={unitsPerWeek}
-                    onChange={(e) => setUnitsPerWeek(e.target.value)}
+                    step="1"
+                    value={volume}
+                    onChange={(e) => setVolume(e.target.value)}
+                    onWheel={(e) => e.target.blur()}
                     className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                   />
-                  <p className="text-[10px] text-slate-400 font-medium">Total stops across the whole week.</p>
+                  <p className="text-[10px] text-slate-400 font-medium">{cfg.volumeHint}</p>
                 </div>
               </div>
 
-              {/* 3. Weekly driving & fuel */}
+              {/* 3. WEEKLY DRIVING & FUEL */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 <h4 className="text-sm font-bold text-[#0b132b] font-sans">
                   Weekly driving & fuel
@@ -255,8 +266,10 @@ export default function ProfitCalculator() {
                     </label>
                     <input
                       type="number"
-                      value={milesDrivenPerWeek}
-                      onChange={(e) => setMilesDrivenPerWeek(e.target.value)}
+                      step="10"
+                      value={totalMiles}
+                      onChange={(e) => setTotalMiles(e.target.value)}
+                      onWheel={(e) => e.target.blur()}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                     />
                   </div>
@@ -266,16 +279,40 @@ export default function ProfitCalculator() {
                       VEHICLE (MPG)
                     </label>
                     <select
-                      value={selectedMpgOption}
-                      onChange={(e) => setSelectedMpgOption(Number(e.target.value))}
-                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0b132b] appearance-none"
+                      value={selectedVehiclePick}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedVehiclePick(val);
+                        const found = allVehicleItems.find((f) => f.label === val);
+                        if (found) {
+                          setMpg(String(found.mpg));
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0b132b] appearance-none cursor-pointer"
                     >
-                      {VEHICLE_MPG_OPTIONS.map((opt) => (
-                        <option key={opt.label} value={opt.mpg}>
-                          {opt.label}
-                        </option>
+                      {VEHICLE_MPG_GROUPS.map((g) => (
+                        <optgroup key={g.group} label={g.group}>
+                          {g.items.map((it) => (
+                            <option key={it.label} value={it.label}>
+                              {it.label} — {it.mpg} mpg
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
+                      <option value="custom">Custom / other…</option>
                     </select>
+
+                    {selectedVehiclePick === 'custom' && (
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={mpg}
+                        onChange={(e) => setMpg(e.target.value)}
+                        onWheel={(e) => e.target.blur()}
+                        placeholder="Enter MPG"
+                        className="mt-1.5 w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0b132b]"
+                      />
+                    )}
                     <p className="text-[9px] text-slate-400 leading-tight">
                       Not sure? Pick closest vehicle — drivers are within 1-2 mpg.
                     </p>
@@ -289,9 +326,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
-                        step="0.05"
+                        step="0.01"
                         value={fuelPrice}
                         onChange={(e) => setFuelPrice(e.target.value)}
+                        onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -299,7 +337,7 @@ export default function ProfitCalculator() {
                 </div>
               </div>
 
-              {/* 4. Weekly fixed costs */}
+              {/* 4. WEEKLY FIXED COSTS */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 <h4 className="text-sm font-bold text-[#0b132b] font-sans">
                   Weekly fixed costs
@@ -314,8 +352,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
-                        value={insuranceWeekly}
-                        onChange={(e) => setInsuranceWeekly(e.target.value)}
+                        step="5"
+                        value={insurance}
+                        onChange={(e) => setInsurance(e.target.value)}
+                        onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -329,8 +369,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
-                        value={maintenanceWeekly}
-                        onChange={(e) => setMaintenanceWeekly(e.target.value)}
+                        step="5"
+                        value={maintenance}
+                        onChange={(e) => setMaintenance(e.target.value)}
+                        onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -345,8 +387,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
-                        value={phoneWeekly}
-                        onChange={(e) => setPhoneWeekly(e.target.value)}
+                        step="1"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -360,8 +404,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
-                        value={otherWeekly}
-                        onChange={(e) => setOtherWeekly(e.target.value)}
+                        step="5"
+                        value={otherExpenses}
+                        onChange={(e) => setOtherExpenses(e.target.value)}
+                        onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -369,10 +415,10 @@ export default function ProfitCalculator() {
                 </div>
               </div>
 
-              {/* 5. Self employment tax reserve */}
+              {/* 5. SELF-EMPLOYMENT TAX RESERVE */}
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <h4 className="text-sm font-bold text-[#0b132b] font-sans">
-                  Self employment tax reserve
+                  Self-employment tax reserve
                 </h4>
                 <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                   SET ASIDE % OF PROFIT FOR TAXES
@@ -380,20 +426,22 @@ export default function ProfitCalculator() {
                 <div className="relative max-w-xs">
                   <input
                     type="number"
-                    value={taxPercent}
-                    onChange={(e) => setTaxPercent(e.target.value)}
+                    step="1"
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(e.target.value)}
+                    onWheel={(e) => e.target.blur()}
                     className="w-full pr-8 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                   />
                   <span className="absolute right-3.5 top-2.5 text-slate-400 text-sm font-bold">%</span>
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium">
-                  15.3% covers SE tax. Add more (20-30% total) if you don't take other deductions.
+                  15.3% covers SE tax. Add more (25–30% total) if you don't take other deductions.
                 </p>
               </div>
 
             </div>
 
-            {/* Red Dashed Box: "Don't know your pay-per-mile? Work it out." matching screenshot */}
+            {/* Red Dashed Box: "Don't know your pay-per-mile? Work it out." */}
             <div className="p-6 rounded-3xl border-2 border-dashed border-rose-300 bg-rose-50/20 space-y-4">
               <div>
                 <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
@@ -407,14 +455,16 @@ export default function ProfitCalculator() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    TOTAL PAY PER WEEK
+                    TOTAL PAY PER {helperPeriod.toUpperCase()}
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-slate-400 text-xs font-bold">$</span>
                     <input
                       type="number"
-                      value={calcPayTotal}
-                      onChange={(e) => setCalcPayTotal(e.target.value)}
+                      step="10"
+                      value={helperPay}
+                      onChange={(e) => setHelperPay(e.target.value)}
+                      onWheel={(e) => e.target.blur()}
                       className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                     />
                   </div>
@@ -422,12 +472,14 @@ export default function ProfitCalculator() {
 
                 <div className="space-y-1">
                   <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    MILES DRIVEN PER WEEK
+                    MILES DRIVEN PER {helperPeriod.toUpperCase()}
                   </label>
                   <input
                     type="number"
-                    value={calcMilesTotal}
-                    onChange={(e) => setCalcMilesTotal(e.target.value)}
+                    step="10"
+                    value={helperMiles}
+                    onChange={(e) => setHelperMiles(e.target.value)}
+                    onWheel={(e) => e.target.blur()}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                   />
                 </div>
@@ -437,13 +489,14 @@ export default function ProfitCalculator() {
                     TIME FRAME
                   </label>
                   <select
-                    value={calcTimeFrame}
-                    onChange={(e) => setCalcTimeFrame(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
+                    value={helperPeriod}
+                    onChange={(e) => setHelperPeriod(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b] cursor-pointer"
                   >
-                    <option value="Per week">Per week</option>
-                    <option value="Per day">Per day</option>
-                    <option value="Per month">Per month</option>
+                    <option value="week">Per week</option>
+                    <option value="day">Per day</option>
+                    <option value="load">Per load</option>
+                    <option value="trip">Per trip</option>
                   </select>
                 </div>
               </div>
@@ -452,15 +505,15 @@ export default function ProfitCalculator() {
               <div className="p-4 rounded-2xl bg-white border border-slate-200 text-center">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   YOU'RE GETTING PAID{' '}
-                  <span className="text-2xl font-extrabold text-[#0b132b]">
-                    ${grossPayPerMileCalc}
+                  <span className={`text-2xl font-extrabold ${helperCalc.isGood ? 'text-emerald-600' : helperCalc.isOk ? 'text-[#0b132b]' : 'text-rose-600'}`}>
+                    ${helperCalc.perMile.toFixed(2)}
                   </span>{' '}
                   per mile (gross, before expenses)
                 </span>
               </div>
 
               <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                Rough benchmarks for solo drivers: <strong className="text-rose-600">under $1.00/mi</strong> loses money after fuel and maintenance, <strong className="text-amber-600">$1.00–$1.50/mi</strong> is thin but workable, and <strong className="text-emerald-600">$1.50+/mi</strong> is where routes actually build a business.
+                Rough benchmarks for solo drivers: <strong className="text-rose-600">under $1.00/mi</strong> loses money after fuel and maintenance, <strong className="text-amber-700">$1.00–$1.50/mi</strong> is thin but workable, and <strong className="text-emerald-600">$1.50+/mi</strong> is where routes actually build a business.
               </p>
             </div>
 
@@ -469,16 +522,16 @@ export default function ProfitCalculator() {
           {/* Right Column: Output Cards & Verdict */}
           <div className="lg:col-span-5 space-y-6">
 
-            {/* 1. Top Verdict Banner (Green Box in screenshot) */}
-            <div className={`p-6 rounded-3xl border ${metrics.verdictColorClass} shadow-xs space-y-3`}>
-              <div className="text-xs font-extrabold uppercase tracking-widest">
-                {metrics.verdictTitle}
+            {/* 1. Top Verdict Banner */}
+            <div className={`p-6 rounded-3xl border ${verdict.border} ${verdict.bg} shadow-xs space-y-3`}>
+              <div className={`text-xs font-extrabold uppercase tracking-widest ${verdict.tone}`}>
+                {verdict.label}
               </div>
-              <div className={`text-4xl sm:text-5xl font-extrabold tracking-tight ${metrics.verdictMarginColor}`}>
-                {metrics.netMarginPercent}% <span className="text-lg font-bold">margin</span>
+              <div className={`text-4xl sm:text-5xl font-extrabold tracking-tight ${verdict.tone}`}>
+                {calc.margin.toFixed(1)}% <span className="text-lg font-bold">margin</span>
               </div>
-              <p className="text-xs leading-relaxed font-medium">
-                {metrics.verdictText}
+              <p className="text-xs leading-relaxed font-medium text-slate-700">
+                {verdict.reason}
               </p>
             </div>
 
@@ -486,37 +539,39 @@ export default function ProfitCalculator() {
             <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-3 text-xs">
               <div className="flex justify-between py-2 border-b border-slate-100">
                 <span className="font-bold text-slate-700">Gross weekly pay</span>
-                <span className="font-extrabold text-[#0b132b]">${metrics.grossWeeklyPay.toFixed(2)}</span>
+                <span className="font-extrabold text-[#0b132b]">${calc.gross.toFixed(2)}</span>
               </div>
 
               <div className="flex justify-between py-2 border-b border-slate-100 text-rose-600">
                 <span>− Fuel</span>
-                <span className="font-bold">−${metrics.fuelCostWeekly.toFixed(2)}</span>
+                <span className="font-bold">−${calc.fuel.toFixed(2)}</span>
               </div>
 
               <div className="flex justify-between py-2 border-b border-slate-100 text-rose-600">
                 <span>− Insurance, maintenance, phone, other</span>
-                <span className="font-bold">−${metrics.operatingExpensesWeekly.toFixed(2)}</span>
+                <span className="font-bold">−${calc.fixed.toFixed(2)}</span>
               </div>
 
               <div className="flex justify-between py-2 border-b border-slate-100 text-rose-600">
                 <span>− Tax reserve</span>
-                <span className="font-bold">−${metrics.taxReserveWeekly.toFixed(2)}</span>
+                <span className="font-bold">−${calc.taxReserve.toFixed(2)}</span>
               </div>
 
               <div className="flex justify-between py-3 font-extrabold text-sm border-b border-slate-200 text-[#0b132b]">
                 <span>Take-home / week</span>
-                <span className="text-emerald-600 text-base">${metrics.takeHomeWeekly.toFixed(2)}</span>
+                <span className={`text-base font-extrabold ${calc.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  ${calc.net.toFixed(2)}
+                </span>
               </div>
 
               <div className="pt-2 flex justify-between text-slate-500 font-semibold">
                 <span>Revenue per mile</span>
-                <span className="font-bold text-slate-800">${metrics.revenuePerMile}</span>
+                <span className="font-bold text-slate-800">${calc.revPerMile.toFixed(2)}</span>
               </div>
 
               <div className="flex justify-between text-slate-500 font-semibold">
                 <span>Cost per mile</span>
-                <span className="font-bold text-slate-800">${metrics.costPerMile}</span>
+                <span className="font-bold text-slate-800">${calc.costPerMile.toFixed(2)}</span>
               </div>
             </div>
 
@@ -534,12 +589,12 @@ export default function ProfitCalculator() {
 
                 <div className="flex justify-between items-center">
                   <span className="text-slate-600 font-medium">Marginal — negotiate</span>
-                  <span className="font-extrabold text-amber-600">15% – 25%</span>
+                  <span className="font-extrabold text-amber-700">15% – 25%</span>
                 </div>
 
                 <div className="flex justify-between items-center">
                   <span className="text-slate-600 font-medium">Solid contract</span>
-                  <span className="font-extrabold text-sky-600">25% – 40%</span>
+                  <span className="font-extrabold text-sky-700">25% – 40%</span>
                 </div>
 
                 <div className="flex justify-between items-center">
@@ -548,8 +603,8 @@ export default function ProfitCalculator() {
                 </div>
               </div>
 
-              <p className="text-[10px] text-slate-400 font-medium leading-relaxed pt-2 border-t border-slate-100">
-                Rule of thumb: hold every route to 20%+ net margin. Anything less and one bad week — a blown tire, a fuel spike — wipes out the month.
+              <p className="text-[10px] text-slate-500 font-medium leading-relaxed pt-2 border-t border-slate-100">
+                Rule of thumb: hold every route to <span className="font-bold text-[#0b132b]">30%+ net margin</span>. Anything less and one bad week — a blown tire, a fuel spike — wipes out the month.
               </p>
             </div>
 

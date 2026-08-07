@@ -472,11 +472,27 @@ export default function App() {
         setCookie(SESSION_COOKIE_NAME, updated, 30);
         return updated;
       });
-      // User is onboarded ONLY if their profile in DB has onboarding_completed === true
-      const isAlreadyOnboarded = Boolean(profile && profile.onboarding_completed === true);
-      const isAdminUser = profile?.role === 'admin' || supabaseUser.user_metadata?.role === 'admin';
+      // Check if user has completed onboarding details in DB profiles table
+      const profileExistsInDb = Boolean(profile && profile.id);
+      const dbRole = profile?.role || null;
+      const dbOnboarded = profile?.onboarding_completed === true;
+      const hasCompletedDetails = Boolean(profile?.phone && (profile?.city || profile?.state_code));
+
+      // User is onboarded if:
+      // 1) profile.onboarding_completed === true
+      // 2) OR profile has phone & city/state filled out
+      // 3) OR profile is admin
+      const isAlreadyOnboarded = Boolean(
+        profileExistsInDb && (
+          dbOnboarded ||
+          hasCompletedDetails ||
+          dbRole === 'admin'
+        )
+      );
+
+      const isAdminUser = dbRole === 'admin' || supabaseUser.user_metadata?.role === 'admin';
       const needsOnboarding = !isAdminUser && !isAlreadyOnboarded;
-      return { isActive: true, role: profile?.role || userRole, needsOnboarding };
+      return { isActive: true, role: dbRole || userRole, needsOnboarding };
     } catch (err) {
       console.error("Error syncing Supabase user profile:", err);
       return { isActive: false, role: null, needsOnboarding: false };
