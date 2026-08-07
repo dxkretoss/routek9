@@ -168,9 +168,44 @@ export default function AdminGovContracts() {
     }
   };
 
-  // Filter contracts
-  // Filter contracts
-  const filteredContracts = contracts.filter(c => {
+  const formatDeadlineDate = (deadlineStr) => {
+    if (!deadlineStr) return { formatted: 'Open Bidding', isPast: false };
+    const str = String(deadlineStr).trim();
+    if (str.toLowerCase().includes('open')) {
+      return { formatted: 'Open Bidding', isPast: false };
+    }
+
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        const formatted = d.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        const isPast = d.getTime() < Date.now();
+        return { formatted, isPast };
+      }
+    } catch {
+      // fallback
+    }
+    return { formatted: str, isPast: false };
+  };
+
+  // Filter active contracts (hide past expired deadlines or inactive/closed status)
+  const activeContracts = (contracts || []).filter((c) => {
+    const deadlineVal = c.responseDeadline || c.response_deadline || c.responseDeadLine || c.deadline || c.due_date;
+    const info = formatDeadlineDate(deadlineVal);
+    if (info.isPast) return false;
+    const statusVal = String(c.status || c.contract_status || '').toLowerCase();
+    if (['expired', 'closed', 'inactive', 'archived', 'ended'].includes(statusVal)) {
+      return false;
+    }
+    return true;
+  });
+
+  // Filter active contracts with searchQuery
+  const filteredContracts = activeContracts.filter(c => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -185,10 +220,10 @@ export default function AdminGovContracts() {
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Reset to page 1 when searching or when contracts change
+  // Reset to page 1 when searching or when activeContracts change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, contracts.length]);
+  }, [searchQuery, activeContracts.length]);
 
   const totalPages = Math.ceil(filteredContracts.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -229,7 +264,7 @@ export default function AdminGovContracts() {
             </span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
-            Government Contracts ({contracts.length})
+            Active Government Contracts ({activeContracts.length})
           </h2>
           <p className="text-slate-500 text-xs mt-1 max-w-xl font-medium">
             Connect to SAM.gov API to fetch, update, and persist federal courier contracts in the database for public users.

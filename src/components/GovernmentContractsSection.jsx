@@ -33,35 +33,42 @@ export default function GovernmentContractsSection({ currentUser, onOpenPricing,
 
   const formatDeadlineDate = (deadlineStr) => {
     if (!deadlineStr) return { formatted: 'Open Bidding', isPast: false };
-    if (typeof deadlineStr === 'string' && deadlineStr.toLowerCase().includes('open')) {
+    const str = String(deadlineStr).trim();
+    if (str.toLowerCase().includes('open')) {
       return { formatted: 'Open Bidding', isPast: false };
     }
 
     try {
-      const d = new Date(deadlineStr);
+      const d = new Date(str);
       if (!isNaN(d.getTime())) {
         const formatted = d.toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
           year: 'numeric'
         });
-        const isPast = d.getTime() < Date.now() - (24 * 60 * 60 * 1000); // 1 day tolerance
+        const isPast = d.getTime() < Date.now();
         return { formatted, isPast };
       }
     } catch {
       // fallback
     }
-    return { formatted: String(deadlineStr), isPast: false };
+    return { formatted: str, isPast: false };
   };
 
-  // Filter active contracts (hide past expired deadlines)
-  const activeContractsList = contracts.filter((c) => {
-    const info = formatDeadlineDate(c.responseDeadline);
-    return !info.isPast;
+  // Filter active contracts (hide past expired deadlines or inactive/closed status)
+  const activeContractsList = (contracts || []).filter((c) => {
+    const deadlineVal = c.responseDeadline || c.response_deadline || c.responseDeadLine || c.deadline || c.due_date;
+    const info = formatDeadlineDate(deadlineVal);
+    if (info.isPast) return false;
+    const statusVal = String(c.status || c.contract_status || '').toLowerCase();
+    if (['expired', 'closed', 'inactive', 'archived', 'ended'].includes(statusVal)) {
+      return false;
+    }
+    return true;
   });
 
-  // Pagination Calculations
-  const displayList = activeContractsList.length > 0 ? activeContractsList : contracts;
+  // Pagination Calculations — Strictly display active contracts ONLY
+  const displayList = activeContractsList;
   const totalPages = Math.ceil(displayList.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedContracts = displayList.slice(startIndex, startIndex + itemsPerPage);
@@ -115,7 +122,7 @@ export default function GovernmentContractsSection({ currentUser, onOpenPricing,
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/80">
-                {contracts.length === 0 ? (
+                {displayList.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-14 px-4 text-center">
                       <div className="max-w-md mx-auto space-y-3">
@@ -123,10 +130,10 @@ export default function GovernmentContractsSection({ currentUser, onOpenPricing,
                           <FileX className="w-6 h-6" />
                         </div>
                         <h3 className="text-base font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
-                          No Government Contracts Available Right Now
+                          No Active Government Contracts Available Right Now
                         </h3>
                         <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                          There are currently no open government courier contracts. New opportunities are updated regularly, so please check back soon!
+                          There are currently no active open government courier contracts. New opportunities are updated regularly, so please check back soon!
                         </p>
                       </div>
                     </td>

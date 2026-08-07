@@ -4,9 +4,73 @@ const GOV_CACHE_KEY = 'sam_gov_naics_492110_db_cache_v7';
 
 
 
-// 1. Fetch Government Contracts from Database (pure database read, no mock data)
+// Purge expired/past deadline contracts permanently from Supabase DB
+export async function purgeExpiredGovContractsFromDb() {
+  try {
+    const { data, error } = await supabase
+      .from('gov_contracts')
+      .select('*');
+
+    if (error || !Array.isArray(data)) return;
+
+    const now = Date.now();
+    const expiredIds = [];
+
+    data.forEach(item => {
+      const deadlineStr = item.response_deadline || item.responseDeadline || item.responseDeadLine || item.deadline || item.due_date;
+      let isPast = false;
+
+      if (deadlineStr && typeof deadlineStr === 'string' && !deadlineStr.toLowerCase().includes('open')) {
+        const d = new Date(deadlineStr.trim());
+        if (!isNaN(d.getTime()) && d.getTime() < now) {
+          isPast = true;
+        }
+      }
+
+      const statusVal = String(item.status || item.contract_status || '').toLowerCase();
+      const isStatusExpired = ['expired', 'closed', 'inactive', 'archived', 'ended'].includes(statusVal);
+
+      if (isPast || isStatusExpired) {
+        if (item.id) expiredIds.push(item.id);
+        if (item.notice_id) expiredIds.push(item.notice_id);
+      }
+    });
+
+    if (expiredIds.length > 0) {
+      for (const idVal of expiredIds) {
+        await supabase.from('gov_contracts').delete().or(`id.eq.${idVal},notice_id.eq.${idVal}`);
+      }
+    }
+  } catch (err) {
+    console.warn("purgeExpiredGovContractsFromDb warning:", err);
+  }
+}
+
+const LAST_SYNC_KEY = 'sam_gov_last_daily_sync_v2';
+
+// Automatically trigger background SAM.gov API sync if last sync was over 24 hours ago
+export async function checkAndAutoSyncDaily() {
+  try {
+    const lastSync = localStorage.getItem(LAST_SYNC_KEY);
+    const now = Date.now();
+
+    // If never synced or last sync was > 24 hours ago (86,400,000 ms)
+    if (!lastSync || (now - parseInt(lastSync, 10)) > 24 * 60 * 60 * 1000) {
+      localStorage.setItem(LAST_SYNC_KEY, String(now));
+      // Run background API sync silently
+      syncGovContractsFromSamApi().catch(err => console.warn("Background auto sync notice:", err));
+    }
+  } catch (err) {
+    console.warn("Auto sync daily notice:", err);
+  }
+}
+
+// 1. Fetch Government Contracts from Database (pure database read, no API call on load/reload)
 export async function fetchGovContractsFromDb() {
   try {
+    // Purge expired contracts from database first
+    await purgeExpiredGovContractsFromDb();
+
     const { data, error } = await supabase
       .from('gov_contracts')
       .select('*')
@@ -123,11 +187,19 @@ export async function syncGovContractsFromSamApi() {
             naicsCode: "492110",
             setAside: String(r.typeOfSetAsideDescription || "Small Business / Open"),
             postedDate: String(r.postedDate || new Date().toISOString().split('T')[0]),
-            responseDeadline: String(r.responseDeadLine || "Open Bidding"),
+            responseDeadline: String(r.responseDeadLine || r.responseDeadline || "Open Bidding"),
             placeOfPerformance: locationStr,
             estimatedValue: "$180,000 – $450,000 / yr",
             url: validUrl
           };
+        });
+
+        // Exclude any API items whose response deadline is already past
+        const nowTs = Date.now();
+        freshContracts = freshContracts.filter(c => {
+          if (!c.responseDeadline || String(c.responseDeadline).toLowerCase().includes('open')) return true;
+          const d = new Date(c.responseDeadline);
+          return !isNaN(d.getTime()) && d.getTime() >= nowTs;
         });
       }
     }
@@ -135,7 +207,14 @@ export async function syncGovContractsFromSamApi() {
     console.warn("SAM.gov API network exception:", err);
   }
 
-  // If live API returned contracts, upsert them to Supabase database
+  // Delete existing entries in DB first so old expired ones are completely wiped out
+  const { data: existingRows } = await supabase.from('gov_contracts').select('id, notice_id');
+  if (Array.isArray(existingRows) && existingRows.length > 0) {
+    for (const row of existingRows) {
+      await supabase.from('gov_contracts').delete().or(`id.eq.${row.id},notice_id.eq.${row.notice_id}`);
+    }
+  }
+
   if (freshContracts.length > 0) {
     await seedDefaultContractsToDb(freshContracts);
   }

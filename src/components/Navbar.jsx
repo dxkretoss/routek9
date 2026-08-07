@@ -72,6 +72,11 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
     );
   };
 
+  const userRole = currentUser?.role?.toLowerCase();
+  const isAdmin = userRole === 'admin';
+  const isCompany = userRole === 'company';
+  const isDriver = userRole === 'driver';
+
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -110,13 +115,13 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
               {renderLink('Find Routes', '/', '#map-section', true)}
               {renderLink('Gov Contracts', '/', '#government-contracts-section', true)}
               {renderLink('Route Planner', '/planner')}
-              {currentUser && currentUser?.role?.toLowerCase() !== 'company' && renderLink('Dispatch Orders', '/dispatch-orders')}
+              {currentUser && !isCompany && !isAdmin && renderLink('Dispatch Orders', '/dispatch-orders')}
               {showBuyRoute && renderLink('Buy a Route', '/', '#buy-a-route-section', true)}
-              {(!currentUser || currentUser?.role?.toLowerCase() !== 'driver') && renderLink('Drivers', '/drivers')}
-              {(!currentUser || currentUser?.role?.toLowerCase() !== 'company') && renderLink('Companies', '/companies')}
+              {(!currentUser || !isDriver) && renderLink('Drivers', '/drivers')}
+              {(!currentUser || !isCompany) && renderLink('Companies', '/companies')}
               {/* {renderLink('Growth', '/growth')} */}
-              {renderLink('Training', '/training')}
-              {renderLink('Certification', '/certification')}
+              {!isAdmin && renderLink('Training', '/training')}
+              {!isAdmin && renderLink('Certification', '/certification')}
               {showWhosHiring && renderLink("Who's Hiring", '/', '#whos-hiring-section', true)}
             </div>
 
@@ -266,7 +271,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           <Link to="/" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Home</Link>
           <a href="/#map-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Find Routes</a>
           <Link to="/planner" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Route Planner</Link>
-          {currentUser && currentUser?.role?.toLowerCase() !== 'company' && (
+          {currentUser && !isCompany && !isAdmin && (
             <Link to="/dispatch-orders" onClick={() => setMobileMenuOpen(false)} className="py-2 text-rose-600 font-extrabold flex items-center justify-between">
               <span>Dispatch Orders</span>
               <span className="px-2 py-0.5 text-[9px] bg-rose-600 text-white rounded-full font-bold uppercase">LIVE</span>
@@ -285,12 +290,12 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
               <span className="px-2 py-0.5 text-[10px] bg-rose-600 text-white rounded-full font-bold">{unreadCount} New</span>
             )}
           </Link>
-          {(!currentUser || currentUser?.role?.toLowerCase() !== 'driver') && (
+          {(!currentUser || !isDriver) && (
             <Link to="/drivers" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
               Drivers Directory
             </Link>
           )}
-          {(!currentUser || currentUser?.role?.toLowerCase() !== 'company') && (
+          {(!currentUser || !isCompany) && (
             <Link to="/companies" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
               Companies Directory
             </Link>
@@ -298,9 +303,16 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           {/* <Link to="/growth" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
             Growth Paths
           </Link> */}
-          <Link to="/certification" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
-            Get Certified
-          </Link>
+          {!isAdmin && (
+            <Link to="/training" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+              Training Courses
+            </Link>
+          )}
+          {!isAdmin && (
+            <Link to="/certification" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+              Get Certified
+            </Link>
+          )}
           <button
             onClick={() => { setMobileMenuOpen(false); onOpenPricing(); }}
             className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 text-white font-extrabold text-xs flex items-center justify-between shadow-xs my-1 cursor-pointer"
