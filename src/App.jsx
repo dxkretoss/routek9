@@ -472,16 +472,11 @@ export default function App() {
         setCookie(SESSION_COOKIE_NAME, updated, 30);
         return updated;
       });
-      const existingRole = profile?.role || supabaseUser.user_metadata?.role || (isSameUser ? prev?.role : null);
-      const isAlreadyOnboarded = Boolean(
-        profile?.onboarding_completed === true || 
-        (isSameUser && prev?.onboardingCompleted === true) || 
-        (existingRole && (existingRole === 'driver' || existingRole === 'company' || existingRole === 'admin'))
-      );
-
-      const isAdminUser = existingRole === 'admin';
+      // User is onboarded ONLY if their profile in DB has onboarding_completed === true
+      const isAlreadyOnboarded = Boolean(profile && profile.onboarding_completed === true);
+      const isAdminUser = profile?.role === 'admin' || supabaseUser.user_metadata?.role === 'admin';
       const needsOnboarding = !isAdminUser && !isAlreadyOnboarded;
-      return { isActive: true, role: existingRole || userRole, needsOnboarding };
+      return { isActive: true, role: profile?.role || userRole, needsOnboarding };
     } catch (err) {
       console.error("Error syncing Supabase user profile:", err);
       return { isActive: false, role: null, needsOnboarding: false };

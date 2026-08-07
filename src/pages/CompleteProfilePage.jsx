@@ -26,8 +26,8 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
   const navigate = useNavigate();
   const hasLoadedRef = useRef(false);
 
-  // Role Selection: 'driver' or 'company'
-  const [role, setRole] = useState('driver');
+  // Role Selection: 'driver', 'company', or '' (unselected until user picks)
+  const [role, setRole] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -94,6 +94,11 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
               if (prof.vehicle && prof.vehicle !== 'Company Fleet') {
                 setVehicleClass(prof.vehicle);
               }
+            } else {
+              const metaRole = user.user_metadata?.role;
+              if (metaRole) {
+                setRole(metaRole.toLowerCase() === 'company' ? 'company' : 'driver');
+              }
             }
           }
         }
@@ -108,6 +113,12 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+
+    // 0. Validate Role Selection
+    if (!role) {
+      setError("Please select whether you are signing up as A Driver or A Company.");
+      return;
+    }
 
     const cleanName = fullName.trim();
     const cleanEmail = (email || '').trim().toLowerCase();
