@@ -68,10 +68,10 @@ export default function ProfitCalculator() {
   const [mpg, setMpg] = useState('14');
   const [fuelPrice, setFuelPrice] = useState('3.60');
 
-  const [insurance, setInsurance] = useState('110');
-  const [maintenance, setMaintenance] = useState('90');
-  const [phone, setPhone] = useState('15');
-  const [otherExpenses, setOtherExpenses] = useState('40');
+  const [insurance, setInsurance] = useState('');
+  const [maintenance, setMaintenance] = useState('');
+  const [phone, setPhone] = useState('');
+  const [otherExpenses, setOtherExpenses] = useState('');
 
   const [taxRate, setTaxRate] = useState('15');
 
@@ -439,82 +439,82 @@ export default function ProfitCalculator() {
                 </p>
               </div>
 
-            </div>
+              {/* Red Dashed Box: "Don't know your pay-per-mile? Work it out." */}
+              <div className="p-6 rounded-3xl border-2 border-dashed border-rose-300 bg-rose-50/20 space-y-4">
+                <div>
+                  <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
+                    Don't know your pay-per-mile? Work it out.
+                  </h4>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Enter what the contract pays and the miles you actually drive for it — we'll flip it into a $/mile figure so you can compare routes apples-to-apples.
+                  </p>
+                </div>
 
-            {/* Red Dashed Box: "Don't know your pay-per-mile? Work it out." */}
-            <div className="p-6 rounded-3xl border-2 border-dashed border-rose-300 bg-rose-50/20 space-y-4">
-              <div>
-                <h4 className="text-base font-bold text-[#0b132b] font-serif-heading">
-                  Don't know your pay-per-mile? Work it out.
-                </h4>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                  Enter what the contract pays and the miles you actually drive for it — we'll flip it into a $/mile figure so you can compare routes apples-to-apples.
-                </p>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      TOTAL PAY PER {helperPeriod.toUpperCase()}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-slate-400 text-xs font-bold">$</span>
+                      <input
+                        type="number"
+                        step="10"
+                        value={helperPay}
+                        onChange={(e) => setHelperPay(e.target.value)}
+                        onWheel={(e) => e.target.blur()}
+                        className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
+                      />
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    TOTAL PAY PER {helperPeriod.toUpperCase()}
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-slate-400 text-xs font-bold">$</span>
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      MILES DRIVEN PER {helperPeriod.toUpperCase()}
+                    </label>
                     <input
                       type="number"
                       step="10"
-                      value={helperPay}
-                      onChange={(e) => setHelperPay(e.target.value)}
+                      value={helperMiles}
+                      onChange={(e) => setHelperMiles(e.target.value)}
                       onWheel={(e) => e.target.blur()}
-                      className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                     />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      TIME FRAME
+                    </label>
+                    <select
+                      value={helperPeriod}
+                      onChange={(e) => setHelperPeriod(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b] cursor-pointer"
+                    >
+                      <option value="week">Per week</option>
+                      <option value="day">Per day</option>
+                      <option value="load">Per load</option>
+                      <option value="trip">Per trip</option>
+                    </select>
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    MILES DRIVEN PER {helperPeriod.toUpperCase()}
-                  </label>
-                  <input
-                    type="number"
-                    step="10"
-                    value={helperMiles}
-                    onChange={(e) => setHelperMiles(e.target.value)}
-                    onWheel={(e) => e.target.blur()}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
-                  />
+                {/* Big Result Display Banner */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200 text-center">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    YOU'RE GETTING PAID{' '}
+                    <span className={`text-2xl font-extrabold ${helperCalc.isGood ? 'text-emerald-600' : helperCalc.isOk ? 'text-[#0b132b]' : 'text-rose-600'}`}>
+                      ${helperCalc.perMile.toFixed(2)}
+                    </span>{' '}
+                    per mile (gross, before expenses)
+                  </span>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    TIME FRAME
-                  </label>
-                  <select
-                    value={helperPeriod}
-                    onChange={(e) => setHelperPeriod(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b] cursor-pointer"
-                  >
-                    <option value="week">Per week</option>
-                    <option value="day">Per day</option>
-                    <option value="load">Per load</option>
-                    <option value="trip">Per trip</option>
-                  </select>
-                </div>
+                <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                  Rough benchmarks for solo drivers: <strong className="text-rose-600">under $1.00/mi</strong> loses money after fuel and maintenance, <strong className="text-amber-700">$1.00–$1.50/mi</strong> is thin but workable, and <strong className="text-emerald-600">$1.50+/mi</strong> is where routes actually build a business.
+                </p>
               </div>
 
-              {/* Big Result Display Banner */}
-              <div className="p-4 rounded-2xl bg-white border border-slate-200 text-center">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  YOU'RE GETTING PAID{' '}
-                  <span className={`text-2xl font-extrabold ${helperCalc.isGood ? 'text-emerald-600' : helperCalc.isOk ? 'text-[#0b132b]' : 'text-rose-600'}`}>
-                    ${helperCalc.perMile.toFixed(2)}
-                  </span>{' '}
-                  per mile (gross, before expenses)
-                </span>
-              </div>
-
-              <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                Rough benchmarks for solo drivers: <strong className="text-rose-600">under $1.00/mi</strong> loses money after fuel and maintenance, <strong className="text-amber-700">$1.00–$1.50/mi</strong> is thin but workable, and <strong className="text-emerald-600">$1.50+/mi</strong> is where routes actually build a business.
-              </p>
             </div>
 
           </div>
