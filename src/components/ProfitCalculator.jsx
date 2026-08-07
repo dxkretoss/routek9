@@ -55,7 +55,7 @@ const VEHICLE_MPG_GROUPS = [
 
 function num(v, fallback = 0) {
   const n = parseFloat(v);
-  return Number.isFinite(n) ? n : fallback;
+  return Number.isFinite(n) ? Math.max(0, n) : fallback;
 }
 
 export default function ProfitCalculator() {
@@ -228,9 +228,10 @@ export default function ProfitCalculator() {
                     <span className="absolute left-3.5 top-3 text-slate-400 text-sm font-bold">$</span>
                     <input
                       type="number"
+                      min="0"
                       step="0.01"
                       value={rate}
-                      onChange={(e) => setRate(e.target.value)}
+                      onChange={(e) => setRate(e.target.value.replace(/-/g, ''))}
                       onWheel={(e) => e.target.blur()}
                       className="w-full pl-8 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                     />
@@ -243,9 +244,10 @@ export default function ProfitCalculator() {
                   </label>
                   <input
                     type="number"
+                    min="0"
                     step="1"
                     value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
+                    onChange={(e) => setVolume(e.target.value.replace(/-/g, ''))}
                     onWheel={(e) => e.target.blur()}
                     className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                   />
@@ -266,9 +268,10 @@ export default function ProfitCalculator() {
                     </label>
                     <input
                       type="number"
+                      min="0"
                       step="10"
                       value={totalMiles}
-                      onChange={(e) => setTotalMiles(e.target.value)}
+                      onChange={(e) => setTotalMiles(e.target.value.replace(/-/g, ''))}
                       onWheel={(e) => e.target.blur()}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                     />
@@ -305,9 +308,10 @@ export default function ProfitCalculator() {
                     {selectedVehiclePick === 'custom' && (
                       <input
                         type="number"
+                        min="0"
                         step="0.5"
                         value={mpg}
-                        onChange={(e) => setMpg(e.target.value)}
+                        onChange={(e) => setMpg(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
                         placeholder="Enter MPG"
                         className="mt-1.5 w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0b132b]"
@@ -326,9 +330,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
+                        min="0"
                         step="0.01"
                         value={fuelPrice}
-                        onChange={(e) => setFuelPrice(e.target.value)}
+                        onChange={(e) => setFuelPrice(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
@@ -352,9 +357,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
+                        min="0"
                         step="5"
                         value={insurance}
-                        onChange={(e) => setInsurance(e.target.value)}
+                        onChange={(e) => setInsurance(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
@@ -369,9 +375,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
+                        min="0"
                         step="5"
                         value={maintenance}
-                        onChange={(e) => setMaintenance(e.target.value)}
+                        onChange={(e) => setMaintenance(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
@@ -387,9 +394,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
+                        min="0"
                         step="1"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
+                        onChange={(e) => setPhone(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
@@ -404,9 +412,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">$</span>
                       <input
                         type="number"
+                        min="0"
                         step="5"
                         value={otherExpenses}
-                        onChange={(e) => setOtherExpenses(e.target.value)}
+                        onChange={(e) => setOtherExpenses(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
@@ -426,9 +435,10 @@ export default function ProfitCalculator() {
                 <div className="relative max-w-xs">
                   <input
                     type="number"
+                    min="0"
                     step="1"
                     value={taxRate}
-                    onChange={(e) => setTaxRate(e.target.value)}
+                    onChange={(e) => setTaxRate(e.target.value.replace(/-/g, ''))}
                     onWheel={(e) => e.target.blur()}
                     className="w-full pr-8 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                   />
@@ -459,9 +469,10 @@ export default function ProfitCalculator() {
                       <span className="absolute left-3 top-2.5 text-slate-400 text-xs font-bold">$</span>
                       <input
                         type="number"
+                        min="0"
                         step="10"
                         value={helperPay}
-                        onChange={(e) => setHelperPay(e.target.value)}
+                        onChange={(e) => setHelperPay(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
                         className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                       />
@@ -474,9 +485,10 @@ export default function ProfitCalculator() {
                     </label>
                     <input
                       type="number"
+                      min="0"
                       step="10"
                       value={helperMiles}
-                      onChange={(e) => setHelperMiles(e.target.value)}
+                      onChange={(e) => setHelperMiles(e.target.value.replace(/-/g, ''))}
                       onWheel={(e) => e.target.blur()}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                     />
