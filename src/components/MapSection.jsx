@@ -110,26 +110,42 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
   const activeCity = customCity.trim() || (selectedStateItem ? selectedStateItem.largestCity : '');
   const activeStateName = selectedStateItem ? selectedStateItem.name : '';
 
-  // Generate Search URLs
+  const locationLabel = selectedStateItem ? (activeCity ? `${activeCity}, ${selectedStateItem.name}` : selectedStateItem.name) : '';
+
+  // Generate Search URLs matching exact external board structure
   const getGoogleJobsUrl = () => {
     if (!selectedStateItem) return '#';
-    const query = `${selectedOpportunity} in ${activeCity} ${activeStateName}`;
-    return `https://www.google.com/search?q=${encodeURIComponent(query)}&ibp=htl;jobs`;
+    const googleQ = encodeURIComponent(`${selectedOpportunity.toLowerCase()}s ${locationLabel}`.trim());
+    return `https://www.google.com/search?q=${googleQ}&ibp=htl;jobs`;
   };
 
   const getIndeedUrl = () => {
     if (!selectedStateItem) return '#';
-    return `https://www.indeed.com/jobs?q=${encodeURIComponent(selectedOpportunity)}&l=${encodeURIComponent(`${activeCity}, ${selectedStateItem.code}`)}`;
+    const indeedQ = encodeURIComponent(selectedOpportunity.toLowerCase());
+    const indeedL = encodeURIComponent(locationLabel);
+    return `https://www.indeed.com/jobs?q=${indeedQ}&l=${indeedL}`;
   };
 
   const getCourierGigsUrl = () => {
-    if (!selectedStateItem) return '#';
-    return `https://www.google.com/search?q=${encodeURIComponent(`${selectedOpportunity} courier gigs in ${activeCity} ${selectedStateItem.code}`)}`;
+    if (!selectedStateItem) return 'https://couriergigs.com/jobs';
+    // Use clean state/city name without ", United States" so CourierGigs filter returns live matches
+    const loc = activeCity || selectedStateItem.name;
+    return `https://couriergigs.com/jobs?location=${encodeURIComponent(loc)}`;
   };
 
   const getCBDriverUrl = () => {
-    if (!selectedStateItem) return '#';
-    return `https://www.cbdriver.com/search?state=${selectedStateItem.code}`;
+    if (!selectedStateItem) return 'https://www.cbdriver.com/';
+    const stateAbbr = selectedStateItem.code.toLowerCase();
+    const cityClean = (activeCity || selectedStateItem.largestCity || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    if (cityClean) {
+      return `https://www.cbdriver.com/${cityClean}-${stateAbbr}-driver-contract-jobs.aspx`;
+    }
+    const stateClean = selectedStateItem.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `https://www.cbdriver.com/${stateClean}-driver-contract-jobs.aspx`;
   };
 
   const handleStateClick = (st) => {

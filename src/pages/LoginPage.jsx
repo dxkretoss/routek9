@@ -87,8 +87,40 @@ export default function LoginPage({ onLogin }) {
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [forgotError, setForgotError] = useState(null);
 
+  React.useEffect(() => {
+    if (searchParams.get('forgot') === 'true') {
+      setShowForgotModal(true);
+    }
+
+    const hash = typeof window !== 'undefined' ? (window.location.hash || '') : '';
+    const search = typeof window !== 'undefined' ? (window.location.search || '') : '';
+    const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+    const queryParams = new URLSearchParams(search);
+
+    const errorParam = hashParams.get('error') || queryParams.get('error');
+    const errorCode = hashParams.get('error_code') || queryParams.get('error_code');
+    const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
+
+    if (errorParam || errorCode || errorDesc) {
+      const descLower = (errorDesc || '').toLowerCase();
+      if (
+        errorCode === 'otp_expired' ||
+        errorCode === 'access_denied' ||
+        errorParam === 'access_denied' ||
+        descLower.includes('expired') ||
+        descLower.includes('invalid') ||
+        descLower.includes('already used')
+      ) {
+        setError("This email confirmation or password reset link has already been used or has expired. Please request a new link below.");
+        if (window.location.hash) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+      }
+    }
+  }, [searchParams]);
+
   const openForgotPasswordModal = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setForgotEmail(email || '');
     setForgotSuccess(false);
     setForgotError(null);
@@ -113,6 +145,24 @@ export default function LoginPage({ onLogin }) {
 
     try {
       setForgotLoading(true);
+
+      // Check if email is registered in profiles table
+      const { data: existingProfile, error: checkErr } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      if (checkErr) {
+        console.warn("Error checking email registration status:", checkErr);
+      }
+
+      if (!existingProfile) {
+        setForgotError("This email address is not registered. Please check your email or create a new account.");
+        setForgotLoading(false);
+        return;
+      }
+
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: `${window.location.origin}/resetpass`
       });
@@ -155,11 +205,11 @@ export default function LoginPage({ onLogin }) {
             role === 'super_admin';
 
           if (isAdmin) {
-            throw new Error("⛔ Access Denied: Super Admin accounts cannot log in through the public login portal. Please use the dedicated Admin Portal.");
+            throw new Error("Invalid email or password. Please double-check your credentials.");
           }
         }
       } catch (preErr) {
-        if (preErr.message?.includes('Access Denied')) {
+        if (preErr.message?.includes('Invalid email or password')) {
           throw preErr;
         }
       }
@@ -310,7 +360,7 @@ export default function LoginPage({ onLogin }) {
       const { error: googleError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}${redirectPath}`
+          redirectTo: `${window.location.origin}/dashboard`
         }
       });
       if (googleError) {

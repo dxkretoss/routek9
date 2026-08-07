@@ -27,58 +27,68 @@ export default function ProfitCalculator() {
   const [payMode, setPayMode] = useState('per_stop');
 
   // Input Fields
-  const [payRate, setPayRate] = useState(3);
-  const [unitsPerWeek, setUnitsPerWeek] = useState(400); // e.g. stops per week
-  const [milesDrivenPerWeek, setMilesDrivenPerWeek] = useState(1200);
+  const [payRate, setPayRate] = useState('3');
+  const [unitsPerWeek, setUnitsPerWeek] = useState('400'); // e.g. stops per week
+  const [milesDrivenPerWeek, setMilesDrivenPerWeek] = useState('1200');
   const [selectedMpgOption, setSelectedMpgOption] = useState(15);
-  const [fuelPrice, setFuelPrice] = useState(3.60);
+  const [fuelPrice, setFuelPrice] = useState('3.60');
 
   // Fixed Costs
-  const [insuranceWeekly, setInsuranceWeekly] = useState(110);
-  const [maintenanceWeekly, setMaintenanceWeekly] = useState(90);
-  const [phoneWeekly, setPhoneWeekly] = useState(15);
-  const [otherWeekly, setOtherWeekly] = useState(40);
+  const [insuranceWeekly, setInsuranceWeekly] = useState('110');
+  const [maintenanceWeekly, setMaintenanceWeekly] = useState('90');
+  const [phoneWeekly, setPhoneWeekly] = useState('15');
+  const [otherWeekly, setOtherWeekly] = useState('40');
 
   // Tax Reserve
-  const [taxPercent, setTaxPercent] = useState(15);
+  const [taxPercent, setTaxPercent] = useState('15');
 
   // Bottom Calculator: Pay per mile converter
-  const [calcPayTotal, setCalcPayTotal] = useState(1200);
-  const [calcMilesTotal, setCalcMilesTotal] = useState(1200);
+  const [calcPayTotal, setCalcPayTotal] = useState('1200');
+  const [calcMilesTotal, setCalcMilesTotal] = useState('1200');
   const [calcTimeFrame, setCalcTimeFrame] = useState('Per week');
 
   // Calculations
   const metrics = useMemo(() => {
+    const numPayRate = Number(payRate) || 0;
+    const numUnits = Number(unitsPerWeek) || 0;
+    const numMiles = Number(milesDrivenPerWeek) || 0;
+    const numFuelPrice = Number(fuelPrice) || 0;
+    const numInsurance = Number(insuranceWeekly) || 0;
+    const numMaintenance = Number(maintenanceWeekly) || 0;
+    const numPhone = Number(phoneWeekly) || 0;
+    const numOther = Number(otherWeekly) || 0;
+    const numTaxPercent = Number(taxPercent) || 0;
+
     // 1. Calculate Gross Weekly Pay
     let grossWeeklyPay = 0;
     if (payMode === 'per_week') {
-      grossWeeklyPay = Number(payRate);
+      grossWeeklyPay = numPayRate;
     } else if (payMode === 'per_day') {
-      grossWeeklyPay = Number(payRate) * Math.min(Number(unitsPerWeek), 7);
+      grossWeeklyPay = numPayRate * Math.min(numUnits, 7);
     } else if (payMode === 'per_stop' || payMode === 'per_package' || payMode === 'per_load') {
-      grossWeeklyPay = Number(payRate) * Number(unitsPerWeek);
+      grossWeeklyPay = numPayRate * numUnits;
     } else if (payMode === 'per_mile') {
-      grossWeeklyPay = Number(payRate) * Number(milesDrivenPerWeek);
+      grossWeeklyPay = numPayRate * numMiles;
     } else if (payMode === 'per_hour') {
-      grossWeeklyPay = Number(payRate) * Number(unitsPerWeek); // hours per week
+      grossWeeklyPay = numPayRate * numUnits; // hours per week
     }
 
     // 2. Fuel Cost
-    const gallonsUsed = Number(milesDrivenPerWeek) / Math.max(Number(selectedMpgOption), 1);
-    const fuelCostWeekly = gallonsUsed * Number(fuelPrice);
+    const gallonsUsed = numMiles / Math.max(Number(selectedMpgOption), 1);
+    const fuelCostWeekly = gallonsUsed * numFuelPrice;
 
     // 3. Operating Expenses
     const operatingExpensesWeekly =
-      Number(insuranceWeekly) +
-      Number(maintenanceWeekly) +
-      Number(phoneWeekly) +
-      Number(otherWeekly);
+      numInsurance +
+      numMaintenance +
+      numPhone +
+      numOther;
 
     const subtotalBeforeTax = grossWeeklyPay - fuelCostWeekly - operatingExpensesWeekly;
     const profitBeforeTax = Math.max(0, subtotalBeforeTax);
 
     // 4. Tax Reserve
-    const taxReserveWeekly = profitBeforeTax * (Number(taxPercent) / 100);
+    const taxReserveWeekly = profitBeforeTax * (numTaxPercent / 100);
 
     // 5. Take-Home Pay
     const takeHomeWeekly = grossWeeklyPay - fuelCostWeekly - operatingExpensesWeekly - taxReserveWeekly;
@@ -87,8 +97,8 @@ export default function ProfitCalculator() {
     const netMarginPercent = grossWeeklyPay > 0 ? ((takeHomeWeekly / grossWeeklyPay) * 100) : 0;
 
     // 7. Per Mile Revenue & Cost
-    const revenuePerMile = milesDrivenPerWeek > 0 ? (grossWeeklyPay / milesDrivenPerWeek) : 0;
-    const costPerMile = milesDrivenPerWeek > 0 ? ((fuelCostWeekly + operatingExpensesWeekly + taxReserveWeekly) / milesDrivenPerWeek) : 0;
+    const revenuePerMile = numMiles > 0 ? (grossWeeklyPay / numMiles) : 0;
+    const costPerMile = numMiles > 0 ? ((fuelCostWeekly + operatingExpensesWeekly + taxReserveWeekly) / numMiles) : 0;
 
     // 8. Verdict Classification
     let verdictTitle = "WALK AWAY";
@@ -189,8 +199,8 @@ export default function ProfitCalculator() {
                         type="button"
                         onClick={() => setPayMode(mode.id)}
                         className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${isSelected
-                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                           }`}
                       >
                         {mode.label}
@@ -212,7 +222,7 @@ export default function ProfitCalculator() {
                       type="number"
                       step="0.10"
                       value={payRate}
-                      onChange={(e) => setPayRate(Number(e.target.value))}
+                      onChange={(e) => setPayRate(e.target.value)}
                       className="w-full pl-8 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                     />
                   </div>
@@ -225,7 +235,7 @@ export default function ProfitCalculator() {
                   <input
                     type="number"
                     value={unitsPerWeek}
-                    onChange={(e) => setUnitsPerWeek(Number(e.target.value))}
+                    onChange={(e) => setUnitsPerWeek(e.target.value)}
                     className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                   />
                   <p className="text-[10px] text-slate-400 font-medium">Total stops across the whole week.</p>
@@ -246,7 +256,7 @@ export default function ProfitCalculator() {
                     <input
                       type="number"
                       value={milesDrivenPerWeek}
-                      onChange={(e) => setMilesDrivenPerWeek(Number(e.target.value))}
+                      onChange={(e) => setMilesDrivenPerWeek(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                     />
                   </div>
@@ -281,7 +291,7 @@ export default function ProfitCalculator() {
                         type="number"
                         step="0.05"
                         value={fuelPrice}
-                        onChange={(e) => setFuelPrice(Number(e.target.value))}
+                        onChange={(e) => setFuelPrice(e.target.value)}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -305,7 +315,7 @@ export default function ProfitCalculator() {
                       <input
                         type="number"
                         value={insuranceWeekly}
-                        onChange={(e) => setInsuranceWeekly(Number(e.target.value))}
+                        onChange={(e) => setInsuranceWeekly(e.target.value)}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -320,7 +330,7 @@ export default function ProfitCalculator() {
                       <input
                         type="number"
                         value={maintenanceWeekly}
-                        onChange={(e) => setMaintenanceWeekly(Number(e.target.value))}
+                        onChange={(e) => setMaintenanceWeekly(e.target.value)}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -336,7 +346,7 @@ export default function ProfitCalculator() {
                       <input
                         type="number"
                         value={phoneWeekly}
-                        onChange={(e) => setPhoneWeekly(Number(e.target.value))}
+                        onChange={(e) => setPhoneWeekly(e.target.value)}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -351,7 +361,7 @@ export default function ProfitCalculator() {
                       <input
                         type="number"
                         value={otherWeekly}
-                        onChange={(e) => setOtherWeekly(Number(e.target.value))}
+                        onChange={(e) => setOtherWeekly(e.target.value)}
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -371,7 +381,7 @@ export default function ProfitCalculator() {
                   <input
                     type="number"
                     value={taxPercent}
-                    onChange={(e) => setTaxPercent(Number(e.target.value))}
+                    onChange={(e) => setTaxPercent(e.target.value)}
                     className="w-full pr-8 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                   />
                   <span className="absolute right-3.5 top-2.5 text-slate-400 text-sm font-bold">%</span>
@@ -404,7 +414,7 @@ export default function ProfitCalculator() {
                     <input
                       type="number"
                       value={calcPayTotal}
-                      onChange={(e) => setCalcPayTotal(Number(e.target.value))}
+                      onChange={(e) => setCalcPayTotal(e.target.value)}
                       className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                     />
                   </div>
@@ -417,7 +427,7 @@ export default function ProfitCalculator() {
                   <input
                     type="number"
                     value={calcMilesTotal}
-                    onChange={(e) => setCalcMilesTotal(Number(e.target.value))}
+                    onChange={(e) => setCalcMilesTotal(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                   />
                 </div>

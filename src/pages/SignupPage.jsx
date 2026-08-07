@@ -3,11 +3,12 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, Truck, ArrowRight, Lock, Mail, User, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck, Info } from 'lucide-react';
 import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
+import { US_STATES_LIST } from '../data/statesData';
 
 export default function SignupPage({ onSignup }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectPath = searchParams.get('redirect') || '/dashboard';
+  const redirectPath = searchParams.get('redirect') || '/ ';
 
   const [signupRole, setSignupRole] = useState('driver'); // 'driver' or 'company'
   const [fullName, setFullName] = useState('');
@@ -24,6 +25,34 @@ export default function SignupPage({ onSignup }) {
   const [resending, setResending] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
   const [resendError, setResendError] = useState(null);
+
+  React.useEffect(() => {
+    const hash = typeof window !== 'undefined' ? (window.location.hash || '') : '';
+    const search = typeof window !== 'undefined' ? (window.location.search || '') : '';
+    const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+    const queryParams = new URLSearchParams(search);
+
+    const errorParam = hashParams.get('error') || queryParams.get('error');
+    const errorCode = hashParams.get('error_code') || queryParams.get('error_code');
+    const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
+
+    if (errorParam || errorCode || errorDesc) {
+      const descLower = (errorDesc || '').toLowerCase();
+      if (
+        errorCode === 'otp_expired' ||
+        errorCode === 'access_denied' ||
+        errorParam === 'access_denied' ||
+        descLower.includes('expired') ||
+        descLower.includes('invalid') ||
+        descLower.includes('already used')
+      ) {
+        setError("This confirmation link has already been used or has expired. Security links can only be used once. Please request a new confirmation email or log in.");
+        if (window.location.hash) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+      }
+    }
+  }, []);
 
   const handleResendEmail = async () => {
     if (!email) return;
@@ -229,7 +258,7 @@ export default function SignupPage({ onSignup }) {
       const { error: googleError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}${redirectPath}`
+          redirectTo: `${window.location.origin}/dashboard`
         }
       });
       if (googleError) {

@@ -130,12 +130,11 @@ export default function AdminLayout({ currentUser, onLogout }) {
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
     sessionStorage.removeItem(ADMIN_TOKEN_KEY);
     sessionStorage.removeItem(ADMIN_EXP_KEY);
+    setIsAdminAuth(false);
     if (onLogout) {
       onLogout();
-    } else {
-      setIsAdminAuth(false);
-      navigate('/');
     }
+    navigate('/admin', { replace: true });
   };
 
   // ── Fetch dynamic data from Supabase ─
@@ -425,16 +424,6 @@ export default function AdminLayout({ currentUser, onLogout }) {
                   {SIDEBAR_ITEMS.find(s => s.key === activeSection)?.label || 'Dashboard'}
                 </h1>
                 <p className="text-[10px] text-slate-400 font-medium">RouteK9 Administration Console</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Link to="/" className="text-xs font-bold text-slate-500 hover:text-rose-600 transition-colors">
-                ← Back to Site
-              </Link>
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[10px] font-bold text-emerald-700 uppercase">Admin Online</span>
               </div>
             </div>
           </div>

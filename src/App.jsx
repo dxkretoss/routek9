@@ -36,6 +36,7 @@ import AdminLayout from './pages/admin/AdminLayout';
 import PricingPage from './pages/PricingPage';
 import ProCheckoutPage from './pages/ProCheckoutPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import CompleteProfilePage from './pages/CompleteProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import { US_STATES } from './data/statesData';
@@ -279,11 +280,13 @@ export default function App() {
   // Supabase Auth Session Listener & Profile Sync
   useEffect(() => {
     // 1. Check current session on load
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
-        syncSupabaseProfile(session.user);
+        const syncResult = await syncSupabaseProfile(session.user);
+        if (syncResult?.role !== 'admin' && syncResult?.needsOnboarding && window.location.pathname !== '/complete-profile') {
+          navigate('/complete-profile', { replace: true });
+        }
       } else if (currentUser?.email || currentUser?.id) {
-        // Also sync profile & PRO status if user is restored from cookie session
         syncSupabaseProfile({ id: currentUser.id, email: currentUser.email });
       }
     });
@@ -317,15 +320,29 @@ export default function App() {
             window.location.hash.includes('type=signup') ||
             window.location.hash.includes('type=recovery')
           );
-          const currentPath = window.location.pathname;
-          if (hasHash || currentPath === '/login' || currentPath === '/signup') {
-            const role = (syncResult.role || '').toLowerCase();
-            const isAdmin = role === 'admin' || role === 'superadmin' || role === 'super_admin';
-            const targetPath = isAdmin ? '/admin' : '/dashboard';
-            if (window.location.hash) {
-              window.history.replaceState(null, '', targetPath);
+          if (syncResult.needsOnboarding && syncResult.role !== 'admin') {
+            if (window.location.pathname !== '/complete-profile') {
+              if (window.location.hash) {
+                window.history.replaceState(null, '', window.location.origin + '/complete-profile' + window.location.search);
+              }
+              navigate('/complete-profile', { replace: true });
             }
-            navigate(targetPath, { replace: true });
+            return;
+          }
+
+          // Only auto-redirect on explicit SIGNED_IN event (user clicked login button / OAuth)
+          // Do NOT auto-login/redirect from /login or /signup on INITIAL_SESSION from cookies/localStorage
+          if (event === 'SIGNED_IN' || hasHash) {
+            const currentPath = window.location.pathname;
+            if (hasHash || currentPath === '/login' || currentPath === '/signup') {
+              const role = (syncResult.role || '').toLowerCase();
+              const isAdmin = role === 'admin' || role === 'superadmin' || role === 'super_admin';
+              const targetPath = isAdmin ? '/admin' : '/dashboard';
+              if (window.location.hash) {
+                window.history.replaceState(null, '', window.location.origin + targetPath + window.location.search);
+              }
+              navigate(targetPath, { replace: true });
+            }
           }
         }
       } else if (event === 'SIGNED_OUT') {
@@ -384,31 +401,10 @@ export default function App() {
         return { isActive: false, role: null };
       }
 
-      const userRole = profile?.role || supabaseUser.user_metadata?.role || 'driver';
+      const userRole = profile?.role || supabaseUser.user_metadata?.role || null;
       let userName = profile?.full_name || supabaseUser.user_metadata?.full_name || (userEmail ? userEmail.split('@')[0] : 'User');
       if (userName === 'Jane A. Driver' && userEmail && userEmail !== 'driver@routek9.com') {
         userName = supabaseUser.user_metadata?.full_name || userEmail.split('@')[0];
-      }
-
-      // Create profile row if it doesn't exist yet (e.g. Google OAuth or newly verified email)
-      if (!profile && supabaseUser.id && userEmail) {
-        try {
-          const { data: inserted, error: upsertErr } = await supabase.from('profiles').upsert({
-            id: supabaseUser.id,
-            email: userEmail,
-            full_name: userName,
-            role: userRole,
-            updated_at: new Date().toISOString()
-          }).select('*').maybeSingle();
-
-          if (inserted) {
-            profile = inserted;
-          } else if (upsertErr) {
-            console.warn("Notice: Profile table upsert skipped, using user metadata:", upsertErr.message);
-          }
-        } catch (uErr) {
-          console.warn("Could not upsert profile for verified user:", uErr);
-        }
       }
 
       let isPro = Boolean(profile?.is_pro || profile?.ispro || profile?.isPro);
@@ -476,10 +472,19 @@ export default function App() {
         setCookie(SESSION_COOKIE_NAME, updated, 30);
         return updated;
       });
-      return { isActive: true, role: userRole };
+      const existingRole = profile?.role || supabaseUser.user_metadata?.role || (isSameUser ? prev?.role : null);
+      const isAlreadyOnboarded = Boolean(
+        profile?.onboarding_completed === true || 
+        (isSameUser && prev?.onboardingCompleted === true) || 
+        (existingRole && (existingRole === 'driver' || existingRole === 'company' || existingRole === 'admin'))
+      );
+
+      const isAdminUser = existingRole === 'admin';
+      const needsOnboarding = !isAdminUser && !isAlreadyOnboarded;
+      return { isActive: true, role: existingRole || userRole, needsOnboarding };
     } catch (err) {
       console.error("Error syncing Supabase user profile:", err);
-      return { isActive: false, role: null };
+      return { isActive: false, role: null, needsOnboarding: false };
     }
   };
 
@@ -506,6 +511,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    const wasAdmin = (currentUser?.role === 'admin') || (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin'));
     try {
       await supabase.auth.signOut();
     } catch (e) {
@@ -514,7 +520,11 @@ export default function App() {
     setCurrentUser(null);
     deleteCookie(SESSION_COOKIE_NAME);
     deleteCookie(COURSES_COOKIE_NAME);
-    navigate('/');
+    if (wasAdmin) {
+      navigate('/admin', { replace: true });
+    } else {
+      navigate('/');
+    }
   };
 
   const handleOpenPricing = () => {
@@ -653,6 +663,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
         <Route path="/signup" element={<SignupPage onSignup={handleLogin} />} />
         <Route path="/resetpass" element={<ResetPasswordPage />} />
+        <Route path="/complete-profile" element={<CompleteProfilePage currentUser={currentUser} onComplete={(updated) => { setCurrentUser(updated); setCookie(SESSION_COOKIE_NAME, updated, 30); }} />} />
 
         {/* Admin — has its own AdminLayout */}
         <Route path="/admin" element={<AdminLayout currentUser={currentUser} onLogout={handleLogout} />} />

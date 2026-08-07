@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShieldCheck, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, KeyRound, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function ResetPasswordPage() {
@@ -12,6 +12,68 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [isExpired, setIsExpired] = useState(false);
+  const [expiredReason, setExpiredReason] = useState('');
+  const [checkingLink, setCheckingLink] = useState(true);
+
+  useEffect(() => {
+    const verifyResetLink = async () => {
+      try {
+        setCheckingLink(true);
+        const hash = window.location.hash || '';
+        const search = window.location.search || '';
+
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+        const searchParams = new URLSearchParams(search);
+
+        const errorParam = hashParams.get('error') || searchParams.get('error');
+        const errorCode = hashParams.get('error_code') || searchParams.get('error_code');
+        const errorDesc = hashParams.get('error_description') || searchParams.get('error_description');
+
+        // 1. Check if Supabase returned error parameters in URL (e.g. otp_expired, access_denied, invalid_token)
+        if (errorParam || errorCode || errorDesc) {
+          const descLower = (errorDesc || '').toLowerCase();
+          if (
+            errorCode === 'otp_expired' ||
+            errorCode === 'access_denied' ||
+            errorParam === 'access_denied' ||
+            descLower.includes('expired') ||
+            descLower.includes('invalid') ||
+            descLower.includes('already used')
+          ) {
+            setIsExpired(true);
+            setExpiredReason("This password reset link has already been used or has expired. For security reasons, authentication links are single-use only.");
+            return;
+          }
+        }
+
+        // 2. Check if link was marked as used in current session
+        const wasUsed = sessionStorage.getItem('rk9_reset_link_used') === 'true';
+        if (wasUsed) {
+          setIsExpired(true);
+          setExpiredReason("This password reset link has already been used to update your password. Please log in with your new credentials or request a new link.");
+          return;
+        }
+
+        // 3. Verify active session / recovery token state from Supabase
+        const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+        if (sessionErr || !session) {
+          // If no active session and no recovery hash token, link is invalid or expired
+          if (!hash.includes('access_token=') && !hash.includes('type=recovery')) {
+            setIsExpired(true);
+            setExpiredReason("Invalid or expired reset link. Password reset requires a valid, active link from your email.");
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Link verification notice:", err);
+      } finally {
+        setCheckingLink(false);
+      }
+    };
+
+    verifyResetLink();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,8 +90,12 @@ export default function ResetPasswordPage() {
       setError("Password must be at least 6 characters long.");
       return;
     }
+    if (!cleanConfirm) {
+      setError("Please confirm your new password.");
+      return;
+    }
     if (cleanPw !== cleanConfirm) {
-      setError("Passwords do not match. Please verify.");
+      setError("Passwords do not match. Please verify both passwords are identical before saving.");
       return;
     }
 
@@ -40,7 +106,27 @@ export default function ResetPasswordPage() {
       });
 
       if (updateErr) {
+        if (
+          updateErr.message?.toLowerCase().includes('session') ||
+          updateErr.message?.toLowerCase().includes('expired') ||
+          updateErr.message?.toLowerCase().includes('invalid') ||
+          updateErr.message?.toLowerCase().includes('token')
+        ) {
+          setIsExpired(true);
+          setExpiredReason("This password reset link has expired or has already been used. Please request a new link.");
+          return;
+        }
         throw updateErr;
+      }
+
+      // Mark link as consumed in sessionStorage to prevent re-use
+      sessionStorage.setItem('rk9_reset_link_used', 'true');
+
+      // Invalidate local recovery session so the link cannot be used a second time
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (soErr) {
+        console.warn("Post-reset signout notice:", soErr);
       }
 
       setSuccess(true);
@@ -160,7 +246,41 @@ export default function ResetPasswordPage() {
             </p>
           </div>
 
-          {success ? (
+          {checkingLink ? (
+            <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-3">
+              <Loader2 className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
+              <p className="text-xs font-semibold text-slate-600">Verifying link validity...</p>
+            </div>
+          ) : isExpired ? (
+            <div className="p-6 rounded-3xl bg-rose-50 border border-rose-200 text-center space-y-4 animate-scaleUp">
+              <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 mx-auto">
+                <AlertCircle className="w-7 h-7 text-rose-600" />
+              </div>
+              <div className="space-y-1.5">
+                <h4 className="text-lg font-extrabold text-slate-900 font-serif-heading">Link Expired or Already Used</h4>
+                <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                  {expiredReason || "This password reset or confirmation link has already been used or has expired. Security links can only be used once."}
+                </p>
+              </div>
+              <div className="pt-2 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/login?forgot=true')}
+                  className="w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>Request New Password Link</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/login')}
+                  className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Back to Login
+                </button>
+              </div>
+            </div>
+          ) : success ? (
             <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-3 animate-scaleUp">
               <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mx-auto">
                 <CheckCircle2 className="w-6 h-6 text-emerald-600" />
@@ -236,6 +356,19 @@ export default function ResetPasswordPage() {
                     {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {confirmPassword.length > 0 && (
+                  newPassword.trim() === confirmPassword.trim() ? (
+                    <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1 mt-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Passwords match</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] font-semibold text-rose-600 flex items-center gap-1 mt-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Passwords do not match</span>
+                    </p>
+                  )
+                )}
               </div>
 
               {/* Submit Button */}

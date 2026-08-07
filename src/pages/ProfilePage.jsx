@@ -3,6 +3,7 @@ import { User, Mail, Truck, ShieldCheck, MapPin, Building2, Save, FileText, Crow
 import Toast from '../components/Toast';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
+import { US_STATES_LIST } from '../data/statesData';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
@@ -331,13 +332,18 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                     Home State
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={stateCode}
                     onChange={(e) => setStateCode(e.target.value)}
-                    placeholder="TX"
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                  />
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="">Select State</option>
+                    {US_STATES_LIST.map((st) => (
+                      <option key={st.code} value={st.code}>
+                        {st.code} - {st.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
