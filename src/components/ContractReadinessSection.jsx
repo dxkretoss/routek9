@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, ShieldCheck, Sparkles, Truck } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, Sparkles, Truck, Loader2 } from 'lucide-react';
 import { saveUserChecklistToDb, loadUserChecklistFromDb } from '../lib/supabase';
 
 const READINESS_CHECKLIST = [
@@ -50,6 +50,8 @@ export default function ContractReadinessSection({ currentUser }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('checklist');
   const [checkedItems, setCheckedItems] = useState({});
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const saveTimeoutRef = useRef(null);
 
   // 1. Load checked items from Supabase database when user is logged in
   useEffect(() => {
@@ -64,7 +66,14 @@ export default function ContractReadinessSection({ currentUser }) {
     fetchChecklist();
   }, [currentUser]);
 
-  // 2. Handle Checkbox Click with Login Validation & Database Persistence
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, []);
+
+  // 2. Handle Checkbox Click with Login Validation & Debounced Database Persistence
   const toggleCheck = (idx) => {
     // Validation: If user is not logged in / registered, redirect to login page
     if (!currentUser) {
@@ -78,8 +87,17 @@ export default function ContractReadinessSection({ currentUser }) {
     };
 
     setCheckedItems(updatedMap);
-    // Save directly to Supabase PostgreSQL database (NO localstorage)
-    saveUserChecklistToDb(currentUser.id, 'readiness_checklist', updatedMap);
+    setSaveStatus('saving');
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      await saveUserChecklistToDb(currentUser.id, 'readiness_checklist', updatedMap);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    }, 350);
   };
 
   const readyCount = Object.values(checkedItems).filter(Boolean).length;
@@ -144,6 +162,18 @@ export default function ContractReadinessSection({ currentUser }) {
                   <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
                     100% Ready!
+                  </span>
+                )}
+                {saveStatus === 'saving' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-600 text-[11px] font-bold animate-pulse">
+                    <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
+                    <span>Saving...</span>
+                  </span>
+                )}
+                {saveStatus === 'saved' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    <span>Saved</span>
                   </span>
                 )}
               </div>

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, CheckCircle2, ArrowRight } from 'lucide-react';
+import { ExternalLink, CheckCircle2, ArrowRight, Loader2 } from 'lucide-react';
 import { saveUserChecklistToDb, loadUserChecklistFromDb } from '../lib/supabase';
 
 const ALL_STATES_ORDERED = [
@@ -124,6 +124,8 @@ const DUE_DILIGENCE_CHECKLIST = [
 export default function OwnEstablishedRouteSection({ selectedState: propState, onSelectState, currentUser }) {
   const navigate = useNavigate();
   const [checkedItems, setCheckedItems] = useState({});
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const saveTimeoutRef = useRef(null);
 
   const selectedState = propState;
 
@@ -140,7 +142,14 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
     fetchChecklist();
   }, [currentUser]);
 
-  // 2. Handle Checkbox Click with Login Validation & Database Persistence
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, []);
+
+  // 2. Handle Checkbox Click with Login Validation & Debounced Database Persistence
   const toggleCheck = (idx) => {
     // Validation: If user is not logged in / registered, redirect to login page
     if (!currentUser) {
@@ -154,8 +163,17 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
     };
 
     setCheckedItems(updatedMap);
-    // Save directly to Supabase PostgreSQL database (NO localstorage)
-    saveUserChecklistToDb(currentUser.id, 'diligence_checklist', updatedMap);
+    setSaveStatus('saving');
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      await saveUserChecklistToDb(currentUser.id, 'diligence_checklist', updatedMap);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    }, 350);
   };
 
   const verifiedCount = Object.values(checkedItems).filter(Boolean).length;
@@ -293,11 +311,23 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
               Check off what you've verified before signing anything.
             </p>
 
-            <div className="pt-2 text-xs font-bold text-rose-600 flex items-center gap-1.5">
+            <div className="pt-2 text-xs font-bold text-rose-600 flex items-center gap-2">
               <span>{verifiedCount} / {DUE_DILIGENCE_CHECKLIST.length} verified</span>
               {verifiedCount === DUE_DILIGENCE_CHECKLIST.length && (
                 <span className="text-emerald-600 flex items-center gap-1">
                   <CheckCircle2 className="w-4 h-4" /> Fully Verified!
+                </span>
+              )}
+              {saveStatus === 'saving' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-600 text-[11px] font-bold animate-pulse">
+                  <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
+                  <span>Saving...</span>
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Saved</span>
                 </span>
               )}
             </div>

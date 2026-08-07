@@ -246,6 +246,55 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   const [deleteTargetRoute, setDeleteTargetRoute] = useState(null);
   const [deleteTargetStop, setDeleteTargetStop] = useState(null);
   const [editingRouteId, setEditingRouteId] = useState(null);
+  const PLANNER_DRAFT_KEY = 'routek9_planner_draft_v1';
+
+  // 1. Load active draft from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem(PLANNER_DRAFT_KEY);
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft);
+        if (Array.isArray(parsed.stops) && parsed.stops.length > 0) {
+          setStops(parsed.stops);
+          if (parsed.wizardStep) setWizardStep(parsed.wizardStep);
+          if (parsed.goal) setGoal(parsed.goal);
+          if (parsed.assignedDriverId) setAssignedDriverId(parsed.assignedDriverId);
+          if (parsed.editingRouteId) setEditingRouteId(parsed.editingRouteId);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load planner draft from localStorage:", err);
+    }
+  }, []);
+
+  // 2. Persist active draft to localStorage on state changes
+  useEffect(() => {
+    try {
+      if (stops && stops.length > 0) {
+        const draft = {
+          stops,
+          wizardStep,
+          goal,
+          assignedDriverId,
+          editingRouteId,
+          updatedAt: Date.now()
+        };
+        localStorage.setItem(PLANNER_DRAFT_KEY, JSON.stringify(draft));
+      } else {
+        localStorage.removeItem(PLANNER_DRAFT_KEY);
+      }
+    } catch (err) {
+      console.warn("Failed to save planner draft to localStorage:", err);
+    }
+  }, [stops, wizardStep, goal, assignedDriverId, editingRouteId]);
+
+  const clearPlannerDraft = () => {
+    try {
+      localStorage.removeItem(PLANNER_DRAFT_KEY);
+    } catch (err) {
+      console.warn("Failed to clear planner draft:", err);
+    }
+  };
 
   const confirmRemoveStop = () => {
     if (!deleteTargetStop) return;
@@ -740,6 +789,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
       setRouteSavedModal({ isOpen: true, route: newRoute });
 
       // Reset planner states and return to Step 1
+      clearPlannerDraft();
       setEditingRouteId(null);
       setStops([]);
       setRouteGeo(null);

@@ -62,7 +62,9 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     window.location.hash.includes('type=recovery')
   );
 
-  // Helper to determine initial active tab from URL query params
+  const DASHBOARD_LAST_TAB_KEY = 'routek9_dashboard_active_tab_v1';
+
+  // Helper to determine initial active tab from URL query params or localStorage
   const getInitialTab = () => {
     const tabParam = searchParams.get('tab');
     if (searchParams.has('changepass') || tabParam === 'changepass' || tabParam === 'settings') {
@@ -71,10 +73,26 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     if (tabParam === 'inbox') return 'inbox';
     if (tabParam === 'profile') return 'profile';
     if (tabParam === 'routes') return 'routes';
+    if (tabParam === 'companies') return 'companies';
+    if (tabParam === 'courses') return 'courses';
+
+    // If explicit URL tab param is missing, check localStorage for last selected tab
+    const savedTab = localStorage.getItem(DASHBOARD_LAST_TAB_KEY);
+    if (savedTab && ['routes', 'companies', 'courses', 'profile', 'inbox', 'settings'].includes(savedTab)) {
+      return savedTab;
+    }
+
     return 'profile';
   };
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  // Persist activeTab to localStorage whenever user switches tabs
+  useEffect(() => {
+    if (activeTab) {
+      localStorage.setItem(DASHBOARD_LAST_TAB_KEY, activeTab);
+    }
+  }, [activeTab]);
   const [savedUserRoutes, setSavedUserRoutes] = useState(propSavedRoutes);
   const [routeStatuses, setRouteStatuses] = useState({});
   const [activeDriverModal, setActiveDriverModal] = useState(null);

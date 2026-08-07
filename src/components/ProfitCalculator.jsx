@@ -62,33 +62,30 @@ export default function ProfitCalculator() {
   const [unit, setUnit] = useState('stop');
   const cfg = PAY_UNITS.find((u) => u.id === unit) || PAY_UNITS[2];
 
-  const [rate, setRate] = useState(String(cfg.defaultRate));
-  const [volume, setVolume] = useState(String(cfg.defaultVolume));
-  const [totalMiles, setTotalMiles] = useState('1200');
-  const [mpg, setMpg] = useState('14');
-  const [fuelPrice, setFuelPrice] = useState('3.60');
+  const [rate, setRate] = useState('');
+  const [volume, setVolume] = useState('');
+  const [totalMiles, setTotalMiles] = useState('');
+  const [mpg, setMpg] = useState('');
+  const [fuelPrice, setFuelPrice] = useState('');
 
   const [insurance, setInsurance] = useState('');
   const [maintenance, setMaintenance] = useState('');
   const [phone, setPhone] = useState('');
   const [otherExpenses, setOtherExpenses] = useState('');
 
-  const [taxRate, setTaxRate] = useState('15');
+  const [taxRate, setTaxRate] = useState('');
 
   // Bottom Helper State
-  const [helperPay, setHelperPay] = useState('1200');
-  const [helperMiles, setHelperMiles] = useState('1200');
+  const [helperPay, setHelperPay] = useState('');
+  const [helperMiles, setHelperMiles] = useState('');
   const [helperPeriod, setHelperPeriod] = useState('week');
 
   const allVehicleItems = useMemo(() => VEHICLE_MPG_GROUPS.flatMap((g) => g.items), []);
   const matchedVehicle = allVehicleItems.find((v) => String(v.mpg) === mpg);
-  const [selectedVehiclePick, setSelectedVehiclePick] = useState(matchedVehicle ? matchedVehicle.label : 'Chevy Express / GMC Savana');
+  const [selectedVehiclePick, setSelectedVehiclePick] = useState(matchedVehicle ? matchedVehicle.label : '');
 
   function pickUnit(id) {
-    const next = PAY_UNITS.find((u) => u.id === id) || PAY_UNITS[0];
     setUnit(id);
-    setRate(String(next.defaultRate));
-    setVolume(String(next.defaultVolume));
   }
 
   const calc = useMemo(() => {
@@ -233,6 +230,7 @@ export default function ProfitCalculator() {
                       value={rate}
                       onChange={(e) => setRate(e.target.value.replace(/-/g, ''))}
                       onWheel={(e) => e.target.blur()}
+                      placeholder="0.00"
                       className="w-full pl-8 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                     />
                   </div>
@@ -249,6 +247,7 @@ export default function ProfitCalculator() {
                     value={volume}
                     onChange={(e) => setVolume(e.target.value.replace(/-/g, ''))}
                     onWheel={(e) => e.target.blur()}
+                    placeholder="0"
                     className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
                   />
                   <p className="text-[10px] text-slate-400 font-medium">{cfg.volumeHint}</p>
@@ -273,6 +272,7 @@ export default function ProfitCalculator() {
                       value={totalMiles}
                       onChange={(e) => setTotalMiles(e.target.value.replace(/-/g, ''))}
                       onWheel={(e) => e.target.blur()}
+                      placeholder="0"
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                     />
                   </div>
@@ -286,13 +286,18 @@ export default function ProfitCalculator() {
                       onChange={(e) => {
                         const val = e.target.value;
                         setSelectedVehiclePick(val);
-                        const found = allVehicleItems.find((f) => f.label === val);
-                        if (found) {
-                          setMpg(String(found.mpg));
+                        if (val === 'custom' || !val) {
+                          setMpg('');
+                        } else {
+                          const found = allVehicleItems.find((f) => f.label === val);
+                          if (found) {
+                            setMpg(String(found.mpg));
+                          }
                         }
                       }}
                       className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0b132b] appearance-none cursor-pointer"
                     >
+                      <option value="">Select Vehicle</option>
                       {VEHICLE_MPG_GROUPS.map((g) => (
                         <optgroup key={g.group} label={g.group}>
                           {g.items.map((it) => (
@@ -302,7 +307,7 @@ export default function ProfitCalculator() {
                           ))}
                         </optgroup>
                       ))}
-                      <option value="custom">Custom / other…</option>
+                      <option value="custom">Custom / Other</option>
                     </select>
 
                     {selectedVehiclePick === 'custom' && (
@@ -335,6 +340,7 @@ export default function ProfitCalculator() {
                         value={fuelPrice}
                         onChange={(e) => setFuelPrice(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
+                        placeholder="0.00"
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -362,6 +368,7 @@ export default function ProfitCalculator() {
                         value={insurance}
                         onChange={(e) => setInsurance(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
+                        placeholder="0.00"
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -380,6 +387,7 @@ export default function ProfitCalculator() {
                         value={maintenance}
                         onChange={(e) => setMaintenance(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
+                        placeholder="0.00"
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -399,6 +407,7 @@ export default function ProfitCalculator() {
                         value={phone}
                         onChange={(e) => setPhone(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
+                        placeholder="0.00"
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -417,6 +426,7 @@ export default function ProfitCalculator() {
                         value={otherExpenses}
                         onChange={(e) => setOtherExpenses(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
+                        placeholder="0.00"
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
@@ -440,6 +450,7 @@ export default function ProfitCalculator() {
                     value={taxRate}
                     onChange={(e) => setTaxRate(e.target.value.replace(/-/g, ''))}
                     onWheel={(e) => e.target.blur()}
+                    placeholder="0"
                     className="w-full pr-8 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                   />
                   <span className="absolute right-3.5 top-2.5 text-slate-400 text-sm font-bold">%</span>
@@ -474,6 +485,7 @@ export default function ProfitCalculator() {
                         value={helperPay}
                         onChange={(e) => setHelperPay(e.target.value.replace(/-/g, ''))}
                         onWheel={(e) => e.target.blur()}
+                        placeholder="0.00"
                         className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                       />
                     </div>
@@ -490,6 +502,7 @@ export default function ProfitCalculator() {
                       value={helperMiles}
                       onChange={(e) => setHelperMiles(e.target.value.replace(/-/g, ''))}
                       onWheel={(e) => e.target.blur()}
+                      placeholder="0"
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#0b132b]"
                     />
                   </div>
