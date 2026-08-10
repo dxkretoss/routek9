@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, PlusCircle, CheckCircle2, Truck, Building2 } from 'lucide-react';
 import { US_STATES } from '../data/statesData';
+import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 
@@ -182,13 +183,11 @@ export default function PostListingModal({ onClose, onAddRoute }) {
                   <select
                     value={vehicleRequired}
                     onChange={(e) => setVehicleRequired(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-rose-500"
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-rose-500 cursor-pointer"
                   >
-                    <option value="Cargo Van">Cargo Van</option>
-                    <option value="Sprinter Van">Sprinter Van</option>
-                    <option value="16ft Box Truck">16ft Box Truck</option>
-                    <option value="26ft Box Truck">26ft Box Truck</option>
-                    <option value="SUV / Sedan">SUV / Sedan</option>
+                    {PRIMARY_VEHICLE_CLASSES.map((vc) => (
+                      <option key={vc} value={vc}>{vc}</option>
+                    ))}
                   </select>
                 </div>
 

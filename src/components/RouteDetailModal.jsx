@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Truck, MapPin, DollarSign, Calendar, ShieldCheck, Phone, Mail, CheckCircle2, FileText, Send, Building2, Loader2 } from 'lucide-react';
 import { submitRouteBid } from '../lib/supabase';
+import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
 
 export default function RouteDetailModal({ route, onClose }) {
   const [applicantName, setApplicantName] = useState('');
@@ -164,13 +165,11 @@ export default function RouteDetailModal({ route, onClose }) {
                   <select
                     value={applicantVehicle}
                     onChange={(e) => setApplicantVehicle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
                   >
-                    <option value="Cargo Van">Cargo Van</option>
-                    <option value="Sprinter Van">Sprinter Van</option>
-                    <option value="16ft Box Truck">16ft Box Truck</option>
-                    <option value="26ft Box Truck">26ft Box Truck</option>
-                    <option value="SUV / Sedan">SUV / Sedan</option>
+                    {PRIMARY_VEHICLE_CLASSES.map((vc) => (
+                      <option key={vc} value={vc}>{vc}</option>
+                    ))}
                   </select>
                 </div>
 

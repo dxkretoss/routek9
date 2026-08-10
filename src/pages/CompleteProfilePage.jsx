@@ -21,6 +21,7 @@ import {
 import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
+import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
@@ -439,13 +440,9 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
                     onChange={(e) => setVehicleClass(e.target.value)}
                     className="w-full pl-10 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all appearance-none cursor-pointer"
                   >
-                    <option value="Cargo Van">Cargo Van</option>
-                    <option value="Sprinter Van">Sprinter Van</option>
-                    <option value="Box Truck (16-26ft)">Box Truck (16-26ft)</option>
-                    <option value="Pickup Truck / SUV">Pickup Truck / SUV</option>
-                    <option value="Semi Truck / Tractor">Semi Truck / Tractor</option>
-                    <option value="Passenger Car / Sedan">Passenger Car / Sedan</option>
-                    <option value="Straight Truck / Flatbed">Straight Truck / Flatbed</option>
+                    {PRIMARY_VEHICLE_CLASSES.map((vc) => (
+                      <option key={vc} value={vc}>{vc}</option>
+                    ))}
                   </select>
                 </div>
               </div>

@@ -4,6 +4,7 @@ import Toast from '../components/Toast';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 import { US_STATES_LIST } from '../data/statesData';
+import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
@@ -317,14 +318,11 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
                   <select
                     value={vehicleClass}
                     onChange={(e) => setVehicleClass(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
                   >
-                    <option value="Sedan / Hatchback">Sedan / Hatchback</option>
-                    <option value="Minivan / SUV">Minivan / SUV</option>
-                    <option value="Cargo Van">Cargo Van</option>
-                    <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
-                    <option value="16ft Box Truck">16ft Box Truck</option>
-                    <option value="26ft Box Truck">26ft Box Truck</option>
+                    {PRIMARY_VEHICLE_CLASSES.map((vc) => (
+                      <option key={vc} value={vc}>{vc}</option>
+                    ))}
                   </select>
                 </div>
 

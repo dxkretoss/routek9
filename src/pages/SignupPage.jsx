@@ -4,6 +4,7 @@ import { ShieldCheck, Truck, ArrowRight, Lock, Mail, User, Eye, EyeOff, CheckCir
 import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
+import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
 
 export default function SignupPage({ onSignup }) {
   const navigate = useNavigate();
@@ -597,14 +598,11 @@ export default function SignupPage({ onSignup }) {
                     <select
                       value={vehicleType}
                       onChange={(e) => setVehicleType(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all cursor-pointer"
                     >
-                      <option value="Cargo Van">Cargo Van</option>
-                      <option value="Sedan / Hatchback">Sedan / Hatchback</option>
-                      <option value="Minivan / SUV">Minivan / SUV</option>
-                      <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
-                      <option value="16ft Box Truck">16ft Box Truck</option>
-                      <option value="26ft Box Truck">26ft Box Truck</option>
+                      {PRIMARY_VEHICLE_CLASSES.map((vc) => (
+                        <option key={vc} value={vc}>{vc}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
