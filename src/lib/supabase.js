@@ -210,13 +210,13 @@ export async function fetchNotifications(userId) {
       .from('notifications')
       .select('*')
       .order('created_at', { ascending: false });
-      
+
     if (userId) {
       query.or(`user_id.eq.${userId},user_id.is.null`);
     } else {
       query.is('user_id', null);
     }
-    
+
     const { data, error } = await query;
     if (error) throw error;
     return data || [];
@@ -247,13 +247,13 @@ export async function markAllNotificationsRead(userId) {
     const query = supabase
       .from('notifications')
       .update({ unread: false });
-      
+
     if (userId) {
       query.eq('user_id', userId);
     } else {
       query.is('user_id', null);
     }
-    
+
     const { data, error } = await query.select('*');
     if (error) throw error;
     return { success: true, data };
@@ -345,7 +345,7 @@ export async function loadUserChecklistFromDb(userId, checklistKey) {
  */
 export async function invokeMobileRegister(registerPayload) {
   try {
-    const { data, error } = await supabase.functions.invoke('register', {
+    const { data, error } = await supabase.functions.invoke('mobile-register', {
       body: registerPayload
     });
 
