@@ -124,23 +124,48 @@ const DUE_DILIGENCE_CHECKLIST = [
 export default function OwnEstablishedRouteSection({ selectedState: propState, onSelectState, currentUser }) {
   const navigate = useNavigate();
   const [checkedItems, setCheckedItems] = useState({});
-  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const [loadingChecklist, setLoadingChecklist] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimeoutRef = useRef(null);
 
   const selectedState = propState;
 
-  // 1. Load checked items from Supabase database when user is logged in
+  const hasLoadedRef = useRef(false);
+
+  // 1. Load checked items from Supabase database with Local Buffer Fallback for instant 0ms render
   useEffect(() => {
     async function fetchChecklist() {
       if (currentUser?.id) {
+        if (!hasLoadedRef.current) {
+          setLoadingChecklist(true);
+        }
+        const bufferKey = `rk9_buffer_${currentUser.id}_diligence_checklist`;
+
+        // Instant local buffer sync
+        try {
+          const cached = localStorage.getItem(bufferKey);
+          if (cached && !hasLoadedRef.current) {
+            setCheckedItems(JSON.parse(cached));
+          }
+        } catch {}
+
+        // Async fetch from Supabase
         const savedMap = await loadUserChecklistFromDb(currentUser.id, 'diligence_checklist');
-        setCheckedItems(savedMap || {});
+        if (savedMap && Object.keys(savedMap).length > 0) {
+          setCheckedItems(savedMap);
+          try {
+            localStorage.setItem(bufferKey, JSON.stringify(savedMap));
+          } catch {}
+        }
+        hasLoadedRef.current = true;
+        setLoadingChecklist(false);
       } else {
         setCheckedItems({});
+        setLoadingChecklist(false);
       }
     }
     fetchChecklist();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -149,7 +174,7 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
     };
   }, []);
 
-  // 2. Handle Checkbox Click with Login Validation & Debounced Database Persistence
+  // 2. Handle Checkbox Click with Login Validation, Instant Local Buffer & Debounced Database Persistence
   const toggleCheck = (idx) => {
     // Validation: If user is not logged in / registered, redirect to login page
     if (!currentUser) {
@@ -157,23 +182,37 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
       return;
     }
 
-    const updatedMap = {
-      ...checkedItems,
-      [idx]: !checkedItems[idx]
-    };
-
-    setCheckedItems(updatedMap);
     setSaveStatus('saving');
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
+    setCheckedItems((prev) => {
+      const updatedMap = {
+        ...prev,
+        [idx]: !prev[idx]
+      };
 
-    saveTimeoutRef.current = setTimeout(async () => {
-      await saveUserChecklistToDb(currentUser.id, 'diligence_checklist', updatedMap);
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2500);
-    }, 350);
+      // Save instant local buffer
+      const bufferKey = `rk9_buffer_${currentUser.id}_diligence_checklist`;
+      try {
+        localStorage.setItem(bufferKey, JSON.stringify(updatedMap));
+      } catch {}
+
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      saveTimeoutRef.current = setTimeout(async () => {
+        const res = await saveUserChecklistToDb(currentUser.id, 'diligence_checklist', updatedMap);
+        if (res.success) {
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 2200);
+        } else {
+          setSaveStatus('error');
+          setTimeout(() => setSaveStatus('idle'), 3000);
+        }
+      }, 300);
+
+      return updatedMap;
+    });
   };
 
   const verifiedCount = Object.values(checkedItems).filter(Boolean).length;
@@ -330,35 +369,53 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
                   <span>Saved</span>
                 </span>
               )}
+              {saveStatus === 'error' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-bold">
+                  <span>Buffered locally</span>
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Interactive Checkbox List */}
-          <div className="space-y-3 pt-2">
-            {DUE_DILIGENCE_CHECKLIST.map((itemText, idx) => {
-              const isChecked = !!checkedItems[idx];
-              return (
-                <label
-                  key={idx}
-                  onClick={() => toggleCheck(idx)}
-                  className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${isChecked
-                      ? 'bg-emerald-50/60 border-emerald-300 text-slate-900'
-                      : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
-                    }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => { }}
-                    className="mt-0.5 w-4 h-4 accent-rose-600 rounded cursor-pointer shrink-0"
-                  />
-                  <span className="text-xs sm:text-sm font-medium leading-relaxed select-none">
-                    {itemText}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+          {/* Skeleton Buffer while loading initial checklist state */}
+          {loadingChecklist ? (
+            <div className="space-y-3 pt-2">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex items-center gap-3.5 p-4 rounded-xl border border-slate-200/60 bg-slate-50/60 animate-pulse">
+                  <div className="w-4 h-4 bg-slate-200 rounded shrink-0" />
+                  <div className="h-4 bg-slate-200 rounded w-5/6" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* Interactive Checkbox List */
+            <div className="space-y-3 pt-2">
+              {DUE_DILIGENCE_CHECKLIST.map((itemText, idx) => {
+                const isChecked = !!checkedItems[idx];
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => toggleCheck(idx)}
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none ${isChecked
+                        ? 'bg-emerald-50/60 border-emerald-300 text-slate-900 shadow-2xs'
+                        : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
+                      }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      readOnly
+                      tabIndex={-1}
+                      className="mt-0.5 w-4 h-4 accent-rose-600 rounded cursor-pointer shrink-0 pointer-events-none"
+                    />
+                    <span className="text-xs sm:text-sm font-medium leading-relaxed">
+                      {itemText}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
         </div>
 

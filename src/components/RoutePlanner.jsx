@@ -37,7 +37,8 @@ import {
   ChevronUp,
   RefreshCw,
   Edit2,
-  Edit
+  Edit,
+  Loader2
 } from "lucide-react";
 
 const ZONE_COLORS = [
@@ -72,6 +73,10 @@ function categorize(p, query) {
   if (type === "house" && p?.street && !p?.name) return "street";
   return "all";
 }
+
+const CENSUS_API_ENDPOINT = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress";
+const PHOTON_API_ENDPOINT = "https://photon.komoot.io/api/";
+const NOMINATIM_API_ENDPOINT = "https://nominatim.openstreetmap.org/search";
 
 const NOMINATIM = "https://nominatim.openstreetmap.org";
 const PHOTON = "https://photon.komoot.io";
@@ -246,7 +251,36 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   const [deleteTargetRoute, setDeleteTargetRoute] = useState(null);
   const [deleteTargetStop, setDeleteTargetStop] = useState(null);
   const [editingRouteId, setEditingRouteId] = useState(null);
+  const [csvImportState, setCsvImportState] = useState(null);
+  const [showSkippedDetails, setShowSkippedDetails] = useState(false);
+  const [geoBlockedModal, setGeoBlockedModal] = useState(false);
+  const [selectedStopIds, setSelectedStopIds] = useState(new Set());
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const cancelCsvRef = useRef(false);
   const PLANNER_DRAFT_KEY = 'routek9_planner_draft_v1';
+
+  const toggleSelectStop = (id) => {
+    setSelectedStopIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllStops = () => {
+    if (stops.length > 0 && selectedStopIds.size === stops.length) {
+      setSelectedStopIds(new Set());
+    } else {
+      setSelectedStopIds(new Set(stops.map((s) => s.id)));
+    }
+  };
+
+  const handleBulkDelete = () => {
+    setStops((prev) => prev.filter((s) => !selectedStopIds.has(s.id)));
+    setSelectedStopIds(new Set());
+    setShowBulkDeleteModal(false);
+  };
 
   // 1. Load active draft from localStorage on mount
   useEffect(() => {
@@ -923,12 +957,14 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         let city;
         try {
           const r = await fetch(
-            `${NOMINATIM}/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`,
-            { headers: { Accept: "application/json" } },
+            `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=json&location=${lon},${lat}`
           );
-          const j = await r.json();
-          state = j?.address?.state;
-          city = j?.address?.city ?? j?.address?.town ?? j?.address?.village ?? j?.address?.county;
+          if (r.ok) {
+            const j = await r.json();
+            const addr = j?.address || {};
+            state = addr.Region;
+            city = addr.City || addr.Subregion || addr.District;
+          }
         } catch { }
         setUserLoc({ lat, lon, state, city });
         setLocStatus("ok");
@@ -1225,8 +1261,12 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           heading: p.coords.heading,
         }),
       (err) => {
-        setError(err.message || "GPS unavailable. Enable location permissions.");
         setTracking(false);
+        if (err?.code === 1 || err?.message?.toLowerCase().includes("denied") || err?.message?.toLowerCase().includes("blocked")) {
+          setGeoBlockedModal(true);
+        } else {
+          setError(err.message || "GPS unavailable. Enable location permissions in browser settings.");
+        }
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
     );
@@ -1708,24 +1748,40 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
       const order = optimizeOrder(stops, targetGoal);
       const reordered = order.map((i) => stops[i]);
       setStops(reordered);
-      const CHUNK = 90;
+      const CHUNK = 25;
       const coords = [];
       let totalDist = 0;
       let totalDur = 0;
-      for (let i = 0; i < reordered.length; i += CHUNK) {
-        const seg = reordered.slice(Math.max(0, i - (i > 0 ? 1 : 0)), i + CHUNK);
+      for (let i = 0; i < reordered.length; i += CHUNK - 1) {
+        const seg = reordered.slice(i, i + CHUNK);
         if (seg.length < 2) continue;
         const path = seg.map((s) => `${s.lon},${s.lat}`).join(";");
-        const res = await fetch(
-          `${OSRM}/route/v1/driving/${path}?overview=full&geometries=geojson`,
-        );
-        const data = await res.json();
-        if (data?.routes?.[0]) {
-          totalDist += data.routes[0].distance;
-          totalDur += data.routes[0].duration;
-          const geo = data.routes[0].geometry.coordinates;
-          coords.push(...geo.map(([lo, la]) => [la, lo]));
+        try {
+          const res = await fetch(
+            `${OSRM}/route/v1/driving/${path}?overview=full&geometries=geojson`,
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.routes?.[0]) {
+              totalDist += data.routes[0].distance;
+              totalDur += data.routes[0].duration;
+              const geo = data.routes[0].geometry.coordinates;
+              coords.push(...geo.map(([lo, la]) => [la, lo]));
+              continue;
+            }
+          }
+        } catch { }
+
+        // Fallback for unroutable / island / URL limit segments
+        let segDistM = 0;
+        const straightCoords = seg.map((s) => [s.lat, s.lon]);
+        for (let j = 0; j < seg.length - 1; j++) {
+          const mi = haversine(seg[j], seg[j + 1]);
+          segDistM += mi * 1609.34;
         }
+        totalDist += segDistM;
+        totalDur += (segDistM / 1609.34 / 35) * 3600;
+        coords.push(...straightCoords);
       }
 
       // Goal-based routing adjustment factors for Fastest vs Shortest vs Balanced
@@ -1785,17 +1841,340 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   }
 
   async function importCsv(file) {
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    const start = /address|location/i.test(lines[0]) ? 1 : 0;
-    const items = lines.slice(start).map((l) => {
-      const cols = l.match(/("([^"]|"")*"|[^,]+)/g) ?? [];
-      const clean = cols.map((c) => c.replace(/^"|"$/g, "").replace(/""/g, '"').trim());
-      return clean[1] || clean[0];
-    });
-    for (const addr of items.slice(0, 400 - stops.length)) {
-      await addFromText(addr);
+    if (!file) return;
+
+    // 1. Check free/pro stop limit upfront
+    const maxLimit = currentUser?.isPro ? 400 : 5;
+    if (!currentUser?.isPro && stops.length >= 5) {
+      if (onTriggerGateModal) {
+        onTriggerGateModal({
+          title: "Free Starter Limit Reached (5/5 Stops)",
+          message: "Free Starter members can optimize up to 5 stops per route. Upgrade to Route K9 PRO to unlock 400-stop optimization and CSV batch imports!"
+        });
+      } else if (onOpenPricing) {
+        onOpenPricing();
+      } else {
+        setError("Free Starter Limit: Max 5 stops per route. Upgrade to Route K9 PRO for up to 400 stops!");
+      }
+      return;
     }
+
+    const availableSlots = maxLimit - stops.length;
+    if (availableSlots <= 0) {
+      setError(`Maximum limit of ${maxLimit} stops reached.`);
+      return;
+    }
+
+    const text = await file.text();
+    const rawLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (rawLines.length === 0) return;
+
+    const splitLine = (l) => {
+      const cols = l.match(/("([^"]|"")*"|[^,]+)/g) ?? [];
+      return cols.map((c) => c.replace(/^"|"$/g, "").replace(/""/g, '"').trim());
+    };
+
+    const firstRowCols = splitLine(rawLines[0]);
+    const hasHeader = firstRowCols.some((c) =>
+      /address|location|street|city|zip|postal|lat|lng|latitude|longitude|name|stop/i.test(c)
+    );
+
+    let latIdx = -1;
+    let lonIdx = -1;
+    let addrIdx = -1;
+    let labelIdx = -1;
+
+    if (hasHeader) {
+      firstRowCols.forEach((c, idx) => {
+        const colLower = c.toLowerCase();
+        if (latIdx === -1 && /^(lat|latitude)$/i.test(colLower)) latIdx = idx;
+        if (lonIdx === -1 && /^(lon|lng|longitude)$/i.test(colLower)) lonIdx = idx;
+        if (addrIdx === -1 && /address|location|street/i.test(colLower)) addrIdx = idx;
+        if (labelIdx === -1 && /name|label|title|description/i.test(colLower)) labelIdx = idx;
+      });
+    }
+
+    const dataLines = hasHeader ? rawLines.slice(1) : rawLines;
+    const parsedItems = [];
+
+    for (const line of dataLines) {
+      const cols = splitLine(line);
+      if (cols.length === 0) continue;
+
+      let lat = null;
+      let lon = null;
+      let address = null;
+      let label = null;
+
+      if (latIdx >= 0 && lonIdx >= 0 && cols[latIdx] && cols[lonIdx]) {
+        const pLat = parseFloat(cols[latIdx]);
+        const pLon = parseFloat(cols[lonIdx]);
+        if (!isNaN(pLat) && !isNaN(pLon)) {
+          lat = pLat;
+          lon = pLon;
+        }
+      }
+
+      if (addrIdx >= 0 && cols[addrIdx]) {
+        address = cols[addrIdx];
+      } else {
+        const nonLabelCol = cols.find((c) => c.length > 3 && !/^\d+$/.test(c));
+        address = nonLabelCol || cols[0];
+      }
+
+      if (labelIdx >= 0 && cols[labelIdx]) {
+        label = cols[labelIdx];
+      }
+
+      if ((lat != null && lon != null) || (address && address.length > 1)) {
+        parsedItems.push({ address, lat, lon, label });
+      }
+    }
+
+    if (parsedItems.length === 0) {
+      setError("No valid addresses found in CSV file.");
+      return;
+    }
+
+    const targetItems = parsedItems.slice(0, availableSlots);
+    const truncatedCount = parsedItems.length - targetItems.length;
+
+    cancelCsvRef.current = false;
+    setCsvImportState({
+      active: true,
+      fileName: file.name,
+      total: targetItems.length,
+      current: 0,
+      successCount: 0,
+      failedCount: 0,
+      truncatedCount,
+      skippedItems: [],
+      status: "importing",
+    });
+
+    let index = 0;
+    let processed = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    const skippedItems = [];
+    const newStops = new Array(targetItems.length);
+
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
+      const controller = new AbortController();
+      const timerId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+        clearTimeout(timerId);
+        return response;
+      } catch {
+        clearTimeout(timerId);
+        return null;
+      }
+    }
+
+    async function geocodeSingleItem(item) {
+      if (cancelCsvRef.current) return null;
+
+      if (item.lat != null && item.lon != null && !isNaN(item.lat) && !isNaN(item.lon)) {
+        return {
+          id: uid(),
+          label: item.label || item.address || `Coordinates (${item.lat}, ${item.lon})`,
+          lat: parseFloat(item.lat),
+          lon: parseFloat(item.lon),
+        };
+      }
+
+      const q = item.address ? item.address.trim() : "";
+      if (!q) return null;
+
+      const coordMatch = q.match(/^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/);
+      if (coordMatch) {
+        return {
+          id: uid(),
+          label: item.label || `Coordinates (${coordMatch[1]}, ${coordMatch[2]})`,
+          lat: parseFloat(coordMatch[1]),
+          lon: parseFloat(coordMatch[2]),
+        };
+      }
+
+      const isUS = (country) => {
+        if (!country) return true;
+        const c = country.toLowerCase();
+        return c === "united states" || c === "united states of america" || c === "usa" || c === "us";
+      };
+
+      // TIER 1: ESRI ArcGIS World Geocoding Service (100% Free, Native CORS Allowed, High Throughput, Global & US Coverage)
+      try {
+        const arcgisUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=${encodeURIComponent(q)}&maxLocations=1`;
+        const aRes = await fetchWithTimeout(arcgisUrl, {}, 3000);
+        if (aRes && aRes.ok) {
+          const aData = await aRes.json();
+          const candidate = aData?.candidates?.[0];
+          if (candidate && candidate.score >= 40) {
+            const { x: lon, y: lat } = candidate.location;
+            return {
+              id: uid(),
+              label: item.label || candidate.address || q,
+              lat: parseFloat(lat),
+              lon: parseFloat(lon),
+            };
+          }
+        }
+      } catch { }
+
+      // TIER 2: Official US Census Bureau Geocoder (Full address)
+      try {
+        const censusUrl = `${CENSUS_API_ENDPOINT}?address=${encodeURIComponent(q)}&benchmark=Public_AR_Current&format=json`;
+        const cRes = await fetchWithTimeout(censusUrl, {}, 2500);
+        if (cRes && cRes.ok) {
+          const cData = await cRes.json();
+          const match = cData?.result?.addressMatches?.[0];
+          if (match) {
+            const { x: lon, y: lat } = match.coordinates;
+            return {
+              id: uid(),
+              label: item.label || match.matchedAddress,
+              lat: parseFloat(lat),
+              lon: parseFloat(lon),
+              state: match.addressComponents?.state,
+            };
+          }
+        }
+      } catch { }
+
+      // TIER 1b: US Census Bureau (Sans ZIP)
+      const sansZip = q.replace(/\b\d{5}(-\d{4})?\b/, "").replace(/,\s*,/g, ",").replace(/,\s*$/, "").trim();
+      if (sansZip !== q) {
+        try {
+          const cRes = await fetchWithTimeout(`${CENSUS_API_ENDPOINT}?address=${encodeURIComponent(sansZip)}&benchmark=Public_AR_Current&format=json`, {}, 2500);
+          if (cRes && cRes.ok) {
+            const cData = await cRes.json();
+            const match = cData?.result?.addressMatches?.[0];
+            if (match) {
+              const { x: lon, y: lat } = match.coordinates;
+              return {
+                id: uid(),
+                label: item.label || match.matchedAddress,
+                lat: parseFloat(lat),
+                lon: parseFloat(lon),
+                state: match.addressComponents?.state,
+              };
+            }
+          }
+        } catch { }
+      }
+
+      // TIER 2: Photon API (Timeout guarded to fail silently on timeout)
+      try {
+        const pRes = await fetchWithTimeout(`${PHOTON_API_ENDPOINT}?limit=1&lang=en&q=${encodeURIComponent(q)}`, {}, 2000);
+        if (pRes && pRes.ok) {
+          const data = await pRes.json();
+          const f = data?.features?.[0];
+          if (f) {
+            const p = f.properties || {};
+            if (isUS(p.country)) {
+              const [lon, lat] = f.geometry.coordinates;
+              const parts = [
+                p.housenumber ? `${p.housenumber} ${p.street || ''}`.trim() : p.street || p.name,
+                p.city || p.town || p.village,
+                p.state,
+                p.postcode
+              ].filter(Boolean);
+              const label = item.label || (parts.length > 0 ? parts.join(', ') : q);
+              return {
+                id: uid(),
+                label,
+                lat: parseFloat(lat),
+                lon: parseFloat(lon),
+                state: p.state,
+              };
+            }
+          }
+        }
+      } catch { }
+
+      // TIER 3: Nominatim API (Timeout guarded)
+      await delay(150);
+      try {
+        const nRes = await fetchWithTimeout(`${NOMINATIM_API_ENDPOINT}?format=json&limit=1&addressdetails=1&countrycodes=us&q=${encodeURIComponent(q)}`, {
+          headers: { Accept: "application/json" }
+        }, 2500);
+        if (nRes && nRes.ok) {
+          const data = await nRes.json();
+          const n = data?.[0];
+          if (n && isUS(n.address?.country || n.country)) {
+            return {
+              id: uid(),
+              label: item.label || n.display_name,
+              lat: parseFloat(n.lat),
+              lon: parseFloat(n.lon),
+              state: n.address?.state,
+            };
+          }
+        }
+      } catch { }
+
+      return null;
+    }
+
+    const CONCURRENCY = 3;
+    async function worker() {
+      while (index < targetItems.length && !cancelCsvRef.current) {
+        const curIdx = index++;
+        const item = targetItems[curIdx];
+        const res = await geocodeSingleItem(item);
+        if (res) {
+          newStops[curIdx] = res;
+          successCount++;
+        } else {
+          failedCount++;
+          skippedItems.push({
+            row: curIdx + 1,
+            address: item.address || item.label || `Row #${curIdx + 1}`,
+            reason: "Unindexed address / House number not found"
+          });
+        }
+        processed++;
+        setCsvImportState((prev) =>
+          prev
+            ? {
+              ...prev,
+              current: processed,
+              successCount,
+              failedCount,
+              skippedItems: [...skippedItems],
+            }
+            : null
+        );
+        await delay(100);
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(CONCURRENCY, targetItems.length) }, () => worker());
+    await Promise.all(workers);
+
+    const validStops = newStops.filter(Boolean);
+    if (validStops.length > 0) {
+      setStops((prev) => [...prev, ...validStops]);
+      setRouteGeo(null);
+    }
+
+    setCsvImportState((prev) =>
+      prev
+        ? {
+          ...prev,
+          active: false,
+          status: cancelCsvRef.current ? "canceled" : "completed",
+          successCount: validStops.length,
+          skippedItems: [...skippedItems],
+        }
+        : null
+    );
   }
 
   const googleLinks = useMemo(() => {
@@ -2091,7 +2470,9 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
               <div className="rounded-3xl border border-border bg-card p-3.5 shadow-xs space-y-2.5">
                 <div className="flex items-center justify-between px-1">
                   <span className="text-[11px] font-extrabold uppercase tracking-wider text-rose-600">
-                    Step {wizardStep} of 3: {wizardStep === 1 ? 'Add Stops' : wizardStep === 2 ? 'Optimize Route' : 'Dispatch & GPS'}
+                    {showAllPanels
+                      ? "All Panels Mode — Single Page View"
+                      : `Step ${wizardStep} of 3: ${wizardStep === 1 ? 'Add Stops' : wizardStep === 2 ? 'Optimize Route' : 'Dispatch & GPS'}`}
                   </span>
                   <button
                     type="button"
@@ -2367,76 +2748,115 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                   </div>
 
                   {stops.length > 0 && (
-                    <div className="mt-4 rounded-3xl border border-border bg-card shadow-sm">
-                      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                        <div className="text-sm font-bold text-primary">Stops</div>
-                        <button
-                          type="button"
-                          onClick={exportCsv}
-                          className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
-                        >
-                          Export CSV
-                        </button>
+                    <div className="mt-4 rounded-3xl border border-border bg-card shadow-sm overflow-hidden">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 bg-slate-50/80">
+                        <div className="flex items-center gap-2.5">
+                          <label className="flex items-center gap-2 text-xs font-bold text-primary cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={stops.length > 0 && selectedStopIds.size === stops.length}
+                              onChange={toggleSelectAllStops}
+                              className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
+                            />
+                            <span>Stops ({stops.length})</span>
+                          </label>
+                          {selectedStopIds.size > 0 && (
+                            <span className="text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                              {selectedStopIds.size} selected
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {selectedStopIds.size > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setShowBulkDeleteModal(true)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1 cursor-pointer animate-scaleUp"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete Selected ({selectedStopIds.size})</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={exportCsv}
+                              className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
+                            >
+                              Export CSV
+                            </button>
+                          )}
+                        </div>
                       </div>
+
                       <ol className="max-h-[420px] divide-y divide-border overflow-auto">
-                        {stops.map((s, i) => (
-                          <li key={s.id} className="flex items-center gap-2 px-4 py-2.5 bg-white">
-                            <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white">
-                              {i + 1}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-xs font-semibold text-primary" title={s.label}>
-                                {s.label}
+                        {stops.map((s, i) => {
+                          const isSelected = selectedStopIds.has(s.id);
+                          return (
+                            <li key={s.id} className={`flex items-center gap-2.5 px-3.5 py-2.5 transition ${isSelected ? 'bg-rose-50/60 border-l-4 border-l-rose-500' : 'bg-white hover:bg-slate-50/50'}`}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectStop(s.id)}
+                                className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer shrink-0 accent-rose-600"
+                              />
+                              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white">
+                                {i + 1}
                               </div>
-                              {zones.length > 0 && (
-                                <div className="mt-1 flex items-center gap-1.5">
-                                  <select
-                                    value={s.zoneId ?? ""}
-                                    onChange={(e) => assignStopZone(s.id, e.target.value || undefined)}
-                                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700 focus:bg-white focus:outline-none transition cursor-pointer"
-                                    style={
-                                      s.zoneId && zones.find((z) => z.id === s.zoneId)
-                                        ? {
-                                          backgroundColor: `${zones.find((z) => z.id === s.zoneId).color}20`,
-                                          borderColor: zones.find((z) => z.id === s.zoneId).color,
-                                          color: zones.find((z) => z.id === s.zoneId).color,
-                                        }
-                                        : {}
-                                    }
-                                  >
-                                    <option value="">— Unzoned —</option>
-                                    {zones.map((z) => (
-                                      <option key={z.id} value={z.id}>
-                                        {z.name}
-                                      </option>
-                                    ))}
-                                  </select>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-xs font-semibold text-primary" title={s.label}>
+                                  {s.label}
                                 </div>
-                              )}
-                            </div>
-                            <div className="flex flex-shrink-0 items-center gap-0.5">
-                              <IconBtn onClick={() => move(s.id, -1)} title="Move up">
-                                <ArrowUp className="w-3.5 h-3.5" />
-                              </IconBtn>
-                              <IconBtn onClick={() => move(s.id, 1)} title="Move down">
-                                <ArrowDown className="w-3.5 h-3.5" />
-                              </IconBtn>
-                              <IconBtn
-                                onClick={() => toggleLock(s.id)}
-                                title={s.locked ? "Unlock" : "Lock"}
-                              >
-                                {s.locked ? (
-                                  <Lock className="w-3.5 h-3.5 text-slate-500" />
-                                ) : (
-                                  <Unlock className="w-3.5 h-3.5 text-slate-400" />
+                                {zones.length > 0 && (
+                                  <div className="mt-1 flex items-center gap-1.5">
+                                    <select
+                                      value={s.zoneId ?? ""}
+                                      onChange={(e) => assignStopZone(s.id, e.target.value || undefined)}
+                                      className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700 focus:bg-white focus:outline-none transition cursor-pointer"
+                                      style={
+                                        s.zoneId && zones.find((z) => z.id === s.zoneId)
+                                          ? {
+                                            backgroundColor: `${zones.find((z) => z.id === s.zoneId).color}20`,
+                                            borderColor: zones.find((z) => z.id === s.zoneId).color,
+                                            color: zones.find((z) => z.id === s.zoneId).color,
+                                          }
+                                          : {}
+                                      }
+                                    >
+                                      <option value="">— Unzoned —</option>
+                                      {zones.map((z) => (
+                                        <option key={z.id} value={z.id}>
+                                          {z.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
                                 )}
-                              </IconBtn>
-                              <IconBtn onClick={() => setDeleteTargetStop(s)} title="Remove Stop">
-                                <X className="w-3.5 h-3.5 text-rose-500" />
-                              </IconBtn>
-                            </div>
-                          </li>
-                        ))}
+                              </div>
+                              <div className="flex flex-shrink-0 items-center gap-0.5">
+                                <IconBtn onClick={() => move(s.id, -1)} title="Move up">
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </IconBtn>
+                                <IconBtn onClick={() => move(s.id, 1)} title="Move down">
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </IconBtn>
+                                <IconBtn
+                                  onClick={() => toggleLock(s.id)}
+                                  title={s.locked ? "Unlock" : "Lock"}
+                                >
+                                  {s.locked ? (
+                                    <Lock className="w-3.5 h-3.5 text-slate-500" />
+                                  ) : (
+                                    <Unlock className="w-3.5 h-3.5 text-slate-400" />
+                                  )}
+                                </IconBtn>
+                                <IconBtn onClick={() => setDeleteTargetStop(s)} title="Remove Stop">
+                                  <X className="w-3.5 h-3.5 text-rose-500" />
+                                </IconBtn>
+                              </div>
+                            </li>
+                          );
+                        })}
                       </ol>
                     </div>
                   )}
@@ -2445,16 +2865,26 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                     <button
                       type="button"
                       onClick={() => {
+                        if (stops.length < 2 || csvImportState?.active) return;
                         setWizardStep(2);
                         if (stops.length >= 2) {
                           optimize();
                         }
                       }}
-                      disabled={stops.length < 2}
+                      disabled={stops.length < 2 || csvImportState?.active}
                       className="mt-4 w-full rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs py-3.5 shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center justify-center gap-2"
                     >
-                      <span>Next: Step 2 — Select Goal & Optimize</span>
-                      <span>→</span>
+                      {csvImportState?.active ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          <span>Importing CSV Addresses ({csvImportState.current}/{csvImportState.total})…</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Next: Step 2 — Select Goal & Optimize</span>
+                          <span>→</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -3456,15 +3886,15 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#0b132b] text-white text-[11px] font-extrabold uppercase tracking-wider">
-                        <th className="px-4 py-3 text-left rounded-tl-md">Route ID</th>
-                        <th className="px-4 py-3 text-left">Title</th>
-                        <th className="px-4 py-3 text-center">Stops</th>
-                        <th className="px-4 py-3 text-center">Distance</th>
-                        <th className="px-4 py-3 text-center">Drive Time</th>
-                        <th className="px-4 py-3 text-center">Progress</th>
-                        <th className="px-4 py-3 text-center">Status</th>
-                        <th className="px-4 py-3 text-center">Saved</th>
-                        <th className="px-4 py-3 text-center rounded-tr-md">Actions</th>
+                        <th className="px-4 py-3 text-left rounded-tl-md bg-[#0b132b]">Route ID</th>
+                        <th className="px-4 py-3 text-left bg-[#0b132b]">Title</th>
+                        <th className="px-4 py-3 text-center bg-[#0b132b]">Stops</th>
+                        <th className="px-4 py-3 text-center bg-[#0b132b]">Distance</th>
+                        <th className="px-4 py-3 text-center bg-[#0b132b]">Drive Time</th>
+                        <th className="px-4 py-3 text-center bg-[#0b132b]">Progress</th>
+                        <th className="px-4 py-3 text-center bg-[#0b132b]">Status</th>
+                        <th className="px-4 py-3 text-center bg-[#0b132b]">Saved</th>
+                        <th className="px-4 py-3 text-center rounded-tr-md bg-[#0b132b]">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -3555,9 +3985,18 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                             {/* Expanded stop status row */}
                             {isExpanded && (
                               <tr>
-                                <td colSpan={9} className="px-6 pb-4 pt-2 bg-slate-50 border-t border-slate-100">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Stop-by-Stop Status</div>
-                                  <div className="space-y-1.5">
+                                <td colSpan={9} className="px-6 pb-4 pt-3 bg-slate-50 border-t border-slate-100">
+                                  <div className="flex items-center justify-between mb-2.5">
+                                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                      Stop-by-Stop Status ({routeStops.length} stops)
+                                    </div>
+                                    {routeStops.length > 5 && (
+                                      <span className="text-[10px] text-slate-400 font-medium italic">
+                                        Scroll to view all {routeStops.length} stops
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1.5 scrollbar-thin">
                                     {routeStops.map((stop, idx) => {
                                       const key = `${route.id}_${idx}`;
                                       const status = stopStatuses[key] || 'pending';
@@ -3746,6 +4185,288 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Remove Stop</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Progress Overlay Modal */}
+      {csvImportState && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white max-w-md w-full rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-5 relative overflow-hidden animate-scaleUp">
+
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-9 h-9 rounded-2xl flex items-center justify-center ${csvImportState.active
+                  ? "bg-rose-50 text-rose-600"
+                  : csvImportState.status === 'canceled'
+                    ? "bg-amber-50 text-amber-600"
+                    : "bg-emerald-50 text-emerald-600"
+                  }`}>
+                  {csvImportState.active ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : csvImportState.status === 'canceled' ? (
+                    <AlertCircle className="w-5 h-5" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0b132b] font-serif-heading">
+                    {csvImportState.active
+                      ? "Importing CSV Route Addresses…"
+                      : csvImportState.status === 'canceled'
+                        ? "CSV Import Canceled"
+                        : "CSV Import Complete!"}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium truncate max-w-[220px]">
+                    {csvImportState.fileName || "addresses.csv"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  cancelCsvRef.current = true;
+                  setCsvImportState(null);
+                }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Progress Bar & Percentage */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-xs font-extrabold">
+                <span className="text-slate-600">
+                  {csvImportState.active
+                    ? `Processing (${csvImportState.current}/${csvImportState.total})`
+                    : `Final Status (${csvImportState.successCount}/${csvImportState.total} Added)`}
+                </span>
+                <span className="text-rose-600 font-mono font-bold">
+                  {csvImportState.total > 0
+                    ? `${Math.round((csvImportState.current / csvImportState.total) * 100)}%`
+                    : "100%"}
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200/60 p-0.5">
+                <div
+                  className="bg-gradient-to-r from-rose-500 to-rose-600 h-full rounded-full transition-all duration-300 shadow-xs"
+                  style={{
+                    width: `${csvImportState.total > 0 ? Math.round((csvImportState.current / csvImportState.total) * 100) : 100}%`
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Detailed Counters Card */}
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-xs">
+              <div className="space-y-0.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Successfully Added</div>
+                <div className="text-lg font-extrabold text-emerald-600">{csvImportState.successCount} stops</div>
+              </div>
+              <div className="space-y-0.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Skipped / Failed</div>
+                <div className="text-lg font-extrabold text-rose-500">{csvImportState.failedCount} stops</div>
+              </div>
+            </div>
+
+            {/* Expandable Skipped Items List */}
+            {csvImportState.skippedItems && csvImportState.skippedItems.length > 0 && (
+              <div className="border border-rose-200 bg-rose-50/60 rounded-2xl p-3 text-xs space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSkippedDetails((v) => !v)}
+                  className="w-full flex items-center justify-between font-bold text-rose-700 cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                    <span>Why were {csvImportState.skippedItems.length} stops skipped?</span>
+                  </span>
+                  {showSkippedDetails ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
+                </button>
+
+                {showSkippedDetails && (
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pt-1 pr-1 border-t border-rose-100 scrollbar-thin">
+                    {csvImportState.skippedItems.map((sk, idx) => (
+                      <div key={idx} className="bg-white p-2.5 rounded-xl border border-rose-100 flex items-center justify-between gap-2 text-[11px] shadow-2xs">
+                        <div className="truncate font-medium text-slate-700 max-w-[230px]" title={sk.address}>
+                          <span className="font-extrabold text-slate-400 mr-1.5">Row #{sk.row}:</span>
+                          <span>{sk.address}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md shrink-0 border border-rose-200/50">
+                          {sk.reason}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Truncated Limit Warning Banner if CSV had > max limit */}
+            {csvImportState.truncatedCount > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-amber-900 font-medium flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Route Limit Reached:</strong> First {csvImportState.total} addresses processed. Skipped {csvImportState.truncatedCount} addresses exceeding maximum allowed route stops.
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="pt-2 flex gap-3">
+              {csvImportState.active ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelCsvRef.current = true;
+                    setCsvImportState((prev) => prev ? {
+                      ...prev,
+                      active: false,
+                      status: "canceled"
+                    } : null);
+                  }}
+                  className="w-full py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel Import
+                </button>
+              ) : (
+                <div className="flex gap-2.5 w-full">
+                  <button
+                    type="button"
+                    onClick={() => setCsvImportState(null)}
+                    className="w-1/3 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCsvImportState(null);
+                      if (stops.length >= 2) {
+                        setWizardStep(2);
+                        optimize();
+                      }
+                    }}
+                    className="w-2/3 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/25 transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Done — View Stops & Optimize</span>
+                    <span>→</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Geolocation Permission Blocked Modal */}
+      {geoBlockedModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white max-w-md w-full rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-5 relative overflow-hidden animate-scaleUp">
+
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0b132b] font-serif-heading">Location Permission Blocked</h3>
+                  <p className="text-xs text-slate-400 font-medium">Browser blocked physical GPS access</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGeoBlockedModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600">
+              <p className="font-semibold text-slate-800">Your browser has blocked location access for this site. To unblock it:</p>
+
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2.5 text-[11px]">
+                <div className="flex items-start gap-2">
+                  <span className="font-extrabold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-100 shrink-0">Step 1</span>
+                  <span>Click the <strong>Tune / Lock icon 🔒</strong> next to the URL in your browser address bar.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-extrabold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-100 shrink-0">Step 2</span>
+                  <span>Change <strong>Location</strong> setting from <em>Block</em> to <em>Allow</em>.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-extrabold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-100 shrink-0">Step 3</span>
+                  <span>Click <strong>Try Again</strong> below or refresh the page.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setGeoBlockedModal(false);
+                  setTracking(true);
+                }}
+                className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/25 transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Try Again</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setGeoBlockedModal(false);
+                  const anchor = stops[0] ? { lat: stops[0].lat, lon: stops[0].lon } : { lat: 40.7128, lon: -74.0060 };
+                  setMyPos(anchor);
+                  setTracking(true);
+                }}
+                className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+              >
+                Use Route Start Position (Simulated GPS)
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white max-w-sm w-full rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-4 animate-scaleUp text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-[#0b132b] font-serif-heading">Delete {selectedStopIds.size} Stop{selectedStopIds.size > 1 ? 's' : ''}?</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Are you sure you want to remove the selected {selectedStopIds.size} stop{selectedStopIds.size > 1 ? 's' : ''} from your active route?
+              </p>
+            </div>
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/25 transition cursor-pointer"
+              >
+                Delete {selectedStopIds.size} Stop{selectedStopIds.size > 1 ? 's' : ''}
               </button>
             </div>
           </div>

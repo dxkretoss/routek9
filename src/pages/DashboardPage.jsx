@@ -73,12 +73,13 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     if (tabParam === 'inbox') return 'inbox';
     if (tabParam === 'profile') return 'profile';
     if (tabParam === 'routes') return 'routes';
-    if (tabParam === 'companies') return 'companies';
+    if (tabParam === 'fleet') return 'fleet';
+    if (tabParam === 'fleets' || tabParam === 'companies') return 'fleets';
     if (tabParam === 'courses') return 'courses';
 
     // If explicit URL tab param is missing, check localStorage for last selected tab
     const savedTab = localStorage.getItem(DASHBOARD_LAST_TAB_KEY);
-    if (savedTab && ['routes', 'companies', 'courses', 'profile', 'inbox', 'settings'].includes(savedTab)) {
+    if (savedTab && ['routes', 'fleet', 'fleets', 'companies', 'courses', 'profile', 'inbox', 'settings'].includes(savedTab)) {
       return savedTab;
     }
 
@@ -93,6 +94,18 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       localStorage.setItem(DASHBOARD_LAST_TAB_KEY, activeTab);
     }
   }, [activeTab]);
+  const tabsBarRef = React.useRef(null);
+
+  const scrollToTabsBar = React.useCallback(() => {
+    setTimeout(() => {
+      if (tabsBarRef.current) {
+        const yOffset = -75;
+        const element = tabsBarRef.current;
+        const y = element.getBoundingClientRect().top + window.pageYOffset + yOffset;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+      }
+    }, 120);
+  }, []);
   const [savedUserRoutes, setSavedUserRoutes] = useState(propSavedRoutes);
   const [routeStatuses, setRouteStatuses] = useState({});
   const [activeDriverModal, setActiveDriverModal] = useState(null);
@@ -174,30 +187,44 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     };
   }, [loadSupabaseRoutes]);
 
+  const initialScrollDoneRef = React.useRef(false);
+
   // Sync activeTab if URL searchParams change
   useEffect(() => {
-    if (searchParams.has('changepass') || searchParams.get('tab') === 'changepass' || searchParams.get('tab') === 'settings') {
+    const tabParam = searchParams.get('tab');
+    if (searchParams.has('changepass') || tabParam === 'changepass' || tabParam === 'settings') {
       setActiveTab('settings');
-    } else if (searchParams.get('tab') === 'inbox') {
+    } else if (tabParam === 'inbox') {
       setActiveTab('inbox');
-    } else if (searchParams.get('tab') === 'profile') {
+    } else if (tabParam === 'profile') {
       setActiveTab('profile');
-    } else if (searchParams.get('tab') === 'routes') {
+    } else if (tabParam === 'routes') {
       setActiveTab('routes');
-    } else if (searchParams.get('tab') === 'courses') {
+    } else if (tabParam === 'courses') {
       setActiveTab('courses');
+    } else if (tabParam === 'fleet') {
+      setActiveTab('fleet');
+    } else if (tabParam === 'fleets' || tabParam === 'companies') {
+      setActiveTab('fleets');
     }
-  }, [searchParams]);
+
+    // Only auto-scroll ONCE on initial page load if arriving via URL tab param
+    if (tabParam && !initialScrollDoneRef.current) {
+      initialScrollDoneRef.current = true;
+      scrollToTabsBar();
+    }
+  }, [searchParams, scrollToTabsBar]);
 
   // Handler to switch tabs and update URL parameters
-  const handleTabChange = (tab) => {
+  const handleTabChange = (tab, shouldScroll = false) => {
     setActiveTab(tab);
     if (tab === 'settings') {
       setSearchParams({ tab: 'changepass' }, { replace: true });
-    } else if (tab === 'courses') {
-      setSearchParams({}, { replace: true });
     } else {
       setSearchParams({ tab: tab }, { replace: true });
+    }
+    if (shouldScroll) {
+      scrollToTabsBar();
     }
   };
 
@@ -1256,20 +1283,29 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
           {/* Quick Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
+            <button
+              onClick={() => handleTabChange('courses')}
+              className="bg-white/5 hover:bg-white/10 border border-white/10 p-3.5 rounded-2xl text-center transition-colors cursor-pointer"
+            >
               <div className="text-2xl font-extrabold text-white">{enrolledCourses.length}</div>
               <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Purchased Courses</div>
-            </div>
+            </button>
 
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
+            <button
+              onClick={() => handleTabChange('inbox')}
+              className="bg-white/5 hover:bg-white/10 border border-white/10 p-3.5 rounded-2xl text-center transition-colors cursor-pointer"
+            >
               <div className="text-2xl font-extrabold text-emerald-400">{inboxNotifications.length}</div>
               <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Inbox Messages</div>
-            </div>
+            </button>
 
-            <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl text-center">
+            <button
+              onClick={() => handleTabChange('routes')}
+              className="bg-white/5 hover:bg-white/10 border border-white/10 p-3.5 rounded-2xl text-center transition-colors cursor-pointer"
+            >
               <div className="text-2xl font-extrabold text-rose-400">12,400+</div>
               <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Active Routes Access</div>
-            </div>
+            </button>
 
             <button
               onClick={onOpenPricing}
@@ -1311,7 +1347,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       </section>
 
       {/* Navigation Tabs Bar */}
-      <div className="sticky top-20 z-30 bg-white border-b border-slate-200 shadow-2xs">
+      <div ref={tabsBarRef} className="sticky top-20 z-30 bg-white border-b border-slate-200 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-2 overflow-x-auto py-2">
 
 
@@ -1402,7 +1438,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       </div>
 
       {/* Main Tab Content */}
-      <main className="flex-1 py-12">
+      <main className="flex-1 py-12 ">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
           {/* Incomplete Driver/Company Profile Alert Banner */}

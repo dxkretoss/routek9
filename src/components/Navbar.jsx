@@ -201,7 +201,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
 
                       {/* My Dashboard Link */}
                       <Link
-                        to="/dashboard"
+                        to="/dashboard?tab=profile"
                         className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 transition-colors"
                       >
                         <LayoutDashboard className="w-4 h-4 text-slate-500 group-hover:text-rose-600" />
@@ -338,7 +338,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
             {currentUser ? (
               <>
                 <Link
-                  to="/dashboard"
+                  to="/dashboard?tab=profile"
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-full py-2.5 rounded-full bg-[#0b132b] text-white font-medium text-xs text-center"
                 >

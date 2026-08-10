@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Search, MapPin, Truck, ArrowRight, TrendingUp, Building2, ShieldCheck, UserCheck } from 'lucide-react';
+import { Search, MapPin, Truck, ArrowRight, TrendingUp, Building2, ShieldCheck, UserCheck, Users2, DollarSign } from 'lucide-react';
 import { vehicleTypes } from '../data/mockRoutes';
 import { US_STATES } from '../data/statesData';
+import { supabase } from '../lib/supabase';
 
 // Local hero images
 
@@ -58,6 +59,46 @@ export default function Hero({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [inputError, setInputError] = useState(false);
   const searchContainerRef = useRef(null);
+  const [weeklyRevenue, setWeeklyRevenue] = useState(0);
+
+  // Fetch dynamic Last 7 Days (Weekly) Revenue from Supabase transactions table
+  useEffect(() => {
+    async function fetchWeeklyRevenue() {
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*');
+
+        if (data && !error && data.length > 0) {
+          const now = new Date();
+          const succeededTx = data.filter(tx => {
+            if (tx.status !== 'Succeeded') return false;
+            const dStr = tx.created_at || tx.date;
+            if (!dStr) return true;
+            const txDate = new Date(dStr);
+            if (isNaN(txDate.getTime())) return true;
+            const diffDays = (now.getTime() - txDate.getTime()) / (1000 * 3600 * 24);
+            return diffDays <= 7 && diffDays >= 0;
+          });
+
+          const sum = succeededTx.reduce((acc, tx) => {
+            if (tx.amount) {
+              const num = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
+              return acc + (isNaN(num) ? 0 : num);
+            }
+            return acc;
+          }, 0);
+
+          if (sum > 0) {
+            setWeeklyRevenue(sum);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch weekly revenue for hero card:", err);
+      }
+    }
+    fetchWeeklyRevenue();
+  }, []);
 
   // Auto-rotate every 5 seconds
   useEffect(() => {
@@ -140,12 +181,12 @@ export default function Hero({
           {/* LEFT — Text & Search */}
           <div className="space-y-6">
 
-            {/* Announcement Pill with Animated Counter */}
+            {/* Announcement Pill with Tagline */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-rose-200/80 shadow-xs text-xs font-semibold text-rose-700">
               <span className="flex h-2 w-2 rounded-full bg-rose-600 animate-ping" />
-              <span className="font-bold uppercase tracking-wider text-[10px] text-rose-600 bg-rose-100/80 px-2 py-0.5 rounded-md">Live</span>
+              {/* <span className="font-bold uppercase tracking-wider text-[10px] text-rose-600 bg-rose-100/80 px-2 py-0.5 rounded-md">Live</span> */}
               <span>
-                <AnimatedCounter end={12400} suffix="+" /> Active Routes Nationwide
+                America's #1 Contract Driver & Courier Route Platform
               </span>
             </div>
 
@@ -156,7 +197,7 @@ export default function Hero({
 
             {/* Short Subtitle */}
             <p className="text-lg text-slate-600 font-normal max-w-lg leading-relaxed">
-              Explore courier routes, calculate real profit, and connect with logistics companies across all 50 states.
+              Explore courier routes, calculate real profit, and connect with logistics companies across all 50+ states.
             </p>
 
             {/* Search Bar Form */}
@@ -175,11 +216,10 @@ export default function Hero({
                       setShowSuggestions(true);
                     }}
                     onFocus={() => setShowSuggestions(true)}
-                    className={`w-full pl-11 pr-4 py-3.5 border rounded-xl text-sm transition-all font-medium focus:outline-none ${
-                      inputError
-                        ? 'border-red-500 ring-2 ring-red-500/20 focus:ring-red-500 focus:border-red-500 text-red-900 bg-red-50/20'
-                        : 'border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:bg-white'
-                    }`}
+                    className={`w-full pl-11 pr-4 py-3.5 border rounded-xl text-sm transition-all font-medium focus:outline-none ${inputError
+                      ? 'border-red-500 ring-2 ring-red-500/20 focus:ring-red-500 focus:border-red-500 text-red-900 bg-red-50/20'
+                      : 'border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:bg-white'
+                      }`}
                   />
                 </div>
 
@@ -245,15 +285,15 @@ export default function Hero({
             <div className="flex flex-wrap gap-6 pt-2 text-xs font-semibold text-slate-500">
               <span className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                <AnimatedCounter end={50} suffix=" States" />
+                <AnimatedCounter end={50} suffix="+ States" />
               </span>
               <span className="flex items-center gap-1.5">
                 <Truck className="w-3.5 h-3.5 text-rose-500" />
-                <AnimatedCounter end={12400} suffix="+ Listings" />
+                <AnimatedCounter end={350} suffix="+ Routes" />
               </span>
               <span className="flex items-center gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-                <AnimatedCounter end={4.2} decimals={1} prefix="$" suffix="M+ Weekly Pay" />
+                <Users2 className="w-3.5 h-3.5 text-rose-500" />
+                <AnimatedCounter end={4500} suffix="+ Drivers" />
               </span>
               <span className="flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-rose-500" />
@@ -300,9 +340,9 @@ export default function Hero({
 
                 <div className="bg-white/95 backdrop-blur-md px-4 py-3 rounded-2xl shadow-lg flex-1 text-center">
                   <div className="text-xl sm:text-2xl font-extrabold text-rose-600 font-serif-heading">
-                    <AnimatedCounter end={1200} prefix="$" />
+                    <AnimatedCounter end={weeklyRevenue} prefix="$" decimals={2} />
                   </div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Avg Weekly Pay</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Weekly Revenue</div>
                 </div>
 
                 <div className="bg-white/95 backdrop-blur-md px-4 py-3 rounded-2xl shadow-lg flex-1 text-center">
@@ -314,7 +354,7 @@ export default function Hero({
 
                 <div className="bg-white/95 backdrop-blur-md px-4 py-3 rounded-2xl shadow-lg flex-1 text-center">
                   <div className="text-xl sm:text-2xl font-extrabold text-slate-900 font-serif-heading">
-                    <AnimatedCounter end={50} />
+                    <AnimatedCounter end={50} suffix="+" />
                   </div>
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">States Covered</div>
                 </div>
