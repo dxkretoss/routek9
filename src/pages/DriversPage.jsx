@@ -91,10 +91,10 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
           .select('*');
 
         if (!error && data) {
-          // Filter drivers by role (case-insensitive) AND ready_to_work toggle (only show drivers looking for routes)
+          // Filter drivers by role (case-insensitive) AND ready_to_work toggle (only show drivers who manually enabled directory listing)
           const driverProfiles = data.filter(p =>
             (!p.role || p.role.toLowerCase() === 'driver') &&
-            (p.ready_to_work !== false && p.readyToWork !== false)
+            (p.ready_to_work === true || p.readyToWork === true)
           );
 
           const formatted = driverProfiles.map((d, index) => {

@@ -108,10 +108,10 @@ export default function CompaniesPage({ currentUser, onLogout }) {
           .select('*');
 
         if (!error && data) {
-          // Filter profiles by role = 'company' (case-insensitive) AND ready_to_work !== false
+          // Filter profiles by role = 'company' (case-insensitive) AND ready_to_work === true
           const companyProfiles = data.filter(p => 
             p.role && p.role.toLowerCase() === 'company' &&
-            (p.ready_to_work !== false && p.readyToWork !== false)
+            (p.ready_to_work === true || p.readyToWork === true)
           );
 
           const formatted = companyProfiles.map((c, index) => {

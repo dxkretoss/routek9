@@ -187,6 +187,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
         city: cleanCity,
         state_code: cleanState,
         phone: cleanPhone,
+        ready_to_work: false,
         onboarding_completed: true,
         updated_at: new Date().toISOString()
       };
@@ -211,17 +212,17 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
         }
       }
 
-      // Create Welcome Notification
+      // Create Profile Setup Complete Notification
       try {
         await createNotification({
           userId: userId,
-          title: `Welcome to Route K9!`,
-          message: `Hello ${cleanName}! Your ${role === 'driver' ? 'driver profile' : 'company account'} setup is complete.`,
+          title: `Profile Setup Complete!`,
+          message: `Hello ${cleanName}! Your ${role === 'driver' ? 'driver profile' : 'company profile'} setup is complete.`,
           category: 'System',
           important: true,
         });
       } catch (notifErr) {
-        console.warn("Could not save welcome notification:", notifErr);
+        console.warn("Could not save profile complete notification:", notifErr);
       }
 
       const updatedUserData = {

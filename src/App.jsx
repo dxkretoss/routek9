@@ -460,7 +460,7 @@ export default function App() {
           experience: profile ? (profile.experience || '') : (isSameUser ? prev?.experience || '' : ''),
           availability: profile ? (profile.availability || '') : (isSameUser ? prev?.availability || '' : ''),
           hasCDL: profile?.has_cdl !== undefined ? profile.has_cdl : (isSameUser ? prev?.hasCDL || false : false),
-          readyToWork: profile?.ready_to_work !== undefined ? profile.ready_to_work : (isSameUser ? prev?.readyToWork ?? false : false),
+          readyToWork: (profile?.ready_to_work === true || profile?.readyToWork === true),
           websiteUrl: profile ? (profile.website_url || profile.website || '') : (isSameUser ? prev?.websiteUrl || '' : ''),
           avatarUrl: profile ? (profile.avatar_url || profile.avatarUrl || '') : (isSameUser ? prev?.avatarUrl || '' : ''),
           bio: profile ? (profile.bio || '') : (isSameUser ? prev?.bio || '' : ''),

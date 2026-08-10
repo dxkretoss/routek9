@@ -296,12 +296,50 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       setExperience(currentUser.experience || '');
       setAvailability(currentUser.availability || '');
       setHasCDL(currentUser.hasCDL || false);
-      setReadyToWork(currentUser.readyToWork ?? false);
+
+      const isCompany = (currentUser.role || 'driver') === 'company';
+      const cName = currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : '');
+      const cPhone = currentUser.phone || '';
+      const cState = currentUser.stateCode || currentUser.state_code || '';
+      const cCity = currentUser.city || '';
+      const cVeh = currentUser.vehicle || '';
+      const cExp = currentUser.experience || '';
+      const cAvail = currentUser.availability || '';
+      const cBio = currentUser.bio || '';
+
+      const isComplete = cName.trim() && cPhone.trim() && cState.trim() && cCity.trim() && cVeh.trim() && cBio.trim() && (isCompany || (cExp.trim() && cAvail.trim()));
+
+      setReadyToWork(currentUser.readyToWork === true && Boolean(isComplete));
       setWebsiteUrl(currentUser.websiteUrl || currentUser.website || '');
       setAvatarUrl(currentUser.avatarUrl || currentUser.avatar_url || '');
       setBio(currentUser.bio || '');
     }
   }, [currentUser]);
+
+  const validateAndToggleReadyToWork = (shouldEnable) => {
+    if (shouldEnable) {
+      const missing = [];
+      if (!fullName || !fullName.trim()) missing.push(accountRole === 'company' ? 'Company Name' : 'Full Name');
+      if (!phone || !phone.trim() || phone.replace(/\D/g, '').length < 7) missing.push('Phone Number');
+      if (!stateCode || !stateCode.trim()) missing.push('Operating State Code');
+      if (!cityName || !cityName.trim()) missing.push('Operating Metro / City');
+      if (!vehicleClass || !vehicleClass.trim()) missing.push('Primary Vehicle Class');
+      if (accountRole === 'driver') {
+        if (!experience || !experience.trim()) missing.push('Driving Experience');
+        if (!availability || !availability.trim()) missing.push('Dispatch Availability');
+      }
+      if (!bio || !bio.trim()) missing.push(accountRole === 'company' ? 'Company Overview' : 'Driver Bio & Equipment Summary');
+
+      if (missing.length > 0) {
+        setPasswordError(`Cannot enable Public Directory Listing yet. Please complete missing profile fields: ${missing.join(', ')}.`);
+        setReadyToWork(false);
+        return false;
+      }
+    }
+    setPasswordError(null);
+    setReadyToWork(shouldEnable);
+    return true;
+  };
 
   const [enrolledCourses, setEnrolledCourses] = useState([]);
   const [activeCourseViewerModal, setActiveCourseViewerModal] = useState(null);
@@ -1163,6 +1201,27 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setProfileSuccess(false);
+    setPasswordError(null);
+
+    if (readyToWork) {
+      const missing = [];
+      if (!fullName || !fullName.trim()) missing.push(accountRole === 'company' ? 'Company Name' : 'Full Name');
+      if (!phone || !phone.trim() || phone.replace(/\D/g, '').length < 7) missing.push('Phone Number');
+      if (!stateCode || !stateCode.trim()) missing.push('Operating State Code');
+      if (!cityName || !cityName.trim()) missing.push('Operating Metro / City');
+      if (!vehicleClass || !vehicleClass.trim()) missing.push('Primary Vehicle Class');
+      if (accountRole === 'driver') {
+        if (!experience || !experience.trim()) missing.push('Driving Experience');
+        if (!availability || !availability.trim()) missing.push('Dispatch Availability');
+      }
+      if (!bio || !bio.trim()) missing.push(accountRole === 'company' ? 'Company Overview' : 'Driver Bio & Equipment Summary');
+
+      if (missing.length > 0) {
+        setPasswordError(`Cannot publish profile to directory. Please complete required fields: ${missing.join(', ')}.`);
+        setReadyToWork(false);
+        return;
+      }
+    }
 
     if (onUpdateProfile) {
       const res = await onUpdateProfile({
@@ -2502,7 +2561,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                     <input
                       type="checkbox"
                       checked={readyToWork}
-                      onChange={(e) => setReadyToWork(e.target.checked)}
+                      onChange={(e) => validateAndToggleReadyToWork(e.target.checked)}
                       className="w-5 h-5 accent-rose-600 rounded cursor-pointer shrink-0"
                     />
                   </div>
