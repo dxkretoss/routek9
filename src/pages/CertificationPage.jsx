@@ -680,7 +680,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
                     <div className="space-y-2">
                       <h2 className="text-xl font-bold text-[#0b132b] font-serif-heading">Exam Not Passed</h2>
                       <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                        A minimum score of {PASSING_SCORE}/{QUESTIONS.length} is required. Review medical courier privacy standards and retry the exam. Retakes are 100% free.
+                        A minimum score of {passingScore}/{questionsList.length} is required. Review medical courier privacy standards and retry the exam. Retakes are 100% free.
                       </p>
                     </div>
 
@@ -699,6 +699,8 @@ export default function CertificationPage({ currentUser, onLogout }) {
             {stage === "checkout" && (
               <StripeEmbeddedCheckout
                 priceId="hipaa_certificate"
+                priceAmount={25}
+                productName="HIPAA & Bloodborne Pathogens Certification"
                 fullName={fullName}
                 returnUrl={window.location.href}
                 onSuccess={handlePaymentSuccess}

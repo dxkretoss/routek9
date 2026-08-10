@@ -281,12 +281,14 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
                   </h3>
                 </div>
 
-                <div className="flex justify-between items-baseline border-b border-white/10 pb-4">
-                  <div>
-                    <div className="text-sm font-extrabold text-white">PRO Membership ({billingCycle})</div>
-                    <div className="text-xs text-slate-400">Full platform access</div>
+                <div className="flex justify-between items-center border-b border-white/10 pb-4 gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-extrabold text-white whitespace-nowrap overflow-hidden text-ellipsis">
+                      PRO Membership <span className="text-xs font-semibold text-slate-400 capitalize">({billingCycle})</span>
+                    </div>
+                    <div className="text-xs text-slate-400 whitespace-nowrap">Full platform access</div>
                   </div>
-                  <div className="text-2xl font-extrabold text-amber-400">
+                  <div className="text-2xl font-extrabold text-amber-400 shrink-0 whitespace-nowrap ml-2">
                     ${price}<span className="text-xs text-slate-400">/{cycleText}</span>
                   </div>
                 </div>
@@ -312,9 +314,9 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
                 </div>
 
                 {/* Total Line */}
-                <div className="border-t border-white/10 pt-4 flex justify-between items-center text-sm font-extrabold">
-                  <span className="text-slate-300">Total Due Today:</span>
-                  <span className="text-2xl text-emerald-400">${price}.00 USD</span>
+                <div className="border-t border-white/10 pt-4 flex justify-between items-center text-sm font-extrabold gap-2">
+                  <span className="text-slate-300 whitespace-nowrap">Total Due Today:</span>
+                  <span className="text-xl sm:text-2xl text-emerald-400 font-extrabold shrink-0 whitespace-nowrap">${price}.00 USD</span>
                 </div>
 
               </div>
@@ -325,6 +327,8 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
             <div className="lg:col-span-7">
               <StripeEmbeddedCheckout
                 priceId={`pro_${billingCycle}`}
+                priceAmount={price}
+                productName={`Route K9 PRO (${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'})`}
                 fullName={cardholderName}
                 returnUrl={window.location.href}
                 onSuccess={() => handlePay({ preventDefault: () => { } })}

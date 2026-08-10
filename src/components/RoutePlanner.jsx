@@ -813,8 +813,14 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
   const LRef = useRef(null);
   const meMarker = useRef(null);
   const anchorRef = useRef(null);
+  const searchInputRef = useRef(null);
 
-  // Live tracking
+  // Auto-scroll search input text to far-right cursor position when typing long text
+  useEffect(() => {
+    if (searchInputRef.current) {
+      searchInputRef.current.scrollLeft = searchInputRef.current.scrollWidth;
+    }
+  }, [query]);
   const [tracking, setTracking] = useState(false);
   const [myPos, setMyPos] = useState(null);
   const watchId = useRef(null);
@@ -1333,6 +1339,113 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           }
         }
 
+        // Fallback search: Generate smart candidate queries (abbreviation normalization, token relaxation)
+        if (merged.length === 0) {
+          const normQ = q
+            .replace(/\bdrive\b/gi, "dr")
+            .replace(/\bstreet\b/gi, "st")
+            .replace(/\bavenue\b/gi, "ave")
+            .replace(/\broad\b/gi, "rd")
+            .replace(/\bboulevard\b/gi, "blvd")
+            .replace(/\blane\b/gi, "ln")
+            .replace(/\bcourt\b/gi, "ct");
+
+          const houseMatch = q.match(/^(\d+)\s+/);
+          const houseNum = houseMatch ? houseMatch[1] : "";
+          const zipMatch = q.match(/\b\d{5}\b/);
+          const zip = zipMatch ? zipMatch[0] : "";
+          const stateMatch = q.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/i);
+          const state = stateMatch ? stateMatch[0] : "";
+
+          const words = q
+            .replace(/^\d+\s+/, "")
+            .split(/\s+/)
+            .filter((w) => !/^\d{5}$/.test(w) && !/^(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/i.test(w));
+
+          const candidates = [];
+          if (normQ !== q) candidates.push(normQ);
+
+          if (words.length >= 2) {
+            const streetBase = words.slice(0, 3).join(" ")
+              .replace(/\bdrive\b/gi, "dr")
+              .replace(/\bstreet\b/gi, "st")
+              .replace(/\bavenue\b/gi, "ave")
+              .replace(/\broad\b/gi, "rd");
+
+            if (houseNum && zip) candidates.push(`${houseNum} ${streetBase} ${zip}`);
+            if (houseNum && state) candidates.push(`${houseNum} ${streetBase} ${state}`);
+            if (houseNum) candidates.push(`${houseNum} ${streetBase}`);
+            if (zip) candidates.push(`${streetBase} ${zip}`);
+            if (state) candidates.push(`${streetBase} ${state}`);
+            candidates.push(streetBase);
+          } else if (houseNum) {
+            const sansNumber = q.replace(/^\d+\s+/, "").trim();
+            if (sansNumber) candidates.push(sansNumber);
+          }
+
+          if (!q.toLowerCase().includes("usa") && !q.toLowerCase().includes("us")) {
+            candidates.push(`${q}, USA`);
+          }
+
+          const uniqueCandidates = Array.from(new Set(candidates)).filter((c) => c && c !== q);
+
+          for (const cand of uniqueCandidates) {
+            const fbNomUrl = `${NOMINATIM}/search?format=json&limit=10&addressdetails=1&countrycodes=us${viewbox}&q=${encodeURIComponent(cand)}`;
+            const fbPhotonUrl = `${PHOTON}/api/?limit=20&lang=en${bias}&q=${encodeURIComponent(cand)}`;
+
+            const [fbPhotonRes, fbNomRes] = await Promise.allSettled([
+              fetch(fbPhotonUrl, { signal: ctl.signal }).then((r) => r.ok ? r.json() : Promise.reject(r.status)),
+              fetch(fbNomUrl, { signal: ctl.signal, headers: { Accept: "application/json" } }).then((r) => r.ok ? r.json() : Promise.reject(r.status)),
+            ]);
+
+            if (fbNomRes.status === "fulfilled" && Array.isArray(fbNomRes.value) && fbNomRes.value.length > 0) {
+              for (const n of fbNomRes.value) {
+                if (!isUS(n.address?.country ?? n.country)) continue;
+                const baseLabel = n.display_name;
+                const label = houseNum && !baseLabel.startsWith(houseNum) ? `${houseNum} ${baseLabel}` : baseLabel;
+                push({
+                  display_name: label,
+                  lat: n.lat,
+                  lon: n.lon,
+                  place_id: `fb-n-${n.place_id}`,
+                  country: n.address?.country ?? n.country,
+                  state: n.address?.state,
+                  category: categorize({ ...n.address, osm_key: n.class, osm_value: n.type }, q),
+                });
+              }
+            }
+
+            if (fbPhotonRes.status === "fulfilled" && fbPhotonRes.value?.features?.length > 0) {
+              const data = fbPhotonRes.value;
+              for (const [i, f] of (data?.features ?? []).entries()) {
+                const p = f.properties ?? {};
+                if (!isUS(p.country)) continue;
+                const rawParts = [
+                  p.name,
+                  [p.housenumber, p.street].filter(Boolean).join(" "),
+                  p.city ?? p.town ?? p.village,
+                  p.state,
+                  p.postcode,
+                  p.country,
+                ].filter(Boolean).filter((v, idx, arr) => arr.indexOf(v) === idx);
+                const baseLabel = rawParts.join(", ");
+                const label = houseNum && !baseLabel.startsWith(houseNum) ? `${houseNum} ${baseLabel}` : baseLabel;
+                push({
+                  display_name: label,
+                  lat: String(f.geometry.coordinates[1]),
+                  lon: String(f.geometry.coordinates[0]),
+                  place_id: `fb-p-${p.osm_id ?? i}-${i}`,
+                  country: p.country,
+                  state: p.state,
+                  category: categorize(p, q),
+                });
+              }
+            }
+
+            if (merged.length > 0) break;
+          }
+        }
+
         merged.sort((a, b) => {
           if (anchorState) {
             const aSt = a.state === anchorState ? 1 : 0;
@@ -1466,7 +1579,76 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           }
         } catch { }
       }
-      setError(`Could not verify US address: ${q}. Try picking one from the dropdown.`);
+      // Fallback: If exact query variants fail, generate candidate queries (house + street + zip/state)
+      const normQ = q
+        .replace(/\bdrive\b/gi, "dr")
+        .replace(/\bstreet\b/gi, "st")
+        .replace(/\bavenue\b/gi, "ave")
+        .replace(/\broad\b/gi, "rd")
+        .replace(/\bboulevard\b/gi, "blvd")
+        .replace(/\blane\b/gi, "ln")
+        .replace(/\bcourt\b/gi, "ct");
+
+      const houseMatch = q.match(/^(\d+)\s+/);
+      const houseNum = houseMatch ? houseMatch[1] : "";
+      const zipMatch = q.match(/\b\d{5}\b/);
+      const zip = zipMatch ? zipMatch[0] : "";
+      const stateMatch = q.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/i);
+      const state = stateMatch ? stateMatch[0] : "";
+
+      const words = q
+        .replace(/^\d+\s+/, "")
+        .split(/\s+/)
+        .filter((w) => !/^\d{5}$/.test(w) && !/^(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/i.test(w));
+
+      const fallbacks = [];
+      if (normQ !== q) fallbacks.push(normQ);
+
+      if (words.length >= 2) {
+        const streetBase = words.slice(0, 3).join(" ")
+          .replace(/\bdrive\b/gi, "dr")
+          .replace(/\bstreet\b/gi, "st")
+          .replace(/\bavenue\b/gi, "ave")
+          .replace(/\broad\b/gi, "rd");
+
+        if (houseNum && zip) fallbacks.push(`${houseNum} ${streetBase} ${zip}`);
+        if (houseNum && state) fallbacks.push(`${houseNum} ${streetBase} ${state}`);
+        if (houseNum) fallbacks.push(`${houseNum} ${streetBase}`);
+        if (zip) fallbacks.push(`${streetBase} ${zip}`);
+        if (state) fallbacks.push(`${streetBase} ${state}`);
+        fallbacks.push(streetBase);
+      }
+
+      const sansNumber = q.replace(/^\d+\s+/, "").trim();
+      if (sansNumber) fallbacks.push(sansNumber, `${q}, USA`, `${sansNumber}, USA`);
+
+      const uniqueFallbacks = Array.from(new Set(fallbacks)).filter((v) => v && v !== q);
+
+      for (const fb of uniqueFallbacks) {
+        try {
+          const res = await fetch(
+            `${NOMINATIM}/search?format=json&limit=1&addressdetails=1&countrycodes=us&q=${encodeURIComponent(fb)}`,
+          );
+          const data = await res.json();
+          const n = data[0];
+          if (n && isUS(n.address?.country ?? n.country)) {
+            const baseLabel = n.display_name;
+            const finalLabel = houseNum && !baseLabel.startsWith(houseNum) ? `${houseNum} ${baseLabel}` : baseLabel;
+            addStop({
+              display_name: finalLabel,
+              lat: n.lat,
+              lon: n.lon,
+              place_id: `fb-text-${n.place_id}`,
+              country: n.address?.country ?? n.country,
+              state: n.address?.state,
+              category: "street",
+            });
+            return;
+          }
+        } catch { }
+      }
+
+      setError(`Could not verify US address: "${q}". Try typing the street, city, and state abbreviation (e.g. Port Gibson, MS).`);
     } catch {
       setError(`Lookup failed for: ${q}`);
     }
@@ -2004,14 +2186,25 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
                         </span>
                         <input
+                          ref={searchInputRef}
                           id="rk9-add-stop"
                           type="text"
                           autoComplete="off"
                           inputMode="search"
                           value={query}
-                          onChange={(e) => setQuery(e.target.value)}
-                          onFocus={() => {
+                          onChange={(e) => {
+                            setQuery(e.target.value);
+                            const el = e.target;
+                            requestAnimationFrame(() => {
+                              if (el) el.scrollLeft = el.scrollWidth;
+                            });
+                          }}
+                          onFocus={(e) => {
                             if (suggestions.length) setShowSug(true);
+                            const el = e.target;
+                            requestAnimationFrame(() => {
+                              if (el) el.scrollLeft = el.scrollWidth;
+                            });
                           }}
                           onBlur={() => {
                             setTimeout(() => setShowSug(false), 120);
@@ -2090,7 +2283,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                       </div>
 
                       {/* Suggestions dropdown */}
-                      {showSug && (suggestions.length > 0 || searching) && (
+                      {showSug && (suggestions.length > 0 || searching || query.trim().length >= 2) && (
                         <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
                           {(() => {
                             const list = suggestions.filter(
@@ -2099,9 +2292,19 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                             if (!list.length) {
                               return (
                                 <div className="px-3 py-3 text-xs text-muted-foreground">
-                                  {searching
-                                    ? "Searching US addresses…"
-                                    : "No US matches found. Try a different address or filter."}
+                                  {searching ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
+                                      <span>Searching US locations…</span>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <p className="font-semibold text-rose-700">No exact US match found</p>
+                                      <p className="mt-0.5 text-slate-500">
+                                        Try adding a state abbreviation (e.g. <span className="font-medium text-slate-700">Port Gibson, MS</span>) or click <strong>Add</strong> to pin nearest location.
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             }
@@ -3040,7 +3243,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
           {/* Custom Modal for Clear All Confirmation */}
           {confirmModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
               <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5">
                 <div className="flex items-center gap-3.5">
                   <div className="h-12 w-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -3076,7 +3279,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
           {/* Custom Modal for Route Saved Success */}
           {routeSavedModal.isOpen && routeSavedModal.route && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
               <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6">
                 <div className="text-center space-y-3">
                   <div className="w-16 h-16 rounded-3xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
@@ -3426,7 +3629,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
       {/* Active Driver Info Modal Popup */}
       {activeDriverModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col p-6 text-left space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-[#0b132b] uppercase tracking-wider">Driver Contact Details</h3>
@@ -3476,7 +3679,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
       {/* Custom Delete Route Confirmation Modal */}
       {deleteTargetRoute && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
           <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5 text-center">
             <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mx-auto text-rose-600 shadow-xs">
               <Trash2 className="w-7 h-7" />
@@ -3515,7 +3718,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
 
       {/* Custom Delete Stop Confirmation Modal */}
       {deleteTargetStop && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
           <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5 text-center">
             <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mx-auto text-rose-600 shadow-xs">
               <Trash2 className="w-7 h-7" />

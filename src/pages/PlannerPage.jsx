@@ -103,16 +103,8 @@ function PlannerHero() {
                 <div className="relative z-10 flex gap-3 items-start">
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-50 text-xs font-bold text-rose-600 border border-rose-200 shadow-2xs">3</div>
                   <div>
-                    <h4 className="text-xs font-bold text-[#0b132b]">Zones & Driver Dispatch</h4>
-                    <p className="text-[11px] text-slate-500 leading-snug">Auto-group territories by proximity and assign registered drivers.</p>
-                  </div>
-                </div>
-
-                <div className="relative z-10 flex gap-3 items-start">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-50 text-xs font-bold text-rose-600 border border-rose-200 shadow-2xs">4</div>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#0b132b]">GPS & Navigation</h4>
-                    <p className="text-[11px] text-slate-500 leading-snug">Export to Google Maps/Apple Maps/Waze or send live to driver phone.</p>
+                    <h4 className="text-xs font-bold text-[#0b132b]">Dispatch & GPS Navigation</h4>
+                    <p className="text-[11px] text-slate-500 leading-snug">Group territories, assign registered drivers, and export to GPS apps or driver phones.</p>
                   </div>
                 </div>
               </div>

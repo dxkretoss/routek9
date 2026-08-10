@@ -4,7 +4,7 @@ import { getStripe, getStripeEnvironment } from "../lib/stripe";
 import { createCertificationCheckout } from "../lib/payments.functions";
 import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 
-export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, onSuccess }) {
+export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, priceAmount, productName, onSuccess }) {
   const [clientSecret, setClientSecret] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,7 +17,7 @@ export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, onSuccess
       setError(null);
       try {
         const result = await createCertificationCheckout({
-          data: { priceId, fullName, returnUrl, environment: getStripeEnvironment() },
+          data: { priceId, fullName, returnUrl, priceAmount, productName, environment: getStripeEnvironment() },
         });
 
         if (!isMounted) return;
@@ -41,7 +41,7 @@ export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, onSuccess
     return () => {
       isMounted = false;
     };
-  }, [priceId, fullName, returnUrl]);
+  }, [priceId, fullName, returnUrl, priceAmount, productName]);
 
   if (loading) {
     return (

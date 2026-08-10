@@ -5,7 +5,7 @@ import { getStripeEnvironment } from "./stripe";
  * Uses Lovable Gateway / Vite Proxy to create official Stripe sessions seamlessly.
  */
 export async function createCertificationCheckout({ data }) {
-  const { priceId, fullName, returnUrl, environment = getStripeEnvironment() } = data || {};
+  const { priceId, fullName, returnUrl, priceAmount, productName: customProductName, environment = getStripeEnvironment() } = data || {};
 
   if (!priceId || !/^[a-zA-Z0-9_-]+$/.test(priceId)) {
     return { error: "Invalid priceId" };
@@ -30,8 +30,17 @@ export async function createCertificationCheckout({ data }) {
     const accountId = stripeSecretKey?.startsWith("acct_") ? stripeSecretKey : "acct_1TtzfQIKKpSWYo2f";
 
     const isSubscription = priceId.includes("pro") || priceId.includes("yearly") || priceId.includes("monthly");
-    const amount = priceId.includes("yearly") ? "29900" : priceId.includes("pro") ? "2900" : "4900";
-    const productName = priceId.includes("pro") ? "Route K9 PRO Membership" : "Route K9 Certification Course";
+    
+    // Determine dynamic amount in cents from priceAmount if provided, or fallback to priceId rules
+    let amountInCents = 4900;
+    if (priceAmount != null && !isNaN(Number(priceAmount)) && Number(priceAmount) > 0) {
+      const pNum = Number(priceAmount);
+      amountInCents = pNum < 1000 ? Math.round(pNum * 100) : Math.round(pNum);
+    } else {
+      amountInCents = priceId.includes("yearly") ? 29900 : priceId.includes("pro") ? 2900 : 4900;
+    }
+
+    const productName = customProductName || (priceId.includes("pro") ? "Route K9 PRO Membership" : "Route K9 Certification Course");
 
     // Stripe Embedded Checkout requires a return_url containing {CHECKOUT_SESSION_ID} and without hash anchors
     let cleanReturnUrl = returnUrl || window.location.origin + window.location.pathname;
@@ -41,12 +50,12 @@ export async function createCertificationCheckout({ data }) {
     }
 
     const params = new URLSearchParams({
-      ui_mode: "embedded_page",
+      ui_mode: "embedded",
       mode: isSubscription ? "subscription" : "payment",
       return_url: cleanReturnUrl,
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][product_data][name]": productName,
-      "line_items[0][price_data][unit_amount]": amount,
+      "line_items[0][price_data][unit_amount]": String(amountInCents),
       "line_items[0][quantity]": "1",
     });
 
@@ -54,7 +63,7 @@ export async function createCertificationCheckout({ data }) {
       params.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");
     }
 
-    // 1. Direct Stripe REST API Call if full sk_test_ Secret Key is provided
+    // 1. Direct Stripe REST API Call if full sk_test_ / sk_live_ Secret Key is provided
     if (stripeSecretKey && (stripeSecretKey.startsWith("sk_test_") || stripeSecretKey.startsWith("sk_live_")) && stripeSecretKey.length > 20) {
       let response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
         method: "POST",
@@ -67,9 +76,9 @@ export async function createCertificationCheckout({ data }) {
 
       let session = await response.json();
 
-      // If Stripe API returns ui_mode error, retry with ui_mode=embedded_page
+      // Fallback: If Stripe API returns ui_mode error, retry with standard embedded mode
       if (session.error && session.error.param === "ui_mode") {
-        params.set("ui_mode", "embedded_page");
+        params.set("ui_mode", "embedded");
         response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
           method: "POST",
           headers: {

@@ -235,6 +235,8 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
         <div className="max-w-lg mx-auto px-4 sm:px-6">
           <StripeEmbeddedCheckout
             priceId={`course_${activeCourse.id}`}
+            priceAmount={activeCourse.price}
+            productName={activeCourse.title}
             fullName={certName}
             returnUrl={window.location.href}
             onSuccess={() => handlePay({ preventDefault: () => { } })}

@@ -149,40 +149,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
       {/* Main Grid: Available Courses + Recent Registrations */}
       <div className="space-y-8">
 
-        {/* Available Courses Section */}
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden space-y-4 p-6 sm:p-7">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Available Platform Courses</h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Training courses and certifications available for contract drivers</p>
-            </div>
-            <button
-              onClick={() => onNavigate('courses')}
-              className="text-xs font-extrabold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1"
-            >
-              <span>Manage Courses ({totalCourses})</span>
-              <span>→</span>
-            </button>
-          </div>
 
-          {loadingCourses ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 animate-pulse">
-              <div className="h-36 bg-slate-100 rounded-2xl" />
-              <div className="h-36 bg-slate-100 rounded-2xl" />
-              <div className="h-36 bg-slate-100 rounded-2xl" />
-            </div>
-          ) : displayedCourses.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-400 font-medium">
-              No active courses found.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {displayedCourses.map(course => (
-                <CourseCard key={course.id} course={course} detailed />
-              ))}
-            </div>
-          )}
-        </div>
 
         {/* Recent User Registrations Table */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden">
@@ -261,11 +228,10 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
                         <td className="py-3 px-4">{r.distanceMiles} mi</td>
                         <td className="py-3 px-4">{r.durationMinutes} min</td>
                         <td className="py-3 px-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
-                            overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                            overallStatus === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              overallStatus === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
                             {overallStatus}
                           </span>
                         </td>
@@ -275,6 +241,41 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+
+        {/* Available Courses Section */}
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden space-y-4 p-6 sm:p-7">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Available Platform Courses</h3>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">Training courses and certifications available for contract drivers</p>
+            </div>
+            <button
+              onClick={() => onNavigate('courses')}
+              className="text-xs font-extrabold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1"
+            >
+              <span>Manage Courses ({totalCourses})</span>
+              <span>→</span>
+            </button>
+          </div>
+
+          {loadingCourses ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 animate-pulse">
+              <div className="h-36 bg-slate-100 rounded-2xl" />
+              <div className="h-36 bg-slate-100 rounded-2xl" />
+              <div className="h-36 bg-slate-100 rounded-2xl" />
+            </div>
+          ) : displayedCourses.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-400 font-medium">
+              No active courses found.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {displayedCourses.map(course => (
+                <CourseCard key={course.id} course={course} detailed />
+              ))}
             </div>
           )}
         </div>
