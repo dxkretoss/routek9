@@ -338,3 +338,24 @@ export async function loadUserChecklistFromDb(userId, checklistKey) {
 
   return {};
 }
+
+/**
+ * Mobile App Registration Edge Function Invoker
+ * Invokes 'register' Edge Function in Supabase
+ */
+export async function invokeMobileRegister(registerPayload) {
+  try {
+    const { data, error } = await supabase.functions.invoke('register', {
+      body: registerPayload
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Mobile registration failed.');
+    }
+
+    return data;
+  } catch (err) {
+    console.error('[invokeMobileRegister] Error:', err);
+    throw err;
+  }
+}
