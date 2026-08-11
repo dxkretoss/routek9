@@ -17,12 +17,14 @@ import {
   Activity,
   HelpCircle,
   Package,
-  ShieldCheck
+  ShieldCheck,
+  Users
 } from 'lucide-react';
 
 import AdminLoginPage from './AdminLoginPage';
 import AdminDashboard from './AdminDashboard';
 import AdminDriverList from './AdminDriverList';
+import AdminCustomerList from './AdminCustomerList';
 import AdminCompanyList from './AdminCompanyList';
 import AdminCourses from './AdminCourses';
 import AdminExamQuestions from './AdminExamQuestions';
@@ -35,6 +37,7 @@ import AdminGovContracts from './AdminGovContracts';
 const SIDEBAR_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'drivers', label: 'Driver List', icon: Truck },
+  { key: 'customers', label: 'Customer List', icon: Users },
   { key: 'companies', label: 'Company List', icon: Building2 },
   { key: 'gov_contracts', label: 'Gov Contracts', icon: ShieldCheck },
   { key: 'dispatch_orders', label: 'Dispatch Orders', icon: Package },
@@ -343,6 +346,8 @@ export default function AdminLayout({ currentUser, onLogout }) {
         );
       case 'drivers':
         return <AdminDriverList users={getFilteredItems(drivers)} {...listProps} />;
+      case 'customers':
+        return <AdminCustomerList searchQuery={searchQuery} setSearchQuery={setSearchQuery} onRefresh={fetchSupabaseData} />;
       case 'companies':
         return <AdminCompanyList users={getFilteredItems(companies)} {...listProps} />;
       case 'gov_contracts':

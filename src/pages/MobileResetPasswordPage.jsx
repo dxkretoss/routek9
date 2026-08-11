@@ -16,6 +16,17 @@ export default function MobileResetPasswordPage() {
   const [checkingLink, setCheckingLink] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
+    // 1. Listen for Supabase password recovery events (handles async token exchange)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        setIsExpired(false);
+        setCheckingLink(false);
+      }
+    });
+
     const verifyResetLink = async () => {
       try {
         setCheckingLink(true);
@@ -25,11 +36,15 @@ export default function MobileResetPasswordPage() {
         const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
         const searchParams = new URLSearchParams(search);
 
+        const code = searchParams.get('code') || hashParams.get('code');
+        const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
+        const type = searchParams.get('type') || hashParams.get('type');
+
         const errorParam = hashParams.get('error') || searchParams.get('error');
         const errorCode = hashParams.get('error_code') || searchParams.get('error_code');
         const errorDesc = hashParams.get('error_description') || searchParams.get('error_description');
 
-        // 1. Check if Supabase returned error parameters in URL (e.g. otp_expired, access_denied, invalid_token)
+        // Check if URL has error parameters from Supabase (e.g. otp_expired, access_denied)
         if (errorParam || errorCode || errorDesc) {
           const descLower = (errorDesc || '').toLowerCase();
           if (
@@ -40,37 +55,77 @@ export default function MobileResetPasswordPage() {
             descLower.includes('invalid') ||
             descLower.includes('already used')
           ) {
-            setIsExpired(true);
-            setExpiredReason("This password reset link has already been used or has expired. For your security, reset links are single-use only.");
+            if (isMounted) {
+              setIsExpired(true);
+              setExpiredReason("This password reset link has already been used or has expired. For your security, reset links are single-use only.");
+            }
             return;
           }
         }
 
-        // 2. Check if link was marked as used in current session
+        // Check if link was marked as used in current session AFTER a successful submit
         const wasUsed = sessionStorage.getItem('rk9_mobile_reset_link_used') === 'true';
         if (wasUsed) {
-          setIsExpired(true);
-          setExpiredReason("This password reset link has already been used to update your password. You can now log into the RouteK9 Mobile App.");
+          if (isMounted) {
+            setIsExpired(true);
+            setExpiredReason("This password reset link has already been used to update your password. You can now log into the RouteK9 Mobile App.");
+          }
           return;
         }
 
+        // 2. PKCE Code Exchange: If ?code=... is in URL, exchange code for active session!
+        if (code) {
+          try {
+            const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
+            if (exchangeErr) {
+              console.warn("PKCE exchange error notice:", exchangeErr);
+            } else if (exchangeData?.session) {
+              if (isMounted) {
+                setIsExpired(false);
+                setCheckingLink(false);
+              }
+              return;
+            }
+          } catch (exErr) {
+            console.warn("PKCE exchange exception:", exErr);
+          }
+        }
+
         // 3. Verify active session or recovery token state from Supabase Auth
-        const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-        if (sessionErr || !session) {
-          if (!hash.includes('access_token=') && !hash.includes('type=recovery')) {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        const hasRecoveryToken =
+          code ||
+          tokenHash ||
+          hash.includes('access_token=') ||
+          hash.includes('type=recovery') ||
+          type === 'recovery';
+
+        if (session || hasRecoveryToken) {
+          // Valid recovery session or recovery token detected!
+          if (isMounted) {
+            setIsExpired(false);
+          }
+        } else {
+          // No session AND no recovery token in URL
+          if (isMounted) {
             setIsExpired(true);
             setExpiredReason("Invalid or expired reset link. Please request a new password reset link from your RouteK9 Mobile App.");
-            return;
           }
         }
       } catch (err) {
         console.warn("Mobile reset link verification notice:", err);
       } finally {
-        setCheckingLink(false);
+        if (isMounted) setCheckingLink(false);
       }
     };
 
     verifyResetLink();
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const handleSubmit = async (e) => {
@@ -99,6 +154,34 @@ export default function MobileResetPasswordPage() {
 
     try {
       setLoading(true);
+
+      // Verify or establish session before calling updateUser
+      let { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        // Check for ?code= in URL and attempt code exchange
+        const searchParams = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const code = searchParams.get('code') || hashParams.get('code');
+
+        if (code) {
+          try {
+            const { data: exData } = await supabase.auth.exchangeCodeForSession(code);
+            if (exData?.session) {
+              session = exData.session;
+            }
+          } catch (exErr) {
+            console.warn("Submit session exchange exception:", exErr);
+          }
+        }
+      }
+
+      if (!session) {
+        setError("Auth session missing or reset link expired. Please request a new password reset link from your mobile app.");
+        setLoading(false);
+        return;
+      }
+
       const { data, error: updateErr } = await supabase.auth.updateUser({
         password: cleanPw
       });
