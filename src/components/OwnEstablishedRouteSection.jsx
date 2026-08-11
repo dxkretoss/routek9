@@ -147,7 +147,7 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
           if (cached && !hasLoadedRef.current) {
             setCheckedItems(JSON.parse(cached));
           }
-        } catch {}
+        } catch { }
 
         // Async fetch from Supabase
         const savedMap = await loadUserChecklistFromDb(currentUser.id, 'diligence_checklist');
@@ -155,7 +155,7 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
           setCheckedItems(savedMap);
           try {
             localStorage.setItem(bufferKey, JSON.stringify(savedMap));
-          } catch {}
+          } catch { }
         }
         hasLoadedRef.current = true;
         setLoadingChecklist(false);
@@ -194,7 +194,7 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
       const bufferKey = `rk9_buffer_${currentUser.id}_diligence_checklist`;
       try {
         localStorage.setItem(bufferKey, JSON.stringify(updatedMap));
-      } catch {}
+      } catch { }
 
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -249,7 +249,7 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
 
           {/* Headline matching screenshot */}
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-tight">
-            Own an established route — all 50 states
+            Own an established route — all 50+ states
           </h2>
 
           {/* Subtitle matching screenshot */}
@@ -275,8 +275,8 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
                     key={st.code}
                     onClick={() => handleStateClick(st)}
                     className={`py-2.5 px-2 rounded-xl text-xs font-extrabold border transition-all duration-150 cursor-pointer text-center ${isSelected
-                        ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20 scale-105'
-                        : 'bg-white text-slate-800 border-slate-200/90 hover:border-slate-400 hover:bg-slate-50'
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20 scale-105'
+                      : 'bg-white text-slate-800 border-slate-200/90 hover:border-slate-400 hover:bg-slate-50'
                       }`}
                   >
                     {st.code}
@@ -397,8 +397,8 @@ export default function OwnEstablishedRouteSection({ selectedState: propState, o
                     key={idx}
                     onClick={() => toggleCheck(idx)}
                     className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none ${isChecked
-                        ? 'bg-emerald-50/60 border-emerald-300 text-slate-900 shadow-2xs'
-                        : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
+                      ? 'bg-emerald-50/60 border-emerald-300 text-slate-900 shadow-2xs'
+                      : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
                       }`}
                   >
                     <input

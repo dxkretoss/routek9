@@ -318,7 +318,7 @@ export default function SignupPage({ onSignup }) {
             Start earning on <span className="text-rose-500">RouteK9</span> Pro today
           </h1>
           <p className="text-slate-300 text-sm sm:text-base leading-relaxed font-normal">
-            Create your free account to access daily settlement routes, federal SAM.gov contracts, and local courier directories in all 50 states.
+            Create your free account to access daily settlement routes, federal SAM.gov contracts, and local courier directories in all 50+ states.
           </p>
 
           {/* Benefits Checklist */}

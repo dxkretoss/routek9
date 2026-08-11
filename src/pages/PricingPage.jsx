@@ -101,16 +101,22 @@ export default function PricingPage({ currentUser, onLogout }) {
               <div className="text-[10px] font-extrabold text-slate-200 uppercase tracking-wider mt-1">Driver Directory Proposals</div>
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* Premium Glassmorphic Billing Cycle Switcher */}
-          <div className="pt-4 flex justify-center">
-            <div className="inline-flex items-center gap-2 backdrop-blur-md bg-white/10 border border-white/20 p-2 rounded-full shadow-2xl">
+      {/* Main Plans Section */}
+      <main className="flex-1 py-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+
+          {/* Billing Cycle Switcher */}
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-2 bg-slate-100 border border-slate-200 p-1.5 rounded-full shadow-sm">
               <button
                 type="button"
                 onClick={() => setBillingCycle('monthly')}
                 className={`px-6 py-2.5 rounded-full text-xs font-extrabold transition-all cursor-pointer ${billingCycle === 'monthly'
-                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
-                    : 'text-slate-300 hover:text-white'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                  : 'text-slate-600 hover:text-slate-900'
                   }`}
               >
                 Monthly Billing
@@ -120,8 +126,8 @@ export default function PricingPage({ currentUser, onLogout }) {
                 type="button"
                 onClick={() => setBillingCycle('yearly')}
                 className={`px-6 py-2.5 rounded-full text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${billingCycle === 'yearly'
-                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
-                    : 'text-slate-300 hover:text-white'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                  : 'text-slate-600 hover:text-slate-900'
                   }`}
               >
                 <span>Yearly Billing</span>
@@ -131,13 +137,6 @@ export default function PricingPage({ currentUser, onLogout }) {
               </button>
             </div>
           </div>
-
-        </div>
-      </section>
-
-      {/* Main Plans Section */}
-      <main className="flex-1 py-16 lg:py-24">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
 
           {/* Pricing Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
@@ -261,7 +260,7 @@ export default function PricingPage({ currentUser, onLogout }) {
           </div>
 
           {/* Guarantee / Security Banner */}
-          <div className="bg-white p-8 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6">
+          {/* <div className="bg-white p-8 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
                 <ShieldCheck className="w-6 h-6" />
@@ -279,7 +278,7 @@ export default function PricingPage({ currentUser, onLogout }) {
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               <span>256-Bit SSL Encrypted</span>
             </div>
-          </div>
+          </div> */}
 
         </div>
       </main>

@@ -32,10 +32,10 @@ export default function TrainingListPage({ currentUser, onLogout }) {
       {/* Main Body */}
       <main className="flex-1 py-16 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-          
+
           {/* Header */}
           <div className="space-y-4 max-w-4xl">
-            
+
             {/* Badge Line */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-xs font-bold uppercase tracking-wider text-rose-600 font-sans">
               <GraduationCap className="w-4 h-4 text-rose-600" />
@@ -49,7 +49,7 @@ export default function TrainingListPage({ currentUser, onLogout }) {
 
             {/* Subtitle */}
             <p className="text-slate-600 text-base sm:text-lg font-normal leading-relaxed font-sans">
-              Self-paced training with step-by-step lessons, action guides, and downloadable completion certificates. One-time payment — lifetime access.
+              Self-paced training with step-by-step lessons, action guides, and downloadable completion certificates. One-time payment lifetime access.
             </p>
 
           </div>
@@ -71,8 +71,8 @@ export default function TrainingListPage({ currentUser, onLogout }) {
                     className="relative rounded-3xl overflow-hidden shadow-lg border border-slate-800/80 group flex flex-col justify-between min-h-[340px] p-7 transition-all duration-300 hover:shadow-2xl hover:scale-[1.01]"
                   >
                     {/* Background Image */}
-                    <img 
-                      src={bgImg} 
+                    <img
+                      src={bgImg}
                       alt={course.title}
                       className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
@@ -89,7 +89,7 @@ export default function TrainingListPage({ currentUser, onLogout }) {
 
                     {/* Bottom Content: Title, Description, Price & Action Button */}
                     <div className="relative z-10 space-y-4 mt-auto pt-6">
-                      
+
                       {/* Course Title & Description */}
                       <div className="space-y-2">
                         <h3 className="text-2xl font-extrabold text-white font-serif-heading leading-tight group-hover:text-rose-300 transition-colors">

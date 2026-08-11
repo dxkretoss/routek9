@@ -428,7 +428,7 @@ export default function LoginPage({ onLogin }) {
         {/* Stats at bottom */}
         <div className="relative z-10 grid grid-cols-3 gap-4 pt-8 border-t border-slate-800/80">
           <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10 text-center">
-            <div className="text-lg lg:text-xl font-extrabold text-white">50 States</div>
+            <div className="text-lg lg:text-xl font-extrabold text-white">50+ States</div>
             <div className="text-[10px] text-slate-400 font-medium mt-0.5">Full US Coverage</div>
           </div>
           <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10 text-center">

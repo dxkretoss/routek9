@@ -172,7 +172,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
           </div>
 
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading leading-tight">
-            Explore and search routes &mdash; all 50 states
+            Explore and search routes &mdash; all 50+ states
           </h2>
 
           <p className="text-slate-600 text-sm max-w-2xl font-normal leading-relaxed font-sans">
@@ -238,7 +238,7 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                   Hover to see states glow on the map, click to pull up active routes, business contract directories, and local courier search engine links.
                 </p>
                 <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 font-semibold">
-                  Supports all 50 states and District of Columbia.
+                  Supports all 50+ states and District of Columbia.
                 </div>
               </div>
             ) : (

@@ -18,7 +18,7 @@ import {
   UserCheck,
   Star,
   Loader2,
-  
+
 } from 'lucide-react';
 
 import heroBgPattern from '../assets/hero_bg_pattern.png';
@@ -287,7 +287,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
           </h1>
 
           <p className="text-slate-300 text-sm sm:text-base font-normal max-w-2xl mx-auto leading-relaxed">
-            Browse verified independent owner-operators and courier drivers across all 50 states. Contact drivers directly to assign contracts and dispatch loads.
+            Browse verified independent owner-operators and courier drivers across all 50+ states. Contact drivers directly to assign contracts and dispatch loads.
           </p>
 
           {/* Centered Floating Metric Glass Cards */}
