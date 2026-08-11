@@ -91,17 +91,24 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
   const [customCity, setCustomCity] = useState('');
   const [showSearchSection, setShowSearchSection] = useState(false);
 
-  // Reset customCity to 'ALL' by default when selectedState changes
-  useEffect(() => {
-    setShowSearchSection(false);
-    setCustomCity('ALL');
-  }, [selectedState]);
-
-  // Lookup the complete state object including largestCity metadata
+  // Lookup the complete state object including topCities metadata from US_STATES
   const selectedStateItem = useMemo(() => {
     if (!selectedState) return null;
-    return ALL_STATES_ORDERED.find((st) => st.code === selectedState.code) || null;
+    const fullState = US_STATES[selectedState.code];
+    const orderedState = ALL_STATES_ORDERED.find((st) => st.code === selectedState.code);
+    return {
+      ...orderedState,
+      ...fullState,
+      topCities: fullState?.topCities || (orderedState?.largestCity ? [orderedState.largestCity] : [])
+    };
   }, [selectedState]);
+
+  // Default customCity to the first inner city when state changes
+  useEffect(() => {
+    setShowSearchSection(false);
+    const firstCity = selectedStateItem?.topCities?.[0] || selectedStateItem?.largestCity || '';
+    setCustomCity(firstCity);
+  }, [selectedStateItem]);
 
   const isAllCities = customCity === 'ALL' || !customCity;
   const activeCity = isAllCities ? '' : customCity.trim();
@@ -126,23 +133,28 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
 
   const getCourierGigsUrl = () => {
     if (!selectedStateItem) return 'https://couriergigs.com/jobs';
-    // Use clean state/city name without ", United States" so CourierGigs filter returns live matches
-    const loc = activeCity || selectedStateItem.name;
+    const loc = `${selectedStateItem.name}, United States`;
     return `https://couriergigs.com/jobs?location=${encodeURIComponent(loc)}`;
   };
 
   const getCBDriverUrl = () => {
     if (!selectedStateItem) return 'https://www.cbdriver.com/';
-    const stateAbbr = selectedStateItem.code.toLowerCase();
-    const cityClean = (activeCity || (isAllCities ? '' : selectedStateItem.largestCity || ''))
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
+    const stateAbbr = selectedStateItem.code ? selectedStateItem.code.toLowerCase() : '';
 
-    if (cityClean) {
-      return `https://www.cbdriver.com/${cityClean}-${stateAbbr}-driver-contract-jobs.aspx`;
+    // Only use city slug if user EXPLICITLY selected a specific city from the dropdown
+    if (activeCity) {
+      const cityClean = activeCity
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
+      if (cityClean && stateAbbr) {
+        return `https://www.cbdriver.com/${cityClean}-${stateAbbr}-driver-contract-jobs.aspx`;
+      }
     }
-    const stateClean = selectedStateItem.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    // Default to whole state listing URL when "All Cities" is selected
+    const stateClean = selectedStateItem.name ? selectedStateItem.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : '';
     return `https://www.cbdriver.com/${stateClean}-driver-contract-jobs.aspx`;
   };
 
@@ -335,10 +347,10 @@ export default function MapSection({ selectedState, onSelectState, onFilterCateg
                           onChange={(e) => setCustomCity(e.target.value)}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none cursor-pointer"
                         >
-                          <option value="ALL">All Cities ({selectedState.name})</option>
-                          {selectedState.topCities?.map((city) => (
+                          {selectedStateItem?.topCities?.map((city) => (
                             <option key={city} value={city}>{city}</option>
                           ))}
+                          <option value="ALL">All Cities ({selectedState.name})</option>
                         </select>
                       </div>
                     </div>

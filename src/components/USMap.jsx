@@ -35,10 +35,12 @@ export default function USMap({ selectedState, onSelectState }) {
           const fips = String(feature.id).padStart(2, '0');
           const code = FIPS_TO_STATE[fips];
           const pathD = pathGenerator(feature);
+          const centroid = pathGenerator.centroid(feature);
           return {
             id: fips,
             code,
             d: pathD,
+            centroid: (centroid && !isNaN(centroid[0])) ? centroid : null,
             stateData: US_STATES[code] || null
           };
         }).filter(item => item.d);
@@ -58,9 +60,11 @@ export default function USMap({ selectedState, onSelectState }) {
     });
   };
 
+  const isNearTop = tooltipPos.y < 85;
+
   return (
     <div 
-      className="relative w-full aspect-[16/10] flex items-center justify-center overflow-hidden p-2 select-none"
+      className="relative w-full aspect-[16/10] flex items-center justify-center overflow-visible p-2 select-none"
       onMouseMove={handleMouseMove}
     >
       {/* SVG Glow Filter Definition */}
@@ -88,28 +92,50 @@ export default function USMap({ selectedState, onSelectState }) {
             const isHovered = hoveredState?.code === geo.code;
 
             return (
-              <path
-                key={geo.id}
-                tabIndex={0}
-                className={`rsm-geography state-path ${isSelected ? 'selected' : ''}`}
-                d={geo.d}
-                onClick={() => {
-                  if (geo.stateData) onSelectState(geo.stateData);
-                }}
-                onMouseEnter={() => {
-                  if (geo.stateData) setHoveredState(geo.stateData);
-                }}
-                onMouseLeave={() => setHoveredState(null)}
-                style={{
-                  fill: isSelected ? "#ef4444" : "#efece6",
-                  stroke: isSelected ? "#b91c1c" : "#5c6b80",
-                  strokeWidth: isSelected ? 1.5 : 0.75,
-                  outline: "none",
-                  transition: "fill 220ms, filter 220ms, stroke 220ms",
-                  filter: isSelected || isHovered ? "url(#state-glow)" : "none",
-                  cursor: "pointer",
-                }}
-              />
+              <g key={geo.id} className="state-group cursor-pointer">
+                <path
+                  tabIndex={0}
+                  className={`rsm-geography state-path ${isSelected ? 'selected' : ''}`}
+                  d={geo.d}
+                  onClick={() => {
+                    if (geo.stateData) onSelectState(geo.stateData);
+                  }}
+                  onMouseEnter={() => {
+                    if (geo.stateData) setHoveredState(geo.stateData);
+                  }}
+                  onMouseLeave={() => setHoveredState(null)}
+                  style={{
+                    fill: isSelected ? "#ef4444" : "#efece6",
+                    stroke: isSelected ? "#b91c1c" : "#5c6b80",
+                    strokeWidth: isSelected ? 1.5 : 0.75,
+                    outline: "none",
+                    transition: "fill 220ms, filter 220ms, stroke 220ms",
+                    filter: isSelected || isHovered ? "url(#state-glow)" : "none",
+                    cursor: "pointer",
+                  }}
+                />
+
+                {/* State 2-Letter Abbreviation Labels directly on map */}
+                {geo.code && geo.centroid && (
+                  <text
+                    x={geo.centroid[0]}
+                    y={geo.centroid[1]}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    className="pointer-events-none font-bold text-[9px] select-none"
+                    style={{
+                      fill: isSelected ? "#ffffff" : "#475569",
+                      fontSize: ["RI", "DC", "DE", "MD", "VT", "NH", "CT", "MA", "NJ"].includes(geo.code) ? "7px" : "9px",
+                      fontWeight: 800,
+                      fontFamily: "Inter, system-ui, sans-serif",
+                      pointerEvents: "none",
+                      letterSpacing: "-0.02em"
+                    }}
+                  >
+                    {geo.code}
+                  </text>
+                )}
+              </g>
             );
           })}
         </g>
@@ -118,10 +144,12 @@ export default function USMap({ selectedState, onSelectState }) {
       {/* Floating Hover Tooltip */}
       {hoveredState && (
         <div
-          className="absolute z-30 pointer-events-none bg-slate-900/95 text-white text-xs px-3.5 py-2.5 rounded-xl shadow-2xl border border-slate-700/60 flex flex-col gap-0.5 transition-all duration-150 transform -translate-x-1/2 -translate-y-full"
+          className={`absolute z-30 pointer-events-none bg-slate-900/95 text-white text-xs px-3.5 py-2.5 rounded-xl shadow-2xl border border-slate-700/60 flex flex-col gap-0.5 transition-all duration-100 transform -translate-x-1/2 ${
+            isNearTop ? 'translate-y-4' : '-translate-y-full'
+          }`}
           style={{
             left: `${tooltipPos.x}px`,
-            top: `${tooltipPos.y - 12}px`,
+            top: `${isNearTop ? tooltipPos.y + 12 : tooltipPos.y - 12}px`,
           }}
         >
           <div className="font-extrabold text-sm text-white flex items-center gap-1.5">

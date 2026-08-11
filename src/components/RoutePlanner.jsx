@@ -2008,18 +2008,23 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         return c === "united states" || c === "united states of america" || c === "usa" || c === "us";
       };
 
-      // TIER 1: ESRI ArcGIS World Geocoding Service (100% Free, Native CORS Allowed, High Throughput, Global & US Coverage)
+      // TIER 1: ESRI ArcGIS World Geocoding Service (With outFields=* & PointAddress house number prioritization)
       try {
-        const arcgisUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=${encodeURIComponent(q)}&maxLocations=1`;
+        const arcgisUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=${encodeURIComponent(q)}&maxLocations=5&outFields=*`;
         const aRes = await fetchWithTimeout(arcgisUrl, {}, 3000);
         if (aRes && aRes.ok) {
           const aData = await aRes.json();
-          const candidate = aData?.candidates?.[0];
-          if (candidate && candidate.score >= 40) {
-            const { x: lon, y: lat } = candidate.location;
+          const candidates = aData?.candidates || [];
+          const hasHouseNumber = /^\d+/.test(q.trim());
+          const bestCandidate = (hasHouseNumber
+            ? candidates.find(c => c.score >= 40 && (c.attributes?.Addr_type === 'PointAddress' || c.attributes?.Addr_type === 'BuildingName' || c.attributes?.Addr_type === 'SubAddress' || c.attributes?.Addr_type === 'StreetAddress'))
+            : null) || candidates[0];
+
+          if (bestCandidate && bestCandidate.score >= 40) {
+            const { x: lon, y: lat } = bestCandidate.location;
             return {
               id: uid(),
-              label: item.label || candidate.address || q,
+              label: item.label || bestCandidate.address || q,
               lat: parseFloat(lat),
               lon: parseFloat(lon),
             };
@@ -2027,9 +2032,9 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         }
       } catch { }
 
-      // TIER 2: Official US Census Bureau Geocoder (Full address)
+      // TIER 2: Official US Census Bureau Geocoder (Full address with rooftop/street-face vintage)
       try {
-        const censusUrl = `${CENSUS_API_ENDPOINT}?address=${encodeURIComponent(q)}&benchmark=Public_AR_Current&format=json`;
+        const censusUrl = `${CENSUS_API_ENDPOINT}?address=${encodeURIComponent(q)}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
         const cRes = await fetchWithTimeout(censusUrl, {}, 2500);
         if (cRes && cRes.ok) {
           const cData = await cRes.json();
@@ -2051,7 +2056,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
       const sansZip = q.replace(/\b\d{5}(-\d{4})?\b/, "").replace(/,\s*,/g, ",").replace(/,\s*$/, "").trim();
       if (sansZip !== q) {
         try {
-          const cRes = await fetchWithTimeout(`${CENSUS_API_ENDPOINT}?address=${encodeURIComponent(sansZip)}&benchmark=Public_AR_Current&format=json`, {}, 2500);
+          const cRes = await fetchWithTimeout(`${CENSUS_API_ENDPOINT}?address=${encodeURIComponent(sansZip)}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`, {}, 2500);
           if (cRes && cRes.ok) {
             const cData = await cRes.json();
             const match = cData?.result?.addressMatches?.[0];
@@ -2098,15 +2103,15 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         }
       } catch { }
 
-      // TIER 3: Nominatim API (Timeout guarded)
+      // TIER 3: Nominatim API (With house_number detection)
       await delay(150);
       try {
-        const nRes = await fetchWithTimeout(`${NOMINATIM_API_ENDPOINT}?format=json&limit=1&addressdetails=1&countrycodes=us&q=${encodeURIComponent(q)}`, {
+        const nRes = await fetchWithTimeout(`${NOMINATIM_API_ENDPOINT}?format=json&limit=5&addressdetails=1&countrycodes=us&q=${encodeURIComponent(q)}`, {
           headers: { Accept: "application/json" }
         }, 2500);
         if (nRes && nRes.ok) {
           const data = await nRes.json();
-          const n = data?.[0];
+          const n = data?.find(item => item.address?.house_number) || data?.[0];
           if (n && isUS(n.address?.country || n.country)) {
             return {
               id: uid(),

@@ -60,6 +60,8 @@ function num(v, fallback = 0) {
 
 export default function ProfitCalculator() {
   const [unit, setUnit] = useState('stop');
+  const [ratePeriod, setRatePeriod] = useState('week'); // 'day' | 'week'
+  const [milesUnit, setMilesUnit] = useState('week'); // 'day' | 'week'
   const cfg = PAY_UNITS.find((u) => u.id === unit) || PAY_UNITS[2];
 
   const [rate, setRate] = useState('');
@@ -85,27 +87,113 @@ export default function ProfitCalculator() {
   const [selectedVehiclePick, setSelectedVehiclePick] = useState(matchedVehicle ? matchedVehicle.label : '');
 
   function pickUnit(id) {
+    const next = PAY_UNITS.find((u) => u.id === id);
     setUnit(id);
+    if (next) {
+      setRate(String(next.defaultRate));
+      setVolume(String(next.defaultVolume));
+    }
   }
+
+  const dynamicVolumeLabel = useMemo(() => {
+    if (ratePeriod === 'day') {
+      switch (unit) {
+        case 'hour': return 'Hours per day';
+        case 'stop': return 'Stops per day';
+        case 'load': return 'Loads per day';
+        case 'package': return 'Packages per day';
+        case 'mile': return 'Paid miles per day';
+        case 'day': return 'Days per week';
+        case 'week': return 'Weeks';
+        default: return cfg.volumeLabel;
+      }
+    }
+    return cfg.volumeLabel;
+  }, [cfg, unit, ratePeriod]);
 
   const calc = useMemo(() => {
     const r = num(rate);
     const v = num(volume);
-    const gross = r * v;
-    const miles = num(totalMiles);
-    const mpgN = Math.max(num(mpg), 1);
-    const fuel = (miles / mpgN) * num(fuelPrice);
-    const fixed = num(insurance) + num(maintenance) + num(phone) + num(otherExpenses);
-    const preTax = Math.max(gross - fuel - fixed, 0);
-    const taxReserve = preTax * (num(taxRate) / 100);
-    const totalCost = fuel + fixed + taxReserve;
-    const net = gross - totalCost;
-    const margin = gross > 0 ? (net / gross) * 100 : 0;
-    const revPerMile = miles > 0 ? gross / miles : 0;
-    const costPerMile = miles > 0 ? totalCost / miles : 0;
 
-    return { gross, fuel, fixed, taxReserve, totalCost, net, margin, revPerMile, costPerMile };
-  }, [rate, volume, totalMiles, mpg, fuelPrice, insurance, maintenance, phone, otherExpenses, taxRate]);
+    // Default working days per week
+    const workDays = unit === 'day' ? Math.max(v, 1) : 5;
+
+    // 1. WEEKLY GROSS REVENUE
+    const weekGross = r * v;
+
+    // 2. WEEKLY MILES
+    const rawMiles = num(totalMiles);
+    const weekMiles = milesUnit === 'day' ? rawMiles * workDays : rawMiles;
+
+    // 3. FUEL
+    const mpgN = Math.max(num(mpg), 1);
+    const weekFuel = (weekMiles / mpgN) * num(fuelPrice);
+
+    // 4. FIXED OPERATING COSTS
+    const weekFixed = num(insurance) + num(maintenance) + num(phone) + num(otherExpenses);
+
+    // 5. PRE-TAX PROFIT (Allows negative profit for losing routes)
+    const weekPreTax = weekGross - weekFuel - weekFixed;
+
+    // 6. TAX RESERVE (Only reserve tax when pre-tax profit is positive)
+    const taxPct = num(taxRate) / 100;
+    const weekTax = Math.max(weekPreTax, 0) * taxPct;
+
+    // 7. WEEKLY TAKE-HOME
+    const weekNet = weekPreTax - weekTax;
+
+    // 8. DAILY VALUES
+    const dayGross = weekGross / workDays;
+    const dayFuel = weekFuel / workDays;
+    const dayFixed = weekFixed / workDays;
+    const dayTax = weekTax / workDays;
+    const dayNet = weekNet / workDays;
+
+    // 9. DISPLAY PERIOD
+    const isDayView = ratePeriod === 'day';
+    const gross = isDayView ? dayGross : weekGross;
+    const fuel = isDayView ? dayFuel : weekFuel;
+    const fixed = isDayView ? dayFixed : weekFixed;
+    const taxReserve = isDayView ? dayTax : weekTax;
+    const net = isDayView ? dayNet : weekNet;
+
+    // 10. NET PROFIT MARGIN
+    const margin = weekGross > 0 ? (weekNet / weekGross) * 100 : 0;
+
+    // 11. PER-MILE METRICS
+    const revPerMile = weekMiles > 0 ? weekGross / weekMiles : 0;
+    const totalWeeklyCost = weekFuel + weekFixed + weekTax;
+    const costPerMile = weekMiles > 0 ? totalWeeklyCost / weekMiles : 0;
+
+    return {
+      gross,
+      fuel,
+      fixed,
+      taxReserve,
+      net,
+      margin,
+      revPerMile,
+      costPerMile,
+      dailyNet: dayNet,
+      weeklyNet: weekNet,
+      monthlyNet: weekNet * 4.33,
+      periodLabel: isDayView ? 'day' : 'week',
+    };
+  }, [
+    rate,
+    volume,
+    totalMiles,
+    milesUnit,
+    ratePeriod,
+    mpg,
+    fuelPrice,
+    insurance,
+    maintenance,
+    phone,
+    otherExpenses,
+    taxRate,
+    unit,
+  ]);
 
   const verdict = useMemo(() => {
     if (calc.net <= 0 || calc.margin < 15) {
@@ -218,9 +306,27 @@ export default function ProfitCalculator() {
               {/* 2. PAY RATE & DYNAMIC VOLUME */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
-                    PAY RATE ($ PER {unit.toUpperCase()})
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
+                      PAY RATE ($ PER {unit.toUpperCase()})
+                    </label>
+                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setRatePeriod('day')}
+                        className={`px-1.5 py-0.5 rounded-md transition-all ${ratePeriod === 'day' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                      >
+                        Day
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRatePeriod('week')}
+                        className={`px-1.5 py-0.5 rounded-md transition-all ${ratePeriod === 'week' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                      >
+                        Week
+                      </button>
+                    </div>
+                  </div>
                   <div className="relative">
                     <span className="absolute left-3.5 top-3 text-slate-400 text-sm font-bold">$</span>
                     <input
@@ -238,7 +344,7 @@ export default function ProfitCalculator() {
 
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
-                    {cfg.volumeLabel.toUpperCase()}
+                    {dynamicVolumeLabel}
                   </label>
                   <input
                     type="number"
@@ -254,17 +360,35 @@ export default function ProfitCalculator() {
                 </div>
               </div>
 
-              {/* 3. WEEKLY DRIVING & FUEL */}
+              {/* 3. DRIVING & FUEL */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 <h4 className="text-sm font-bold text-[#0b132b] font-sans">
-                  Weekly driving & fuel
+                  Driving & fuel
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-1.5">
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                      MILES DRIVEN / WEEK
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                        MILES DRIVEN / {milesUnit.toUpperCase()}
+                      </label>
+                      <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setMilesUnit('day')}
+                          className={`px-1.5 py-0.5 rounded-md transition-all ${milesUnit === 'day' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                          Day
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMilesUnit('week')}
+                          className={`px-1.5 py-0.5 rounded-md transition-all ${milesUnit === 'week' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                          Week
+                        </button>
+                      </div>
+                    </div>
                     <input
                       type="number"
                       min="0"
@@ -348,10 +472,10 @@ export default function ProfitCalculator() {
                 </div>
               </div>
 
-              {/* 4. WEEKLY FIXED COSTS */}
+              {/* 4. FIXED COSTS */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 <h4 className="text-sm font-bold text-[#0b132b] font-sans">
-                  Weekly fixed costs
+                  Fixed operating costs
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -391,7 +515,7 @@ export default function ProfitCalculator() {
                         className="w-full pl-8 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b]"
                       />
                     </div>
-                    <p className="text-[9px] text-slate-400">Set aside weekly, don't wait for a repair bill.</p>
+                    <p className="text-[9px] text-slate-400">Set aside regular funds, don't wait for a repair bill.</p>
                   </div>
 
                   <div className="space-y-1.5">
@@ -563,17 +687,17 @@ export default function ProfitCalculator() {
             {/* 2. Middle Financial Breakdown Card */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-3 text-xs">
               <div className="flex justify-between py-2 border-b border-slate-100">
-                <span className="font-bold text-slate-700">Gross weekly pay</span>
+                <span className="font-bold text-slate-700">Gross revenue ({calc.periodLabel})</span>
                 <span className="font-extrabold text-[#0b132b]">${calc.gross.toFixed(2)}</span>
               </div>
 
               <div className="flex justify-between py-2 border-b border-slate-100 text-rose-600">
-                <span>− Fuel</span>
+                <span>− Fuel costs</span>
                 <span className="font-bold">−${calc.fuel.toFixed(2)}</span>
               </div>
 
               <div className="flex justify-between py-2 border-b border-slate-100 text-rose-600">
-                <span>− Insurance, maintenance, phone, other</span>
+                <span>− Fixed operating costs</span>
                 <span className="font-bold">−${calc.fixed.toFixed(2)}</span>
               </div>
 
@@ -583,10 +707,26 @@ export default function ProfitCalculator() {
               </div>
 
               <div className="flex justify-between py-3 font-extrabold text-sm border-b border-slate-200 text-[#0b132b]">
-                <span>Take-home / week</span>
+                <span>Estimated Take-Home Profit</span>
                 <span className={`text-base font-extrabold ${calc.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  ${calc.net.toFixed(2)}
+                  ${calc.net.toFixed(2)} / {calc.periodLabel}
                 </span>
+              </div>
+
+              {/* Equivalence Summary Badges */}
+              <div className="grid grid-cols-3 gap-2 pt-2 text-center text-xs">
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/60">
+                  <span className="text-[9px] text-slate-400 block uppercase font-bold">Per Day</span>
+                  <span className="font-extrabold text-slate-900">${calc.dailyNet.toFixed(2)}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/60">
+                  <span className="text-[9px] text-slate-400 block uppercase font-bold">Per Week</span>
+                  <span className="font-extrabold text-slate-900">${calc.weeklyNet.toFixed(2)}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/60">
+                  <span className="text-[9px] text-slate-400 block uppercase font-bold">Per Month</span>
+                  <span className="font-extrabold text-slate-900">${calc.monthlyNet.toFixed(2)}</span>
+                </div>
               </div>
 
               <div className="pt-2 flex justify-between text-slate-500 font-semibold">
