@@ -90,16 +90,13 @@ export default function ProfitCalculator() {
     setUnit(id);
     setRate('');
     setVolume('');
+    setRatePeriod('week');
+    setMilesUnit('week');
   }
 
   const dynamicVolumeLabel = useMemo(() => {
-    if (ratePeriod === 'day') {
+    if (['week', 'day'].includes(unit) && ratePeriod === 'day') {
       switch (unit) {
-        case 'hour': return 'Hours per day';
-        case 'stop': return 'Stops per day';
-        case 'load': return 'Loads per day';
-        case 'package': return 'Packages per day';
-        case 'mile': return 'Paid miles per day';
         case 'day': return 'Days per week';
         case 'week': return 'Weeks';
         default: return cfg.volumeLabel;
@@ -311,22 +308,27 @@ export default function ProfitCalculator() {
                     <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
                       PAY RATE ($ PER {['week', 'day'].includes(unit) ? ratePeriod.toUpperCase() : unit.toUpperCase()})
                     </label>
-                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px] font-bold">
-                      <button
-                        type="button"
-                        onClick={() => setRatePeriod('day')}
-                        className={`px-1.5 py-0.5 rounded-md transition-all ${ratePeriod === 'day' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                      >
-                        Day
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRatePeriod('week')}
-                        className={`px-1.5 py-0.5 rounded-md transition-all ${ratePeriod === 'week' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                      >
-                        Week
-                      </button>
-                    </div>
+
+                    {/* Day/Week rate toggle — applied ONLY for Per Week (flat) and Per Day options */}
+                    {['week', 'day'].includes(unit) && (
+                      <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setRatePeriod('day')}
+                          className={`px-1.5 py-0.5 rounded-md transition-all ${ratePeriod === 'day' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                          Day
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRatePeriod('week')}
+                          className={`px-1.5 py-0.5 rounded-md transition-all ${ratePeriod === 'week' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                          Week
+                        </button>
+                      </div>
+                    )}
+                    {/* For per stop, per load, per package, per mile, per hour: Day/Week toggle is hidden */}
                   </div>
                   <div className="relative">
                     <span className="absolute left-3.5 top-3 text-slate-400 text-sm font-bold">$</span>
@@ -388,24 +390,29 @@ export default function ProfitCalculator() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                        MILES DRIVEN / {milesUnit.toUpperCase()}
+                        MILES DRIVEN / {['week', 'day'].includes(unit) ? milesUnit.toUpperCase() : 'WEEK'}
                       </label>
-                      <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px] font-bold">
-                        <button
-                          type="button"
-                          onClick={() => setMilesUnit('day')}
-                          className={`px-1.5 py-0.5 rounded-md transition-all ${milesUnit === 'day' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                        >
-                          Day
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setMilesUnit('week')}
-                          className={`px-1.5 py-0.5 rounded-md transition-all ${milesUnit === 'week' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                        >
-                          Week
-                        </button>
-                      </div>
+
+                      {/* Day/Week miles toggle — applied ONLY for Per Week (flat) and Per Day options */}
+                      {['week', 'day'].includes(unit) && (
+                        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setMilesUnit('day')}
+                            className={`px-1.5 py-0.5 rounded-md transition-all ${milesUnit === 'day' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                          >
+                            Day
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMilesUnit('week')}
+                            className={`px-1.5 py-0.5 rounded-md transition-all ${milesUnit === 'week' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                          >
+                            Week
+                          </button>
+                        </div>
+                      )}
+                      {/* For per stop, per load, per package, per mile, per hour: Miles toggle is hidden */}
                     </div>
                     <input
                       type="number"

@@ -99,22 +99,22 @@ export default function MobileResetPasswordPage() {
 
     try {
       setLoading(true);
-      const { error: updateErr } = await supabase.auth.updateUser({
+      const { data, error: updateErr } = await supabase.auth.updateUser({
         password: cleanPw
       });
 
       if (updateErr) {
-        if (
-          updateErr.message?.toLowerCase().includes('session') ||
-          updateErr.message?.toLowerCase().includes('expired') ||
-          updateErr.message?.toLowerCase().includes('invalid') ||
-          updateErr.message?.toLowerCase().includes('token')
-        ) {
-          setIsExpired(true);
-          setExpiredReason("This reset link has expired or has already been used. Please request a new link from the Mobile App.");
-          return;
-        }
-        throw updateErr;
+        console.error("Mobile password update error:", updateErr);
+        setError(updateErr.message || "Failed to update password. Please check your reset link and try again.");
+        setSuccess(false);
+        return;
+      }
+
+      if (!data || !data.user) {
+        console.error("Supabase updateUser returned no user object.");
+        setError("Password update failed. No user object returned by authentication server.");
+        setSuccess(false);
+        return;
       }
 
       // Mark link as consumed
@@ -130,7 +130,8 @@ export default function MobileResetPasswordPage() {
       setSuccess(true);
     } catch (err) {
       console.error("Mobile password update error:", err);
-      setError(err.message || "Failed to update password. Please try again.");
+      setError(err?.message || "Failed to update password. Please try again.");
+      setSuccess(false);
     } finally {
       setLoading(false);
     }
@@ -145,7 +146,7 @@ export default function MobileResetPasswordPage() {
       </div>
 
       <div className="w-full max-w-md bg-[#1c2541]/90 backdrop-blur-xl border border-slate-700/60 rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10 space-y-6 animate-fadeIn">
-        
+
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center space-y-3">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-rose-700 p-0.5 shadow-xl shadow-rose-600/20 flex items-center justify-center">
