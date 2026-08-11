@@ -36,6 +36,7 @@ import AdminLayout from './pages/admin/AdminLayout';
 import PricingPage from './pages/PricingPage';
 import ProCheckoutPage from './pages/ProCheckoutPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import MobileResetPasswordPage from './pages/MobileResetPasswordPage';
 import CompleteProfilePage from './pages/CompleteProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -674,6 +675,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
         <Route path="/signup" element={<SignupPage onSignup={handleLogin} />} />
         <Route path="/resetpass" element={<ResetPasswordPage />} />
+        <Route path="/mobile-reset-password" element={<MobileResetPasswordPage />} />
         <Route path="/complete-profile" element={<CompleteProfilePage currentUser={currentUser} onComplete={(updated) => { setCurrentUser(updated); setCookie(SESSION_COOKIE_NAME, updated, 30); }} />} />
 
         {/* Admin — has its own AdminLayout */}

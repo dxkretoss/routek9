@@ -87,12 +87,9 @@ export default function ProfitCalculator() {
   const [selectedVehiclePick, setSelectedVehiclePick] = useState(matchedVehicle ? matchedVehicle.label : '');
 
   function pickUnit(id) {
-    const next = PAY_UNITS.find((u) => u.id === id);
     setUnit(id);
-    if (next) {
-      setRate(String(next.defaultRate));
-      setVolume(String(next.defaultVolume));
-    }
+    setRate('');
+    setVolume('');
   }
 
   const dynamicVolumeLabel = useMemo(() => {
@@ -115,11 +112,11 @@ export default function ProfitCalculator() {
     const r = num(rate);
     const v = num(volume);
 
-    // Default working days per week (clamped 1 to 7 days)
-    const workDays = unit === 'day' ? Math.min(Math.max(num(v, 5), 1), 7) : 7;
+    // Default working days per week (clamped 1 to 7 days if specified, else 7)
+    const workDays = (unit === 'day' && v > 0) ? Math.min(Math.max(v, 1), 7) : 7;
 
     // 1. CONTRACT DURATION IN WEEKS
-    const numWeeks = unit === 'week' ? Math.max(v, 1) : 1;
+    const numWeeks = (unit === 'week' && v > 0) ? v : 1;
 
     // 2. WEEKLY BASE GROSS REVENUE
     let singleWeekGross = 0;
@@ -352,10 +349,11 @@ export default function ProfitCalculator() {
                   </label>
                   {unit === 'day' ? (
                     <select
-                      value={Math.min(Math.max(parseInt(volume, 10) || 5, 1), 7)}
+                      value={volume}
                       onChange={(e) => setVolume(e.target.value)}
                       className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500 cursor-pointer"
                     >
+                      <option value="">Select days per week</option>
                       <option value="1">1 day per week</option>
                       <option value="2">2 days per week</option>
                       <option value="3">3 days per week</option>
