@@ -115,69 +115,73 @@ export default function ProfitCalculator() {
     const r = num(rate);
     const v = num(volume);
 
-    // Default working days per week
-    const workDays = unit === 'day' ? Math.max(v, 1) : 5;
+    // Default working days per week (clamped 1 to 7 days)
+    const workDays = unit === 'day' ? Math.min(Math.max(num(v, 5), 1), 7) : 7;
 
-    // 1. WEEKLY GROSS REVENUE
-    const weekGross = r * v;
+    // 1. CONTRACT DURATION IN WEEKS
+    const numWeeks = unit === 'week' ? Math.max(v, 1) : 1;
 
-    // 2. WEEKLY MILES
+    // 2. WEEKLY BASE GROSS REVENUE
+    let singleWeekGross = 0;
+    if (unit === 'week') {
+      const weeklyRate = ratePeriod === 'day' ? r * 7 : r;
+      singleWeekGross = weeklyRate;
+    } else if (unit === 'day') {
+      singleWeekGross = ratePeriod === 'day' ? r * v : (r / 7) * v;
+    } else {
+      singleWeekGross = ratePeriod === 'day' ? r * v * 7 : r * v;
+    }
+
+    // 3. WEEKLY MILES & FUEL COST (per single week)
     const rawMiles = num(totalMiles);
-    const weekMiles = milesUnit === 'day' ? rawMiles * workDays : rawMiles;
-
-    // 3. FUEL
+    const singleWeekMiles = milesUnit === 'day' ? rawMiles * workDays : rawMiles;
     const mpgN = Math.max(num(mpg), 1);
-    const weekFuel = (weekMiles / mpgN) * num(fuelPrice);
+    const singleWeekFuel = (singleWeekMiles / mpgN) * num(fuelPrice);
 
-    // 4. FIXED OPERATING COSTS
-    const weekFixed = num(insurance) + num(maintenance) + num(phone) + num(otherExpenses);
+    // 4. FIXED OPERATING COSTS (per single week)
+    const singleWeekFixed = num(insurance) + num(maintenance) + num(phone) + num(otherExpenses);
 
-    // 5. PRE-TAX PROFIT (Allows negative profit for losing routes)
-    const weekPreTax = weekGross - weekFuel - weekFixed;
+    // 5. TOTAL CONTRACT VALUES (scaled by numWeeks)
+    const contractGross = singleWeekGross * numWeeks;
+    const contractFuel = singleWeekFuel * numWeeks;
+    const contractFixed = singleWeekFixed * numWeeks;
 
-    // 6. TAX RESERVE (Only reserve tax when pre-tax profit is positive)
+    // 6. PRE-TAX PROFIT & TAX RESERVE
+    const contractPreTax = contractGross - contractFuel - contractFixed;
     const taxPct = num(taxRate) / 100;
-    const weekTax = Math.max(weekPreTax, 0) * taxPct;
+    const contractTax = Math.max(contractPreTax, 0) * taxPct;
+    const contractNet = contractPreTax - contractTax;
 
-    // 7. WEEKLY TAKE-HOME
-    const weekNet = weekPreTax - weekTax;
-
-    // 8. DAILY VALUES
-    const dayGross = weekGross / workDays;
-    const dayFuel = weekFuel / workDays;
-    const dayFixed = weekFixed / workDays;
-    const dayTax = weekTax / workDays;
+    // 7. AVERAGED PERIOD VALUES
+    const weekGross = singleWeekGross;
+    const weekNet = contractNet / numWeeks;
     const dayNet = weekNet / workDays;
+    const monthNet = weekNet * 4.33;
 
-    // 9. DISPLAY PERIOD
-    const isDayView = ratePeriod === 'day';
-    const gross = isDayView ? dayGross : weekGross;
-    const fuel = isDayView ? dayFuel : weekFuel;
-    const fixed = isDayView ? dayFixed : weekFixed;
-    const taxReserve = isDayView ? dayTax : weekTax;
-    const net = isDayView ? dayNet : weekNet;
+    // 8. NET PROFIT MARGIN
+    const margin = contractGross > 0 ? (contractNet / contractGross) * 100 : 0;
 
-    // 10. NET PROFIT MARGIN
-    const margin = weekGross > 0 ? (weekNet / weekGross) * 100 : 0;
+    // 9. PER-MILE METRICS
+    const totalContractMiles = singleWeekMiles * numWeeks;
+    const revPerMile = totalContractMiles > 0 ? contractGross / totalContractMiles : 0;
+    const totalContractCost = contractFuel + contractFixed + contractTax;
+    const costPerMile = totalContractMiles > 0 ? totalContractCost / totalContractMiles : 0;
 
-    // 11. PER-MILE METRICS
-    const revPerMile = weekMiles > 0 ? weekGross / weekMiles : 0;
-    const totalWeeklyCost = weekFuel + weekFixed + weekTax;
-    const costPerMile = weekMiles > 0 ? totalWeeklyCost / weekMiles : 0;
+    const periodText = unit === 'week' && numWeeks > 1 ? `${numWeeks} weeks` : 'week';
 
     return {
-      gross,
-      fuel,
-      fixed,
-      taxReserve,
-      net,
+      gross: contractGross,
+      fuel: contractFuel,
+      fixed: contractFixed,
+      taxReserve: contractTax,
+      net: contractNet,
       margin,
       revPerMile,
       costPerMile,
       dailyNet: dayNet,
       weeklyNet: weekNet,
-      monthlyNet: weekNet * 4.33,
-      periodLabel: isDayView ? 'day' : 'week',
+      monthlyNet: monthNet,
+      periodLabel: periodText,
     };
   }, [
     rate,
@@ -308,7 +312,7 @@ export default function ProfitCalculator() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
-                      PAY RATE ($ PER {unit.toUpperCase()})
+                      PAY RATE ($ PER {['week', 'day'].includes(unit) ? ratePeriod.toUpperCase() : unit.toUpperCase()})
                     </label>
                     <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px] font-bold">
                       <button
@@ -346,16 +350,32 @@ export default function ProfitCalculator() {
                   <label className="block text-[11px] font-extrabold uppercase tracking-widest text-slate-400 font-sans">
                     {dynamicVolumeLabel}
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={volume}
-                    onChange={(e) => setVolume(e.target.value.replace(/-/g, ''))}
-                    onWheel={(e) => e.target.blur()}
-                    placeholder="0"
-                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
-                  />
+                  {unit === 'day' ? (
+                    <select
+                      value={Math.min(Math.max(parseInt(volume, 10) || 5, 1), 7)}
+                      onChange={(e) => setVolume(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500 cursor-pointer"
+                    >
+                      <option value="1">1 day per week</option>
+                      <option value="2">2 days per week</option>
+                      <option value="3">3 days per week</option>
+                      <option value="4">4 days per week</option>
+                      <option value="5">5 days per week</option>
+                      <option value="6">6 days per week</option>
+                      <option value="7">7 days per week</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={volume}
+                      onChange={(e) => setVolume(e.target.value.replace(/-/g, ''))}
+                      onWheel={(e) => e.target.blur()}
+                      placeholder="0"
+                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#0b132b] focus:ring-2 focus:ring-rose-500"
+                    />
+                  )}
                   <p className="text-[10px] text-slate-400 font-medium">{cfg.volumeHint}</p>
                 </div>
               </div>

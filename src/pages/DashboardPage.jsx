@@ -57,10 +57,28 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const hasAuthHash = typeof window !== 'undefined' && (
-    window.location.hash.includes('access_token=') ||
-    window.location.hash.includes('type=signup') ||
-    window.location.hash.includes('type=recovery')
+  const rawHash = typeof window !== 'undefined' ? window.location.hash : '';
+  const rawSearch = typeof window !== 'undefined' ? window.location.search : '';
+  const hashParams = new URLSearchParams(rawHash.replace(/^#/, ''));
+  const searchParamsObj = new URLSearchParams(rawSearch);
+
+  const urlErrorParam = hashParams.get('error') || searchParamsObj.get('error');
+  const urlErrorCode = hashParams.get('error_code') || searchParamsObj.get('error_code');
+  const urlErrorDesc = hashParams.get('error_description') || searchParamsObj.get('error_description');
+
+  const isExpiredTokenUrl = Boolean(
+    urlErrorParam ||
+    urlErrorCode ||
+    urlErrorDesc ||
+    rawHash.includes('error=') ||
+    rawHash.includes('otp_expired') ||
+    rawHash.includes('invalid')
+  );
+
+  const hasAuthHash = typeof window !== 'undefined' && !isExpiredTokenUrl && (
+    rawHash.includes('access_token=') ||
+    rawHash.includes('type=signup') ||
+    rawHash.includes('type=recovery')
   );
 
   const DASHBOARD_LAST_TAB_KEY = 'routek9_dashboard_active_tab_v1';
@@ -1257,6 +1275,65 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   };
 
   if (!currentUser) {
+    if (isExpiredTokenUrl) {
+      const displayReason = urlErrorDesc
+        ? decodeURIComponent(urlErrorDesc.replace(/\+/g, ' '))
+        : 'This email confirmation or magic login link has expired or has already been used.';
+
+      return (
+        <div className="min-h-screen bg-[#0b132b] flex flex-col items-center justify-center p-6 text-center text-white space-y-6 animate-fadeIn font-sans">
+          {/* Glowing Rose Warning Icon */}
+          <div className="w-20 h-20 rounded-3xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center shadow-2xl shadow-rose-600/20 relative">
+            <div className="absolute inset-0 rounded-3xl bg-rose-500/10 animate-ping opacity-25" />
+            <AlertTriangle className="w-10 h-10 text-rose-500 relative z-10" />
+          </div>
+
+          <div className="max-w-md space-y-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[10px] font-extrabold uppercase tracking-widest mx-auto">
+              <Clock className="w-3.5 h-3.5 text-rose-400" />
+              <span>Link Expired or Invalid</span>
+            </div>
+
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-serif-heading">
+              Authentication Link Expired
+            </h2>
+
+            <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed max-w-sm mx-auto">
+              {displayReason}. For your account security, magic links and password reset tokens are single-use only and expire automatically.
+            </p>
+          </div>
+
+          {/* Action Card */}
+          <div className="p-6 bg-slate-900/90 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl space-y-4">
+            <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-300 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>Please log in or request a new login link sent to your email.</span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1">
+              <button
+                onClick={() => navigate('/login')}
+                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-lg shadow-rose-600/30 transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Log In to RouteK9</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => navigate('/')}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-200 font-bold text-xs transition-all cursor-pointer"
+              >
+                Back to Home
+              </button>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-500 font-medium">
+            Need assistance? Contact support at <a href="mailto:support@routek9.com" className="text-rose-400 underline font-bold">support@routek9.com</a>
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-[#0b132b] flex flex-col items-center justify-center p-6 text-center text-white space-y-5 animate-fadeIn">
         <div className="w-16 h-16 rounded-3xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center shadow-xl">
