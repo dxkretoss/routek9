@@ -165,7 +165,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
     const cat = (o.category || '').toLowerCase();
     const pAddr = (o.pickup_address || '').toLowerCase();
     const dAddr = (o.dropoff_address || '').toLowerCase();
-    const status = (o.status || '').toLowerCase();
+    const status = (o.order_status || '').toLowerCase();
     const id = (o.id || o.customer_id || '').toLowerCase();
 
     return (
@@ -397,7 +397,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {filteredOrders.map((ord) => {
-                    const statusLower = (ord.status || 'pending').toLowerCase();
+                    const statusLower = (ord.order_status || 'pending').toLowerCase();
                     const matchedCustomer = customers.find(c => String(c.id).toLowerCase() === String(ord.customer_id || '').toLowerCase());
                     const custName = matchedCustomer ? matchedCustomer.full_name : (ord.customer_id ? `User (${String(ord.customer_id).substring(0, 8)}...)` : 'Customer');
                     const custEmail = matchedCustomer ? matchedCustomer.email : null;
@@ -471,7 +471,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
                               ? 'bg-rose-50 text-rose-700 border-rose-200'
                               : 'bg-slate-100 text-slate-700 border-slate-200'
                           }`}>
-                            {ord.status || 'pending'}
+                            {ord.order_status || 'pending'}
                           </span>
                         </td>
 
@@ -613,7 +613,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs text-slate-300 font-mono">ID: {selectedOrderModal.id}</span>
                     <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-extrabold text-[10px] uppercase border border-rose-500/30">
-                      {selectedOrderModal.status || 'Pending'}
+                      {selectedOrderModal.order_status || 'Pending'}
                     </span>
                   </div>
                 </div>

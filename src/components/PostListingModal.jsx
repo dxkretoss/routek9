@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { X, PlusCircle, CheckCircle2, Truck, Building2 } from 'lucide-react';
 import { US_STATES } from '../data/statesData';
-import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
+import { useVehicleClasses } from '../data/vehicleTypes';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
 export default function PostListingModal({ onClose, onAddRoute }) {
+  const PRIMARY_VEHICLE_CLASSES = useVehicleClasses();
   const [title, setTitle] = useState('');
   const [stateCode, setStateCode] = useState('NV');
   const [city, setCity] = useState('');

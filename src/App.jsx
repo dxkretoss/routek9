@@ -280,6 +280,17 @@ export default function App() {
 
   // Supabase Auth Session Listener & Profile Sync
   useEffect(() => {
+    // Sync dynamic vehicle types from Supabase
+    supabase
+      .from('vehicle_types')
+      .select('*')
+      .order('vehicle_name', { ascending: true })
+      .then(({ data, error }) => {
+        if (!error && data && data.length > 0) {
+          localStorage.setItem('routek9_vehicle_types', JSON.stringify(data));
+        }
+      });
+
     // 1. Check current session on load
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {

@@ -4,11 +4,12 @@ import Toast from '../components/Toast';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 import { US_STATES_LIST } from '../data/statesData';
-import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
+import { useVehicleClasses } from '../data/vehicleTypes';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
 export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, onOpenPricing }) {
+  const PRIMARY_VEHICLE_CLASSES = useVehicleClasses();
   const [fullName, setFullName] = useState(currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : ''));
   const [email, setEmail] = useState(currentUser?.email || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');

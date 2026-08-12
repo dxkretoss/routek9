@@ -18,7 +18,8 @@ import {
   HelpCircle,
   Package,
   ShieldCheck,
-  Users
+  Users,
+  Car
 } from 'lucide-react';
 
 import AdminLoginPage from './AdminLoginPage';
@@ -32,6 +33,7 @@ import AdminDispatchOrders from './AdminDispatchOrders';
 import AdminRevenue from './AdminRevenue';
 import AdminSettings from './AdminSettings';
 import AdminGovContracts from './AdminGovContracts';
+import AdminVehicles from './AdminVehicles';
 
 // ─── SIDEBAR NAV CONFIG ─────────────────────────────────────────
 const SIDEBAR_ITEMS = [
@@ -41,6 +43,7 @@ const SIDEBAR_ITEMS = [
   { key: 'companies', label: 'Company List', icon: Building2 },
   { key: 'gov_contracts', label: 'Gov Contracts', icon: ShieldCheck },
   { key: 'dispatch_orders', label: 'Dispatch Orders', icon: Package },
+  { key: 'vehicles', label: 'Vehicle Management', icon: Car },
   { key: 'courses', label: 'Courses', icon: BookOpen },
   { key: 'exam_questions', label: 'Exam Questions', icon: HelpCircle },
   { key: 'revenue', label: 'Revenue', icon: DollarSign },
@@ -358,6 +361,8 @@ export default function AdminLayout({ currentUser, onLogout }) {
         return <AdminExamQuestions />;
       case 'dispatch_orders':
         return <AdminDispatchOrders />;
+      case 'vehicles':
+        return <AdminVehicles />;
       case 'revenue':
         return <AdminRevenue />;
       case 'settings':

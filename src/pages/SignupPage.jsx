@@ -4,9 +4,10 @@ import { ShieldCheck, Truck, ArrowRight, Lock, Mail, User, Eye, EyeOff, CheckCir
 import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
-import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
+import { useVehicleClasses } from '../data/vehicleTypes';
 
 export default function SignupPage({ onSignup }) {
+  const PRIMARY_VEHICLE_CLASSES = useVehicleClasses();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/ ';

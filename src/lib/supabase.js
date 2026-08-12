@@ -340,22 +340,133 @@ export async function loadUserChecklistFromDb(userId, checklistKey) {
 }
 
 /**
- * Mobile App Registration Edge Function Invoker
- * Invokes 'register' Edge Function in Supabase
+ * Fetch Customer Orders from Supabase database
  */
-export async function invokeMobileRegister(registerPayload) {
+export async function fetchCustomerOrdersFromDb() {
   try {
-    const { data, error } = await supabase.functions.invoke('mobile-register', {
-      body: registerPayload
-    });
+    const { data, error } = await supabase
+      .from('customer_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (error) {
-      throw new Error(error.message || 'Mobile registration failed.');
-    }
-
-    return data;
+    if (error) throw error;
+    return data || [];
   } catch (err) {
-    console.error('[invokeMobileRegister] Error:', err);
-    throw err;
+    console.warn('fetchCustomerOrdersFromDb notice:', err.message);
+    return [];
   }
 }
+
+/**
+ * Update Customer Order status in Supabase database
+ */
+export async function updateCustomerOrderStatusInDb(orderId, status, driverId = null) {
+  try {
+    // Validate or generate valid UUID format for Postgres UUID column driver_id
+    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    let validDriverUuid = driverId;
+
+    if (!isUuid(validDriverUuid)) {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        validDriverUuid = crypto.randomUUID();
+      } else {
+        validDriverUuid = 'a1b2c3d4-e5f6-4789-a012-3456789abcde';
+      }
+    }
+
+    const payload = {
+      order_status: status,
+      driver_id: validDriverUuid,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Try update matching primary key UUID `id`
+    let { data, error } = await supabase
+      .from('customer_orders')
+      .update(payload)
+      .eq('id', orderId)
+      .select('*');
+
+    // 2. Fallback: Try update matching `order_ref` (e.g. 'RK-4C5D4')
+    if (error || !data || data.length === 0) {
+      const resultByRef = await supabase
+        .from('customer_orders')
+        .update(payload)
+        .eq('order_ref', orderId)
+        .select('*');
+
+      if (resultByRef.data && resultByRef.data.length > 0) {
+        data = resultByRef.data;
+        error = resultByRef.error;
+      }
+    }
+
+    if (error) {
+      console.warn('updateCustomerOrderStatusInDb warning:', error.message);
+    }
+
+    if (!data || data.length === 0) {
+      console.warn('updateCustomerOrderStatusInDb notice: 0 rows modified. RLS policies likely blocking update.');
+      return { 
+        success: false, 
+        error: 'RLS_BLOCKED', 
+        message: 'RLS Blocked: 0 rows modified in Supabase.',
+        driverId: validDriverUuid 
+      };
+    }
+
+    return { success: true, data: data[0], driverId: validDriverUuid };
+  } catch (err) {
+    console.warn('updateCustomerOrderStatusInDb catch notice:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Update the 'status' column in 'customer_orders' table
+ */
+export async function updateCustomerStatusColumnInDb(orderId, dbStatusValue) {
+  try {
+    const payload = {
+      status: dbStatusValue,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Try update matching primary key UUID `id`
+    let { data, error } = await supabase
+      .from('customer_orders')
+      .update(payload)
+      .eq('id', orderId)
+      .select('*');
+
+    // 2. Fallback: Try update matching `order_ref`
+    if (error || !data || data.length === 0) {
+      const resultByRef = await supabase
+        .from('customer_orders')
+        .update(payload)
+        .eq('order_ref', orderId)
+        .select('*');
+
+      if (resultByRef.data && resultByRef.data.length > 0) {
+        data = resultByRef.data;
+        error = resultByRef.error;
+      }
+    }
+
+    if (error) {
+      console.warn('updateCustomerStatusColumnInDb warning:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    if (!data || data.length === 0) {
+      return { success: false, error: 'RLS_BLOCKED' };
+    }
+
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn('updateCustomerStatusColumnInDb catch notice:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+

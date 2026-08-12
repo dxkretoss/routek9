@@ -21,11 +21,12 @@ import {
 import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
-import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
+import { useVehicleClasses } from '../data/vehicleTypes';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
 export default function CompleteProfilePage({ currentUser, onComplete }) {
+  const PRIMARY_VEHICLE_CLASSES = useVehicleClasses();
   const navigate = useNavigate();
   const hasLoadedRef = useRef(false);
 

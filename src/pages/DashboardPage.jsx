@@ -4,7 +4,7 @@ import Toast from '../components/Toast';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 import { US_STATES_LIST } from '../data/statesData';
-import { PRIMARY_VEHICLE_CLASSES, COMPANY_FLEET_OPTION } from '../data/vehicleTypes';
+import { useVehicleClasses, COMPANY_FLEET_OPTION } from '../data/vehicleTypes';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import { getCourses, getCourseLessonsFromDB } from '../lib/courses';
@@ -54,6 +54,7 @@ import {
 
 
 export default function DashboardPage({ currentUser, onLogout, purchasedCourses = [], savedUserRoutes: propSavedRoutes = [], onUpdateProfile, onOpenPricing }) {
+  const PRIMARY_VEHICLE_CLASSES = useVehicleClasses();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 

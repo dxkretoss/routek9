@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { X, Truck, MapPin, DollarSign, Calendar, ShieldCheck, Phone, Mail, CheckCircle2, FileText, Send, Building2, Loader2 } from 'lucide-react';
 import { submitRouteBid } from '../lib/supabase';
-import { PRIMARY_VEHICLE_CLASSES } from '../data/vehicleTypes';
+import { useVehicleClasses } from '../data/vehicleTypes';
 
 export default function RouteDetailModal({ route, onClose }) {
+  const PRIMARY_VEHICLE_CLASSES = useVehicleClasses();
   const [applicantName, setApplicantName] = useState('');
   const [applicantPhone, setApplicantPhone] = useState('');
   const [applicantEmail, setApplicantEmail] = useState('');

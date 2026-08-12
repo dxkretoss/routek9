@@ -23,120 +23,6 @@ import {
 import { ConfirmModal } from './components/AdminComponents';
 import { supabase } from '../../lib/supabase';
 
-// Mock Initial Dispatch Orders for demonstration / fallback
-const INITIAL_ORDERS = [
-  {
-    id: 'ORD-8821',
-    pickup: '1200 Main St, Dallas, TX 75201',
-    dropoff: '850 Medical Plaza, Fort Worth, TX 76104',
-    distanceMiles: 32.4,
-    estTimeMinutes: 42,
-    category: 'Business',
-    deliveryType: 'Medical / Pharmaceutical delivery',
-    vehicle: 'Van',
-    urgency: 'Same day',
-    speed: 'Priority (ASAP - 30 min)',
-    info: 'Gate Code: #4921. Deliver to 3rd floor pharmacy desk. Fragile medical vials.',
-    price: 85.50,
-    status: 'AVAILABLE',
-    postedBy: {
-      id: 'USR-9021',
-      name: 'Dallas BioMed Labs',
-      email: 'logistics@dallasbiomed.com',
-      role: 'Company'
-    },
-    assignedDriver: null,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'ORD-8822',
-    pickup: '450 Commerce Rd, Houston, TX 77002',
-    dropoff: '210 Industrial Blvd, Katy, TX 77494',
-    distanceMiles: 28.1,
-    estTimeMinutes: 35,
-    category: 'Business',
-    deliveryType: 'Automotive Parts & Freight',
-    vehicle: 'Truck',
-    urgency: 'Same day',
-    speed: 'Standard (Within 2 hours)',
-    info: 'Ask for Warehouse Manager Steve at Bay #4. Heavy engine transmission box (850 lbs).',
-    price: 142.00,
-    status: 'ACCEPTED',
-    postedBy: {
-      id: 'USR-3482',
-      name: 'Apex Auto Freight Inc',
-      email: 'dispatch@apexautofreight.com',
-      role: 'Company'
-    },
-    assignedDriver: {
-      id: 'DRV-102',
-      name: 'Marcus Vance',
-      email: 'm.vance.driver@routek9.com',
-      phone: '+1 (555) 234-5678',
-      vehicle: 'Heavy Truck'
-    },
-    createdAt: new Date(Date.now() - 3600000).toISOString()
-  },
-  {
-    id: 'ORD-8823',
-    pickup: '710 N Michigan Ave, Chicago, IL 60611',
-    dropoff: '300 W O\'Hare St, Chicago, IL 60666',
-    distanceMiles: 18.5,
-    estTimeMinutes: 28,
-    category: 'Business',
-    deliveryType: 'Legal & Confidential Documents',
-    vehicle: 'Car',
-    urgency: 'Same day',
-    speed: 'Express (Within 60 min)',
-    info: 'Court filing envelope. Signature required from Attorney Sarah Jenkins upon delivery.',
-    price: 52.80,
-    status: 'IN_TRANSIT',
-    postedBy: {
-      id: 'USR-7721',
-      name: 'Jenkins & Partners Law',
-      email: 'filings@jenkinslaw.com',
-      role: 'Company'
-    },
-    assignedDriver: {
-      id: 'DRV-105',
-      name: 'Sarah Jenkins',
-      email: 's.jenkins@routek9.com',
-      phone: '+1 (555) 876-5432',
-      vehicle: 'Sedan'
-    },
-    createdAt: new Date(Date.now() - 7200000).toISOString()
-  },
-  {
-    id: 'ORD-8824',
-    pickup: '920 Peachtree St NE, Atlanta, GA 30309',
-    dropoff: '500 Buckhead Ave NE, Atlanta, GA 30305',
-    distanceMiles: 6.8,
-    estTimeMinutes: 15,
-    category: 'Personal',
-    deliveryType: 'Retail / E-commerce Package',
-    vehicle: 'Scooter',
-    urgency: 'Same day',
-    speed: 'Standard (Within 2 hours)',
-    info: 'Apt 4B. Leave at doorstep if no answer. Code 8821.',
-    price: 24.50,
-    status: 'COMPLETED',
-    postedBy: {
-      id: 'USR-8812',
-      name: 'Elena Rostova',
-      email: 'elena.rostova@gmail.com',
-      role: 'Customer'
-    },
-    assignedDriver: {
-      id: 'DRV-109',
-      name: 'Alex Rivera',
-      email: 'a.rivera@routek9.com',
-      phone: '+1 (555) 432-1098',
-      vehicle: 'Scooter'
-    },
-    createdAt: new Date(Date.now() - 14400000).toISOString()
-  }
-];
-
 export default function AdminDispatchOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -157,49 +43,85 @@ export default function AdminDispatchOrders() {
     setLoading(true);
     setErrorMsg(null);
     try {
+      // 1. Fetch profiles to link driver and poster info
+      const { data: profilesData, error: profilesErr } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role, phone');
+
+      const profilesList = profilesData || [];
+
+      // 2. Fetch customer orders
       const { data, error } = await supabase
-        .from('dispatch_orders')
+        .from('customer_orders')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.warn("Supabase fetch dispatch_orders notice:", error.message);
-        setOrders(INITIAL_ORDERS);
-      } else if (data && data.length > 0) {
-        const formatted = data.map(o => ({
-          id: o.id,
-          pickup: o.pickup || o.pickup_location,
-          dropoff: o.dropoff || o.dropoff_location,
-          distanceMiles: o.distance_miles || o.distanceMiles || 15.0,
-          estTimeMinutes: o.est_time_minutes || o.estTimeMinutes || 25,
-          category: o.category || 'Business',
-          deliveryType: o.delivery_type || o.deliveryType || 'Courier Package',
-          vehicle: o.vehicle || 'Car',
-          urgency: o.urgency || 'Same day',
-          speed: o.speed || 'Standard',
-          info: o.info || o.instructions || 'No special notes.',
-          price: Number(o.price || o.payout || 50),
-          status: o.status || 'AVAILABLE',
-          postedBy: o.posted_by || {
-            name: o.posted_by_name || o.poster_name || 'Registered Customer',
-            email: o.posted_by_email || o.poster_email || 'customer@routek9.com',
-            role: o.poster_role || 'User'
-          },
-          assignedDriver: o.assigned_driver || o.driver ? {
-            name: o.driver_name || o.driver?.name || 'Assigned Courier',
-            email: o.driver_email || o.driver?.email || 'driver@routek9.com',
-            phone: o.driver_phone || '+1 (555) 000-0000',
-            vehicle: o.driver_vehicle || o.vehicle || 'Vehicle'
-          } : null,
-          createdAt: o.created_at || new Date().toISOString()
-        }));
+        throw error;
+      }
+
+      if (data) {
+        const formatted = data.map(o => {
+          // Find poster profile
+          const poster = profilesList.find(p => p.id === o.customer_id) || {
+            full_name: 'Registered Customer',
+            email: 'customer@routek9.com',
+            role: 'USER'
+          };
+
+          // Find driver profile
+          const driverProfile = o.driver_id ? profilesList.find(p => p.id === o.driver_id) : null;
+
+          // Determine UI status
+          let uiStatus = 'AVAILABLE';
+          const statusLower = String(o.order_status || '').toLowerCase();
+          if (o.driver_id) {
+            if (statusLower === 'in_transit' || statusLower === 'ongoing') uiStatus = 'IN_TRANSIT';
+            else if (statusLower === 'completed' || statusLower === 'delivered') uiStatus = 'COMPLETED';
+            else uiStatus = 'ACCEPTED';
+          } else {
+            uiStatus = 'AVAILABLE';
+          }
+
+          return {
+            id: o.order_ref || `ORD-${o.id.substring(0, 6).toUpperCase()}`,
+            rawId: o.id,
+            pickup: o.pickup_address || 'Unknown Pickup',
+            dropoff: o.dropoff_address || 'Unknown Dropoff',
+            distanceMiles: Number(o.distance_miles || 0),
+            estTimeMinutes: Number(o.estimated_time || 0),
+            category: o.category || 'Business',
+            deliveryType: o.delivery_type || o.category || 'Courier Package',
+            vehicle: o.vehicle_type || 'Car',
+            urgency: o.schedule_type || 'Same day',
+            speed: o.speed_tier || 'Standard',
+            info: o.special_instructions || o.instructions || 'No special notes.',
+            price: Number(o.price || o.payout || 0),
+            status: uiStatus,
+            postedBy: {
+              id: o.customer_id || '',
+              name: poster.full_name || 'Customer',
+              email: poster.email || 'customer@routek9.com',
+              role: poster.role || 'USER'
+            },
+            assignedDriver: driverProfile ? {
+              id: driverProfile.id,
+              name: driverProfile.full_name || 'Assigned Driver',
+              email: driverProfile.email || 'driver@routek9.com',
+              phone: driverProfile.phone || '+1 (555) 000-0000',
+              vehicle: o.vehicle_type || 'Car'
+            } : null,
+            createdAt: o.created_at || new Date().toISOString()
+          };
+        });
         setOrders(formatted);
       } else {
-        setOrders(INITIAL_ORDERS);
+        setOrders([]);
       }
     } catch (err) {
-      console.error("Failed to load dispatch orders:", err);
-      setOrders(INITIAL_ORDERS);
+      console.error("Failed to load dispatch orders from database:", err);
+      setErrorMsg("Failed to load dispatch orders from database.");
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -221,20 +143,49 @@ export default function AdminDispatchOrders() {
   // Update Status Handler
   const handleStatusChange = async (orderId, newStatus) => {
     try {
+      const matchedOrder = orders.find(o => o.id === orderId || o.rawId === orderId);
+      if (!matchedOrder) return;
+
+      let dbOrderStatus = 'pending';
+      let dbDriverId = matchedOrder.assignedDriver?.id || null;
+      let dbDeliveryStatus = 'pending'; // 'status' column
+
+      if (newStatus === 'AVAILABLE') {
+        dbOrderStatus = 'pending';
+        dbDriverId = null;
+        dbDeliveryStatus = 'pending';
+      } else if (newStatus === 'ACCEPTED') {
+        dbOrderStatus = 'accepted';
+        dbDeliveryStatus = 'pending';
+      } else if (newStatus === 'IN_TRANSIT') {
+        dbOrderStatus = 'in_transit';
+        dbDeliveryStatus = 'ongoing';
+      } else if (newStatus === 'COMPLETED') {
+        dbOrderStatus = 'completed';
+        dbDeliveryStatus = 'delivered';
+      } else if (newStatus === 'CANCELLED') {
+        dbOrderStatus = 'cancelled';
+        dbDeliveryStatus = 'pending';
+      }
+
       const { error } = await supabase
-        .from('dispatch_orders')
-        .update({ status: newStatus })
-        .eq('id', orderId);
+        .from('customer_orders')
+        .update({ 
+          order_status: dbOrderStatus,
+          driver_id: dbDriverId,
+          status: dbDeliveryStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', matchedOrder.rawId || matchedOrder.id);
 
       if (error) {
-        console.warn("Supabase update order status warning:", error.message);
+        throw error;
       }
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+      setOrders(prev => prev.map(o => (o.rawId === matchedOrder.rawId || o.id === matchedOrder.id) ? { ...o, status: newStatus } : o));
       showNotification(`Order #${orderId} status updated to ${newStatus}`);
     } catch (err) {
       console.error("Update status error:", err);
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-      showNotification(`Order #${orderId} status updated locally`);
+      showNotification(`Failed to update status in database.`, true);
     }
   };
 
@@ -243,20 +194,22 @@ export default function AdminDispatchOrders() {
     if (!deleteModalState.orderId) return;
     setDeleting(true);
     try {
+      const matchedOrder = orders.find(o => o.id === deleteModalState.orderId || o.rawId === deleteModalState.orderId);
+      const targetId = matchedOrder ? (matchedOrder.rawId || matchedOrder.id) : deleteModalState.orderId;
+
       const { error } = await supabase
-        .from('dispatch_orders')
+        .from('customer_orders')
         .delete()
-        .eq('id', deleteModalState.orderId);
+        .eq('id', targetId);
 
       if (error) {
-        console.warn("Supabase delete order warning:", error.message);
+        throw error;
       }
-      setOrders(prev => prev.filter(o => o.id !== deleteModalState.orderId));
-      showNotification(`Order #${deleteModalState.orderId} deleted successfully!`);
+      setOrders(prev => prev.filter(o => o.rawId !== targetId));
+      showNotification(`Order deleted successfully!`);
     } catch (err) {
       console.error("Delete order error:", err);
-      setOrders(prev => prev.filter(o => o.id !== deleteModalState.orderId));
-      showNotification(`Order deleted from view.`);
+      showNotification(`Failed to delete order from database.`, true);
     } finally {
       setDeleting(false);
       setDeleteModalState({ isOpen: false, orderId: null });
