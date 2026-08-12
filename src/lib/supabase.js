@@ -427,8 +427,19 @@ export async function updateCustomerOrderStatusInDb(orderId, status, driverId = 
  */
 export async function updateCustomerStatusColumnInDb(orderId, dbStatusValue) {
   try {
+    // Map driver status to order_status
+    let orderStatusValue = 'pending';
+    if (dbStatusValue === 'delivered') {
+      orderStatusValue = 'completed';
+    } else if (dbStatusValue === 'ongoing') {
+      orderStatusValue = 'in_transit';
+    } else if (dbStatusValue === 'pending') {
+      orderStatusValue = 'accepted';
+    }
+
     const payload = {
       status: dbStatusValue,
+      order_status: orderStatusValue,
       updated_at: new Date().toISOString()
     };
 

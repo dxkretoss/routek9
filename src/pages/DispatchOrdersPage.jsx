@@ -491,10 +491,28 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
       return;
     }
 
+    let localOrderStatus = 'pending';
+    let localUiStatus = 'ACCEPTED';
+    if (newDbStatus === 'delivered') {
+      localOrderStatus = 'completed';
+      localUiStatus = 'COMPLETED';
+    } else if (newDbStatus === 'ongoing') {
+      localOrderStatus = 'in_transit';
+      localUiStatus = 'IN_TRANSIT';
+    } else if (newDbStatus === 'pending') {
+      localOrderStatus = 'accepted';
+      localUiStatus = 'ACCEPTED';
+    }
+
     // 2. Update Local State
     setOrders(prev => prev.map(o => {
       if (o.rawId === matchedOrder.rawId || o.id === matchedOrder.id) {
-        return { ...o, dbStatus: newDbStatus };
+        return { 
+          ...o, 
+          dbStatus: newDbStatus,
+          rawStatus: localOrderStatus,
+          status: localUiStatus
+        };
       }
       return o;
     }));

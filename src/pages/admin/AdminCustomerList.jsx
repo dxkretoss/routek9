@@ -42,44 +42,40 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
     setLoading(true);
     try {
       let custData = [];
+      let ordersList = [];
 
-      // 1. Query `customer_profiles` table
+      // 1. Query `customer_orders` table first
       try {
-        const { data: cpData, error: cpErr } = await supabase
-          .from('customer_profiles')
+        const { data: ordersData, error: ordersErr } = await supabase
+          .from('customer_orders')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (cpErr) {
-          console.warn('customer_profiles query warning:', cpErr);
-        } else if (cpData && cpData.length > 0) {
-          custData = [...cpData];
+        if (ordersErr) {
+          console.warn("customer_orders fetch warning:", ordersErr);
+        } else if (ordersData) {
+          ordersList = ordersData;
+          setOrders(ordersData);
         }
-      } catch (err) {
-        console.warn('customer_profiles fetch exception:', err);
+      } catch (oErr) {
+        console.warn("customer_orders fetch exception:", oErr);
       }
 
-      // 2. Query non-driver/company/admin profiles from `profiles`
+      // 2. Query non-driver/company/admin profiles directly from the main `profiles` table
       try {
-        const { data: profData } = await supabase
+        const { data: profData, error: profErr } = await supabase
           .from('profiles')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (profData && profData.length > 0) {
+        if (profErr) {
+          console.warn('profiles query warning:', profErr);
+        } else if (profData && profData.length > 0) {
           const customerProfiles = profData.filter(p => {
             const r = (p.role || '').toLowerCase();
             return r !== 'driver' && r !== 'company' && r !== 'admin' && r !== 'superadmin';
           });
-
-          const existingKeys = new Set(custData.map(c => (c.email ? c.email.toLowerCase() : c.id)));
-          customerProfiles.forEach(p => {
-            const key = p.email ? p.email.toLowerCase() : p.id;
-            if (key && !existingKeys.has(key)) {
-              custData.push(p);
-              existingKeys.add(key);
-            }
-          });
+          custData = [...customerProfiles];
         }
       } catch (profErr) {
         console.warn('profiles query notice:', profErr);
@@ -102,16 +98,24 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
         console.warn('localStorage customer query notice:', locErr);
       }
 
-      // Format customer records cleanly
+      // Format customer records cleanly and compute delivery count and total saved/spend dynamically
       const finalList = custData.map((c) => {
+        // Calculate dynamic delivery stats for this customer profile
+        const customerOrders = ordersList.filter(o => o.customer_id === c.id);
+        const completedOrders = customerOrders.filter(o => {
+          const s = String(o.order_status || o.status || '').toLowerCase();
+          return s === 'completed' || s === 'delivered' || s === 'completed_payout';
+        });
+        const totalSavedSpend = completedOrders.reduce((sum, o) => sum + Number(o.price || 0), 0);
+
         return {
           id: c.id || `cp-${Math.random()}`,
           full_name: c.full_name || c.name || c.customer_name || 'Customer',
           email: c.email || c.customer_email || '—',
           phone: c.phone || c.customer_phone || '—',
           avatar_url: c.avatar_url || c.avatar || null,
-          total_deliveries: typeof c.total_deliveries === 'number' ? c.total_deliveries : parseInt(c.total_deliveries || 0, 10),
-          total_saved: typeof c.total_saved === 'number' ? c.total_saved : parseFloat(c.total_saved || 0),
+          total_deliveries: completedOrders.length,
+          total_saved: totalSavedSpend,
           rating: typeof c.rating === 'number' ? c.rating : parseFloat(c.rating || 5.0),
           created_at: c.created_at || new Date().toISOString(),
           updated_at: c.updated_at || new Date().toISOString()
@@ -119,22 +123,6 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
       });
 
       setCustomers(finalList);
-
-      // 4. Query `customer_orders` table
-      try {
-        const { data: ordersData, error: ordersErr } = await supabase
-          .from('customer_orders')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (ordersErr) {
-          console.warn("customer_orders fetch warning:", ordersErr);
-        } else if (ordersData) {
-          setOrders(ordersData);
-        }
-      } catch (oErr) {
-        console.warn("customer_orders fetch exception:", oErr);
-      }
 
     } catch (err) {
       console.warn("Admin customer data load warning:", err);
