@@ -411,7 +411,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     });
     setNotification({
       type: 'success',
-      message: `Order ${matchedOrder.id} status updated to ACCEPTED & driver_id set to ${assignedId} in database!`
+      message: `Order ${matchedOrder.id} status updated to ACCEPTED & driver_id set to ${assignedId}!`
     });
   };
 
@@ -507,8 +507,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     // 2. Update Local State
     setOrders(prev => prev.map(o => {
       if (o.rawId === matchedOrder.rawId || o.id === matchedOrder.id) {
-        return { 
-          ...o, 
+        return {
+          ...o,
           dbStatus: newDbStatus,
           rawStatus: localOrderStatus,
           status: localUiStatus
@@ -517,7 +517,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
       return o;
     }));
 
-    setNotification({ type: 'success', message: `Order ${matchedOrder.id} status updated to ${newDbStatus.toUpperCase()} in database!` });
+    setNotification({ type: 'success', message: `Order ${matchedOrder.id} status updated to ${newDbStatus.toUpperCase()}!` });
   };
 
   return (
@@ -875,13 +875,12 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                             <select
                               value={order.dbStatus}
                               onChange={(e) => handleUpdateDbStatusColumn(order.rawId || order.id, e.target.value)}
-                              className={`px-3 py-2 rounded-xl border font-extrabold text-[10px] tracking-wider uppercase transition-all cursor-pointer inline-flex items-center focus:outline-hidden ${
-                                order.dbStatus === 'delivered'
-                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/75'
-                                  : order.dbStatus === 'ongoing'
+                              className={`px-3 py-2 rounded-xl border font-extrabold text-[10px] tracking-wider uppercase transition-all cursor-pointer inline-flex items-center focus:outline-hidden ${order.dbStatus === 'delivered'
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/75'
+                                : order.dbStatus === 'ongoing'
                                   ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100/75'
                                   : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100/75'
-                              }`}
+                                }`}
                             >
                               <option value="pending">Pending</option>
                               <option value="ongoing">Ongoing</option>

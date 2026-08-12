@@ -148,7 +148,7 @@ export default function AdminGovContracts() {
     if (res.success) {
       setContracts(res.list);
       setIsModalOpen(false);
-      showToast(editingContract ? "Contract updated in database." : "New government contract added and saved in database!", "success");
+      showToast(editingContract ? "Contract updated in database." : "New government contract added and saved!", "success");
     } else {
       showToast("Failed to save contract to database.", "warning");
     }

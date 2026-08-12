@@ -141,7 +141,7 @@ export default function AdminExamQuestions() {
         showNotification("Question added to local view (Note: Supabase table exam_questions missing or blocked RLS)");
       } else {
         await fetchQuestions();
-        showNotification("Exam Question created successfully in database!");
+        showNotification("Exam Question created successfully!");
       }
       setShowAddModal(false);
     } catch (err) {
