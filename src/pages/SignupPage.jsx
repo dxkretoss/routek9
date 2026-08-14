@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import footerLogo from '../assets/footerlogo.png';
+import logo from '../assets/logo.png';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, Truck, ArrowRight, Lock, Mail, User, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck, Info } from 'lucide-react';
 import { supabase, createNotification } from '../lib/supabase';
@@ -289,7 +291,7 @@ export default function SignupPage({ onSignup }) {
         {/* Logo */}
         <div className="relative z-10 animate-fadeIn">
           <Link to="/" className="flex items-center gap-3 group inline-flex">
-            <img src='src/assets/footerlogo.png' className="h-11" />
+            <img src={footerLogo} className="h-11" />
 
           </Link>
         </div>
@@ -337,7 +339,7 @@ export default function SignupPage({ onSignup }) {
         {/* Logo for mobile viewports only */}
         <div className="flex lg:hidden items-center justify-center mb-8">
           <Link to="/" className="flex items-center gap-3 group">
-            <img src='src/assets/logo.png' className="h-11" />
+            <img src={logo} className="h-11" />
 
           </Link>
         </div>

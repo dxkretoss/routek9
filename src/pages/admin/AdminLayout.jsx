@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import adminLoginLogo from '../../assets/adminloginlogo.png';
+import footerLogo from '../../assets/footerlogo.png';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import {
@@ -263,9 +265,9 @@ export default function AdminLayout({ currentUser, onLogout }) {
         <div className={`p-5 border-b border-white/10 ${collapsed ? 'flex justify-center px-2' : ''}`}>
           <Link to="/admin?section=dashboard" className="flex items-center gap-3">
             {collapsed ? (
-              <img src='src/assets/adminloginlogo.png' className='h-8 w-auto object-contain' />
+              <img src={adminLoginLogo} className='h-8 w-auto object-contain' />
             ) : (
-              <img src='src/assets/footerlogo.png' className='h-11 w-auto object-contain' />
+              <img src={footerLogo} className='h-11 w-auto object-contain' />
             )}
           </Link>
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import logo from '../assets/logo.png';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Menu, X, LogOut, LayoutDashboard, GraduationCap, Bell, Users, Crown, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -85,7 +86,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           {/* Brand Logo */}
           <Link to="/" className="flex items-center gap-3 shrink-0">
             {/* Circle Badge Logo */}
-            <img src='src/assets/logo.png' className="h-11" />
+            <img src={logo} className="h-11" />
           </Link>
 
           {/* Desktop Navigation Links Container */}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import adminLoginLogo from '../../assets/adminloginlogo.png';
 import { ShieldCheck, Lock, Mail, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -71,7 +72,7 @@ export default function AdminLoginPage({ onAdminLogin }) {
       <div className="relative w-full max-w-md space-y-8 animate-fadeIn">
         {/* Brand Logo */}
         <div className="text-center space-y-4">
-          <img src='src/assets/adminloginlogo.png' className='h-20 mx-auto'></img>
+          <img src={adminLoginLogo} className='h-20 mx-auto'></img>
           <div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight font-serif-heading">
               Admin Console

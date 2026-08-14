@@ -1,4 +1,5 @@
 import React from 'react';
+import footerLogo from '../assets/footerlogo.png';
 
 export default function Footer({ onSelectState }) {
   return (
@@ -8,7 +9,7 @@ export default function Footer({ onSelectState }) {
 
           {/* Logo & Brand */}
           <div className="flex items-center gap-3">
-            <img src='src/assets/footerlogo.png' className="h-11" />
+            <img src={footerLogo} className="h-11" />
           </div>
 
           {/* Simple Info & Copyright */}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import footerLogo from '../assets/footerlogo.png';
 import { Link, useNavigate } from 'react-router-dom';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
@@ -276,7 +277,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
 
         <div className="relative z-10">
           <Link to="/" className="flex items-center gap-3 group inline-flex">
-            <img src='src/assets/footerlogo.png' className='h-11' />
+            <img src={footerLogo} className='h-11' />
           </Link>
         </div>
 

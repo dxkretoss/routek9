@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import footerLogo from '../assets/footerlogo.png';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -155,7 +156,7 @@ export default function ResetPasswordPage() {
         {/* Top Logo & Header */}
         <div className="relative z-10">
           <Link to="/" className="inline-flex items-center gap-3 group">
-            <img src='src/assets/footerlogo.png' className="h-11" />
+            <img src={footerLogo} className="h-11" />
 
           </Link>
         </div>
@@ -196,7 +197,7 @@ export default function ResetPasswordPage() {
         {/* Mobile Logo Header */}
         <div className="flex lg:hidden items-center justify-center mb-8">
           <Link to="/" className="flex items-center gap-3 group">
-            <img src='src/assets/footerlogo.png' className="h-11" />
+            <img src={footerLogo} className="h-11" />
 
           </Link>
         </div>
