@@ -85,24 +85,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           {/* Brand Logo */}
           <Link to="/" className="flex items-center gap-3 shrink-0">
             {/* Circle Badge Logo */}
-            <div className="w-11 h-11 rounded-full bg-[#0d1b2a] border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-xs relative overflow-hidden shrink-0">
-              <span className="text-[7px] font-bold uppercase tracking-tighter text-slate-300">ROUTE</span>
-              <span className="text-xs font-extrabold tracking-tight text-rose-500 leading-none">K9</span>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#0b132b] font-sans">
-                  ROUTE K9
-                </span>
-                <span className="px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-600 rounded-full border border-rose-200">
-                  PRO
-                </span>
-              </div>
-              <p className="text-[8px] font-semibold tracking-wider text-slate-500 uppercase">
-                CONTRACT DRIVERS OF AMERICA
-              </p>
-            </div>
+            <img src='src/assets/logo.png' className="h-11" />
           </Link>
 
           {/* Desktop Navigation Links Container */}
@@ -326,13 +309,13 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
             </span>
           </button>
 
-          <Link to="/training" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-rose-600 font-extrabold">Training Library</Link>
+          {/* <Link to="/training" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-rose-600 font-extrabold">Training Library</Link> */}
 
           {showWhosHiring && (
             <a href="/#whos-hiring-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">Who's Hiring</a>
           )}
 
-          <a href="/#faq-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">FAQ</a>
+          {/* <a href="/#faq-section" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">FAQ</a> */}
 
           <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
             {currentUser ? (

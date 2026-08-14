@@ -71,7 +71,7 @@ export default function ContractReadinessSection({ currentUser }) {
           if (cached && !hasLoadedRef.current) {
             setCheckedItems(JSON.parse(cached));
           }
-        } catch {}
+        } catch { }
 
         // Async fetch from Supabase
         const savedMap = await loadUserChecklistFromDb(currentUser.id, 'readiness_checklist');
@@ -79,7 +79,7 @@ export default function ContractReadinessSection({ currentUser }) {
           setCheckedItems(savedMap);
           try {
             localStorage.setItem(bufferKey, JSON.stringify(savedMap));
-          } catch {}
+          } catch { }
         }
         hasLoadedRef.current = true;
         setLoadingChecklist(false);
@@ -118,7 +118,7 @@ export default function ContractReadinessSection({ currentUser }) {
       const bufferKey = `rk9_buffer_${currentUser.id}_readiness_checklist`;
       try {
         localStorage.setItem(bufferKey, JSON.stringify(updatedMap));
-      } catch {}
+      } catch { }
 
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -165,7 +165,7 @@ export default function ContractReadinessSection({ currentUser }) {
         </div>
 
         {/* Tab Buttons */}
-        <div className="flex gap-2">
+        <div className="flex flex-col lg:flex-row gap-2">
           <button
             onClick={() => setActiveTab('checklist')}
             className={`px-5 py-2.5 rounded-xl text-sm font-bold border transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'checklist'

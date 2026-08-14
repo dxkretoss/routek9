@@ -71,10 +71,7 @@ export default function AdminLoginPage({ onAdminLogin }) {
       <div className="relative w-full max-w-md space-y-8 animate-fadeIn">
         {/* Brand Logo */}
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-rose-600/20 border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-lg mx-auto">
-            <span className="text-[8px] font-bold uppercase tracking-tighter text-slate-300">ROUTE</span>
-            <span className="text-sm font-extrabold tracking-tight text-rose-500 leading-none">K9</span>
-          </div>
+          <img src='src/assets/adminloginlogo.png' className='h-20 mx-auto'></img>
           <div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight font-serif-heading">
               Admin Console

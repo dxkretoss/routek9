@@ -4340,7 +4340,7 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                   Cancel Import
                 </button>
               ) : (
-                <div className="flex gap-2.5 w-full">
+                <div className="flex flex-col lg:flex-row gap-2.5 w-full">
                   <button
                     type="button"
                     onClick={() => setCsvImportState(null)}

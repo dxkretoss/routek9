@@ -276,17 +276,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
 
         <div className="relative z-10">
           <Link to="/" className="flex items-center gap-3 group inline-flex">
-            <div className="w-11 h-11 rounded-full bg-[#0d1b2a] border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-              <span className="text-[7px] font-bold uppercase text-slate-300">ROUTE</span>
-              <span className="text-xs font-extrabold text-rose-500 leading-none">K9</span>
-            </div>
-            <div className="text-left font-sans">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xl font-bold tracking-tight text-white">ROUTE K9</span>
-                <span className="px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-rose-600 text-white rounded-full border border-rose-500">PRO</span>
-              </div>
-              <p className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">CONTRACT DRIVERS OF AMERICA</p>
-            </div>
+            <img src='src/assets/footerlogo.png' className='h-11' />
           </Link>
         </div>
 

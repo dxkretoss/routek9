@@ -255,70 +255,68 @@ export default function AdminLayout({ currentUser, onLogout }) {
   }
 
   // ─── Sidebar Content ──────────────────────────────────────
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full">
-      {/* Brand */}
-      <div className="p-5 border-b border-white/10">
-        <Link to="/admin?section=dashboard" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-rose-600/20 border-2 border-rose-600 flex flex-col items-center justify-center text-white shadow-xs shrink-0">
-            <span className="text-[6px] font-bold uppercase tracking-tighter text-slate-300">ROUTE</span>
-            <span className="text-[10px] font-extrabold tracking-tight text-rose-500 leading-none">K9</span>
-          </div>
-          {!sidebarCollapsed && (
-            <div className="overflow-hidden">
-              <div className="text-sm font-extrabold text-white tracking-tight">ROUTE K9</div>
-              <div className="text-[10px] font-semibold text-rose-400 uppercase tracking-wider">Admin Panel</div>
+  const SidebarContent = ({ isMobile = false } = {}) => {
+    const collapsed = sidebarCollapsed && !isMobile;
+    return (
+      <div className="flex flex-col h-full">
+        {/* Brand */}
+        <div className={`p-5 border-b border-white/10 ${collapsed ? 'flex justify-center px-2' : ''}`}>
+          <Link to="/admin?section=dashboard" className="flex items-center gap-3">
+            {collapsed ? (
+              <img src='src/assets/adminloginlogo.png' className='h-8 w-auto object-contain' />
+            ) : (
+              <img src='src/assets/footerlogo.png' className='h-11 w-auto object-contain' />
+            )}
+          </Link>
+        </div>
+
+        {/* Nav Items */}
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          {SIDEBAR_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeSection === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => handleSectionChange(item.key)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer group ${isActive
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                  } ${collapsed ? 'justify-center' : ''}`}
+                title={collapsed ? item.label : undefined}
+              >
+                <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-rose-400'}`} />
+                {!collapsed && <span>{item.label}</span>}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Admin User Footer */}
+        <div className="p-4 border-t border-white/10 space-y-2">
+          {!collapsed && (
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-8 h-8 rounded-full bg-rose-600/20 border border-rose-600/50 flex items-center justify-center shrink-0">
+                <UserCircle className="w-4 h-4 text-rose-400" />
+              </div>
+              <div className="overflow-hidden">
+                <div className="text-xs font-bold text-white truncate">{currentUser?.name || 'Admin'}</div>
+                <div className="text-[10px] text-slate-500 truncate">{currentUser?.email || ''}</div>
+              </div>
             </div>
           )}
-        </Link>
+          <button
+            onClick={handleAdminLogout}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-rose-600/10 hover:text-rose-400 transition-all cursor-pointer ${collapsed ? 'justify-center' : ''}`}
+            title="Admin Logout"
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!collapsed && <span>Admin Logout</span>}
+          </button>
+        </div>
       </div>
-
-      {/* Nav Items */}
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {SIDEBAR_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeSection === item.key;
-          return (
-            <button
-              key={item.key}
-              onClick={() => handleSectionChange(item.key)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer group ${isActive
-                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                }`}
-              title={sidebarCollapsed ? item.label : undefined}
-            >
-              <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-rose-400'}`} />
-              {!sidebarCollapsed && <span>{item.label}</span>}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Admin User Footer */}
-      <div className="p-4 border-t border-white/10 space-y-2">
-        {!sidebarCollapsed && (
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-8 h-8 rounded-full bg-rose-600/20 border border-rose-600/50 flex items-center justify-center shrink-0">
-              <UserCircle className="w-4 h-4 text-rose-400" />
-            </div>
-            <div className="overflow-hidden">
-              <div className="text-xs font-bold text-white truncate">{currentUser?.name || 'Admin'}</div>
-              <div className="text-[10px] text-slate-500 truncate">{currentUser?.email || ''}</div>
-            </div>
-          </div>
-        )}
-        <button
-          onClick={handleAdminLogout}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-rose-600/10 hover:text-rose-400 transition-all cursor-pointer ${sidebarCollapsed ? 'justify-center' : ''}`}
-          title="Admin Logout"
-        >
-          <LogOut className="w-4 h-4 shrink-0" />
-          {!sidebarCollapsed && <span>Admin Logout</span>}
-        </button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   // ─── Shared data props for list pages ───────────────────────
   const listProps = {
@@ -396,7 +394,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
             >
               <X className="w-5 h-5" />
             </button>
-            <SidebarContent />
+            <SidebarContent isMobile={true} />
           </aside>
         </div>
       )}
@@ -406,7 +404,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
         className={`hidden lg:flex flex-col bg-[#0b132b] border-r border-white/5 transition-all duration-300 shrink-0 sticky top-0 h-screen ${sidebarCollapsed ? 'w-[72px]' : 'w-64'
           }`}
       >
-        <SidebarContent />
+        <SidebarContent isMobile={false} />
         {/* Collapse Toggle */}
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
