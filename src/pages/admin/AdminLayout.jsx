@@ -21,7 +21,9 @@ import {
   Package,
   ShieldCheck,
   Users,
-  Car
+  Car,
+  HeartPulse,
+  Calendar
 } from 'lucide-react';
 
 import AdminLoginPage from './AdminLoginPage';
@@ -36,6 +38,8 @@ import AdminRevenue from './AdminRevenue';
 import AdminSettings from './AdminSettings';
 import AdminGovContracts from './AdminGovContracts';
 import AdminVehicles from './AdminVehicles';
+import AdminCprNotary from './AdminCprNotary';
+import AdminCprNotaryBookings from './AdminCprNotaryBookings';
 
 // ─── SIDEBAR NAV CONFIG ─────────────────────────────────────────
 const SIDEBAR_ITEMS = [
@@ -46,6 +50,8 @@ const SIDEBAR_ITEMS = [
   { key: 'gov_contracts', label: 'Gov Contracts', icon: ShieldCheck },
   { key: 'dispatch_orders', label: 'Dispatch Orders', icon: Package },
   { key: 'vehicles', label: 'Vehicle Management', icon: Car },
+  { key: 'cpr_notary', label: 'CPR Services', icon: HeartPulse },
+  { key: 'cpr_notary_bookings', label: 'CPR Bookings', icon: Calendar },
   { key: 'courses', label: 'Courses', icon: BookOpen },
   { key: 'exam_questions', label: 'Exam Questions', icon: HelpCircle },
   { key: 'revenue', label: 'Revenue', icon: DollarSign },
@@ -363,6 +369,10 @@ export default function AdminLayout({ currentUser, onLogout }) {
         return <AdminDispatchOrders />;
       case 'vehicles':
         return <AdminVehicles />;
+      case 'cpr_notary':
+        return <AdminCprNotary />;
+      case 'cpr_notary_bookings':
+        return <AdminCprNotaryBookings />;
       case 'revenue':
         return <AdminRevenue />;
       case 'settings':
