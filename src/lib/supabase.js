@@ -407,11 +407,11 @@ export async function updateCustomerOrderStatusInDb(orderId, status, driverId = 
 
     if (!data || data.length === 0) {
       console.warn('updateCustomerOrderStatusInDb notice: 0 rows modified. RLS policies likely blocking update.');
-      return { 
-        success: false, 
-        error: 'RLS_BLOCKED', 
+      return {
+        success: false,
+        error: 'RLS_BLOCKED',
         message: 'RLS Blocked: 0 rows modified in Supabase.',
-        driverId: validDriverUuid 
+        driverId: validDriverUuid
       };
     }
 
@@ -479,5 +479,217 @@ export async function updateCustomerStatusColumnInDb(orderId, dbStatusValue) {
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * CPR & Notary Services Database Helpers for Supabase
+ */
+
+export async function fetchCprNotaryServices() {
+  try {
+    const { data, error } = await supabase
+      .from('cpr_notary_services')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn("fetchCprNotaryServices notice:", err.message);
+    return [];
+  }
+}
+
+export async function createCprNotaryService(serviceData) {
+  try {
+    const category = serviceData.category || 'cpr';
+    const priceUnitToSave = serviceData.price_unit || (category === 'cpr' ? 'per person' : 'per signature');
+
+    const payload = {
+      category: category,
+      title: serviceData.title,
+      subtitle: serviceData.subtitle || '',
+      description: serviceData.description || '',
+      icon_name: serviceData.icon_name || 'health_and_safety',
+      base_price: parseFloat(serviceData.base_price) || 0.0,
+      per_unit_price: parseFloat(serviceData.per_unit_price) || 0.0,
+      price_unit: priceUnitToSave,
+      is_active: Boolean(serviceData.is_active),
+      dynamic_fields: Array.isArray(serviceData.dynamic_fields) ? serviceData.dynamic_fields : [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('cpr_notary_services')
+      .insert([payload])
+      .select('*');
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return { success: false, error: 'Insert returned 0 rows. Check Supabase RLS policies on cpr_notary_services table.' };
+    }
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn("createCprNotaryService notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateCprNotaryService(serviceId, serviceData) {
+  try {
+    const category = serviceData.category || 'cpr';
+    const priceUnitToSave = serviceData.price_unit || (category === 'cpr' ? 'per person' : 'per signature');
+
+    const payload = {
+      category: category,
+      title: serviceData.title,
+      subtitle: serviceData.subtitle || '',
+      description: serviceData.description || '',
+      icon_name: serviceData.icon_name || 'health_and_safety',
+      base_price: parseFloat(serviceData.base_price) || 0.0,
+      per_unit_price: parseFloat(serviceData.per_unit_price) || 0.0,
+      price_unit: priceUnitToSave,
+      is_active: Boolean(serviceData.is_active),
+      dynamic_fields: Array.isArray(serviceData.dynamic_fields) ? serviceData.dynamic_fields : [],
+      updated_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
+      .from('cpr_notary_services')
+      .update(payload)
+      .eq('id', serviceId)
+      .select('*');
+
+    if (error) {
+      console.warn("updateCprNotaryService update warning:", error.message);
+    }
+
+    if (!data || data.length === 0) {
+      const { data: upsertData, error: upsertErr } = await supabase
+        .from('cpr_notary_services')
+        .upsert({ id: serviceId, ...payload })
+        .select('*');
+
+      if (upsertErr) {
+        return {
+          success: false,
+          error: error?.message || upsertErr.message || 'Supabase RLS Blocked: 0 rows modified. Enable UPDATE policy on cpr_notary_services table.'
+        };
+      }
+      data = upsertData;
+    }
+
+    if (!data || data.length === 0) {
+      return {
+        success: false,
+        error: 'Supabase RLS Blocked: 0 rows modified. Please check table permissions in Supabase dashboard.'
+      };
+    }
+
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn("updateCprNotaryService notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function toggleCprNotaryServiceStatus(serviceId, isActive) {
+  try {
+    const payload = {
+      is_active: Boolean(isActive),
+      updated_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
+      .from('cpr_notary_services')
+      .update(payload)
+      .eq('id', serviceId)
+      .select('*');
+
+    if (error) {
+      console.warn("toggleCprNotaryServiceStatus update warning:", error.message);
+    }
+
+    if (!data || data.length === 0) {
+      const { data: upsertData, error: upsertErr } = await supabase
+        .from('cpr_notary_services')
+        .upsert({ id: serviceId, ...payload })
+        .select('*');
+
+      if (upsertErr) {
+        return {
+          success: false,
+          error: error?.message || upsertErr.message || 'Supabase RLS Blocked: 0 rows modified. Enable UPDATE policy on cpr_notary_services table.'
+        };
+      }
+      data = upsertData;
+    }
+
+    if (!data || data.length === 0) {
+      return {
+        success: false,
+        error: 'Supabase RLS Blocked: 0 rows modified. Please check table permissions in Supabase dashboard.'
+      };
+    }
+
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn("toggleCprNotaryServiceStatus catch notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteCprNotaryService(serviceId) {
+  try {
+    const { data, error } = await supabase
+      .from('cpr_notary_services')
+      .delete()
+      .eq('id', serviceId)
+      .select('*');
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      const { error: delErr } = await supabase
+        .from('cpr_notary_services')
+        .delete()
+        .eq('id', serviceId);
+      if (delErr) throw delErr;
+    }
+    return { success: true, data };
+  } catch (err) {
+    console.warn("deleteCprNotaryService notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Fetch CPR & Notary Customer Bookings (Read Only)
+ */
+export async function fetchCprNotaryBookings() {
+  try {
+    let { data, error } = await supabase
+      .from('cpr_bookings')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      const fallback = await supabase
+        .from('cpr_notary_bookings')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!fallback.error && fallback.data) {
+        data = fallback.data;
+        error = null;
+      }
+    }
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn("fetchCprNotaryBookings notice:", err.message);
+    return [];
+  }
+}
+
 
 
