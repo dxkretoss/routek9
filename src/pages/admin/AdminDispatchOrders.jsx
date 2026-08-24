@@ -53,6 +53,18 @@ export default function AdminDispatchOrders() {
   const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, orderId: null });
   const [deleting, setDeleting] = useState(false);
 
+  // Helper to format vehicle name and resolve UUIDs to readable vehicle types
+  const formatVehicleName = (val, vMap = {}) => {
+    if (!val) return 'Cargo Van';
+    const str = String(val).trim();
+    if (vMap[str.toLowerCase()]) return vMap[str.toLowerCase()];
+    // If it's a raw UUID and not in map, provide clean fallback
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) {
+      return 'Cargo Van';
+    }
+    return str;
+  };
+
   // Fetch Dispatch Orders from Supabase DB
   const fetchDispatchOrders = async () => {
     setLoading(true);
@@ -65,7 +77,7 @@ export default function AdminDispatchOrders() {
         const [cpRes, pRes, vRes] = await Promise.allSettled([
           supabase.from('customer_profiles').select('*'),
           supabase.from('profiles').select('id, email, full_name, role, phone'),
-          supabase.from('vehicle_types').select('id, name')
+          supabase.from('vehicle_types').select('*')
         ]);
 
         const combinedMap = new Map();
@@ -84,7 +96,10 @@ export default function AdminDispatchOrders() {
 
         if (vRes.status === 'fulfilled' && vRes.value.data) {
           vRes.value.data.forEach(v => {
-            vehicleMap[String(v.id).toLowerCase()] = v.name;
+            const vName = v.vehicle_name || v.name || v.title || v.type_name;
+            if (vName) {
+              vehicleMap[String(v.id).toLowerCase()] = vName;
+            }
           });
         }
       } catch (profFetchErr) {
@@ -125,7 +140,7 @@ export default function AdminDispatchOrders() {
             uiStatus = 'AVAILABLE';
           }
 
-          const vehicleName = vehicleMap[String(o.vehicle_type || '').toLowerCase()] || o.vehicle_type || 'Standard Vehicle';
+          const vehicleName = formatVehicleName(o.vehicle_type, vehicleMap);
 
           return {
             ...o,
@@ -626,12 +641,11 @@ export default function AdminDispatchOrders() {
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                       {selectedOrder.category || 'Instant'}
                     </span>
-                    <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                      selectedOrder.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
-                      selectedOrder.status === 'IN_TRANSIT' ? 'bg-indigo-100 text-indigo-800' :
-                      selectedOrder.status === 'ACCEPTED' ? 'bg-blue-100 text-blue-800' :
-                      'bg-amber-100 text-amber-800'
-                    }`}>
+                    <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${selectedOrder.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
+                        selectedOrder.status === 'IN_TRANSIT' ? 'bg-indigo-100 text-indigo-800' :
+                          selectedOrder.status === 'ACCEPTED' ? 'bg-blue-100 text-blue-800' :
+                            'bg-amber-100 text-amber-800'
+                      }`}>
                       {selectedOrder.order_status || selectedOrder.status}
                     </span>
                   </div>
