@@ -43,12 +43,30 @@ export default function AdminDispatchOrders() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      // 1. Fetch profiles to link driver and poster info
-      const { data: profilesData, error: profilesErr } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, role, phone');
+      // 1. Fetch customer_profiles and general profiles to link poster & driver info
+      let profilesList = [];
+      try {
+        const [cpRes, pRes] = await Promise.allSettled([
+          supabase.from('customer_profiles').select('*'),
+          supabase.from('profiles').select('id, email, full_name, role, phone')
+        ]);
 
-      const profilesList = profilesData || [];
+        const combinedMap = new Map();
+        if (pRes.status === 'fulfilled' && pRes.value.data) {
+          pRes.value.data.forEach(p => { if (p.id) combinedMap.set(String(p.id).toLowerCase(), p); });
+        }
+        if (cpRes.status === 'fulfilled' && cpRes.value.data) {
+          cpRes.value.data.forEach(cp => {
+            if (cp.id) {
+              const existing = combinedMap.get(String(cp.id).toLowerCase()) || {};
+              combinedMap.set(String(cp.id).toLowerCase(), { ...existing, ...cp, role: cp.role || 'customer' });
+            }
+          });
+        }
+        profilesList = Array.from(combinedMap.values());
+      } catch (profFetchErr) {
+        console.warn("Profiles fetch exception:", profFetchErr);
+      }
 
       // 2. Fetch customer orders
       const { data, error } = await supabase
@@ -63,10 +81,10 @@ export default function AdminDispatchOrders() {
       if (data) {
         const formatted = data.map(o => {
           // Find poster profile
-          const poster = profilesList.find(p => p.id === o.customer_id) || {
-            full_name: 'Registered Customer',
-            email: 'customer@routek9.com',
-            role: 'USER'
+          const poster = profilesList.find(p => String(p.id).toLowerCase() === String(o.customer_id || '').toLowerCase()) || {
+            full_name: o.customer_name || o.sender_name || 'Customer',
+            email: o.customer_email || 'customer@routek9.com',
+            role: 'CUSTOMER'
           };
 
           // Find driver profile

@@ -250,8 +250,11 @@ export default function AdminCprNotaryBookings() {
           <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight">
             CPR & Notary Bookings
           </h2>
-          <p className="text-xs text-slate-500 font-medium mt-1">
+          {/* <p className="text-xs text-slate-500 font-medium mt-1">
             Displaying customer bookings with service titles from <code className="text-rose-600 font-mono text-[11px]">cpr_notary_services</code>
+          </p> */}
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Manage dynamic mobile CPR certifications and Notary public services.
           </p>
         </div>
 

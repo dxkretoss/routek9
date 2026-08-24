@@ -18,14 +18,50 @@ import {
   CourseCard
 } from './components/AdminComponents';
 
-export default function AdminDashboard({ drivers = [], companies = [], allUsers = [], loading, error, onNavigate }) {
+export default function AdminDashboard({ drivers = [], companies = [], allUsers = [], driversCount = 0, companiesCount = 0, loading, error, onNavigate }) {
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [adminSavedRoutes, setAdminSavedRoutes] = useState([]);
-
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [driverCount, setDriverCount] = useState(driversCount || drivers.length || 0);
+  const [companyCount, setCompanyCount] = useState(companiesCount || companies.length || 0);
+  const [recentUsers, setRecentUsers] = useState([]);
+  const [loadingStats, setLoadingStats] = useState(!drivers.length && !driversCount);
 
   useEffect(() => {
+    async function loadDashboardStats() {
+      try {
+        const { data: profData, error: profErr } = await supabase
+          .from('profiles')
+          .select('id, role, full_name, email, city, state_code, created_at, status, is_active, vehicle');
+
+        if (!profErr && profData && Array.isArray(profData)) {
+          const dList = profData.filter(u => {
+            const r = String(u.role || '').toLowerCase();
+            return r === 'driver' || !r || r === 'user';
+          });
+          const cList = profData.filter(u => String(u.role || '').toLowerCase() === 'company');
+          setDriverCount(dList.length);
+          setCompanyCount(cList.length);
+
+          const sorted = [...profData].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+          setRecentUsers(sorted.slice(0, 5));
+        } else {
+          // Fallback query if needed
+          const { data: latestUsers } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(5);
+          if (latestUsers) setRecentUsers(latestUsers);
+        }
+      } catch (err) {
+        console.warn("Failed to load dashboard stats:", err);
+      } finally {
+        setLoadingStats(false);
+      }
+    }
+
     async function loadDashboardCourses() {
       try {
         const data = await getCourses();
@@ -36,6 +72,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
         setLoadingCourses(false);
       }
     }
+
     async function loadSupabaseAdminRoutes() {
       try {
         const { data } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
@@ -65,6 +102,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
         console.warn("Could not fetch Supabase admin routes:", err);
       }
     }
+
     async function fetchRevenue() {
       try {
         const { data, error } = await supabase
@@ -86,22 +124,29 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
         console.warn("Failed to calculate total revenue:", err);
       }
     }
+
+    loadDashboardStats();
     loadDashboardCourses();
     loadSupabaseAdminRoutes();
     fetchRevenue();
   }, []);
 
-  const totalDrivers = drivers.length;
-  const totalCompanies = companies.length;
+  const totalDrivers = driverCount || driversCount || drivers.length || 0;
+  const totalCompanies = companyCount || companiesCount || companies.length || 0;
   const totalCourses = courses.length;
-  const recentRegistrations = drivers.concat(companies).slice(0, 5);
+  const recentRegistrations = recentUsers.length > 0
+    ? recentUsers
+    : allUsers.length > 0
+      ? [...allUsers].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 5)
+      : drivers.concat(companies).slice(0, 5);
   const displayedCourses = courses.slice(0, 3);
+  const isOverallLoading = (loading && !driverCount) || loadingStats;
 
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Top Key Performance Indicators (KPI Grid) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {loading ? (
+        {isOverallLoading ? (
           <>
             <StatCardSkeleton />
             <StatCardSkeleton />

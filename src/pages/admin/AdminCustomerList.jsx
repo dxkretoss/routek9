@@ -23,6 +23,7 @@ import { formatPhoneNumber } from './components/AdminComponents';
 
 export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
   const [customers, setCustomers] = useState([]);
+  const [allProfiles, setAllProfiles] = useState([]);
   const [orders, setOrders] = useState([]);
   const [activeTab, setActiveTab] = useState('directory'); // 'directory' or 'orders'
   const [selectedCustomerModal, setSelectedCustomerModal] = useState(null);
@@ -44,12 +45,70 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
     return parts[0].substring(0, 2).toUpperCase();
   }
 
+  function getProfileFullName(p) {
+    if (!p) return null;
+    if (p.full_name && String(p.full_name).trim() !== '') return String(p.full_name).trim();
+    if (p.name && String(p.name).trim() !== '') return String(p.name).trim();
+    if (p.first_name || p.last_name) {
+      const combined = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+      if (combined) return combined;
+    }
+    if (p.email && String(p.email).includes('@')) {
+      const handle = String(p.email).split('@')[0];
+      return handle
+        .replace(/[._-]+/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+    }
+    return null;
+  }
+
+  function getOrderCustomerDetails(ord, allProfilesList = [], customersList = []) {
+    if (!ord) return { name: 'Customer', email: null, phone: null, avatar_url: null };
+
+    const matchedProfile = (allProfilesList || []).find(p => String(p.id).toLowerCase() === String(ord.customer_id || '').toLowerCase())
+      || (customersList || []).find(c => String(c.id).toLowerCase() === String(ord.customer_id || '').toLowerCase());
+
+    const profileName = getProfileFullName(matchedProfile);
+
+    const name = ord.customer_name
+      || ord.sender_name
+      || ord.recipient_name
+      || ord.contact_name
+      || ord.user_name
+      || ord.name
+      || ord.full_name
+      || profileName
+      || (ord.customer_email ? String(ord.customer_email).split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : null)
+      || (ord.customer_id ? `Customer (${String(ord.customer_id).substring(0, 8)})` : 'Customer');
+
+    const email = ord.customer_email
+      || ord.sender_email
+      || ord.email
+      || (matchedProfile ? matchedProfile.email : null);
+
+    const phone = ord.customer_phone
+      || ord.sender_phone
+      || ord.phone
+      || (matchedProfile ? matchedProfile.phone : null);
+
+    return {
+      name,
+      email,
+      phone,
+      avatar_url: matchedProfile?.avatar_url || null,
+      profile: matchedProfile
+    };
+  }
+
   // Load Customer Profiles & Customer Orders from Supabase
   const loadData = async () => {
     setLoading(true);
     try {
       let custData = [];
       let ordersList = [];
+      let allProfilesList = [];
+      let customerProfilesList = [];
+      let generalProfilesList = [];
 
       // 1. Query `customer_orders` table first
       try {
@@ -68,31 +127,78 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
         console.warn("customer_orders fetch exception:", oErr);
       }
 
-      // 2. Query company & customer profiles directly from profiles table
+      // 2. Query dedicated `customer_profiles` table directly (contains mobile app customers)
+      try {
+        const { data: cpData, error: cpErr } = await supabase
+          .from('customer_profiles')
+          .select('*');
+
+        if (!cpErr && cpData && Array.isArray(cpData)) {
+          customerProfilesList = cpData;
+        } else if (cpErr) {
+          console.warn("customer_profiles fetch warning:", cpErr.message || cpErr);
+        }
+      } catch (cpErr) {
+        console.warn("customer_profiles fetch exception:", cpErr);
+      }
+
+      // 3. Query general `profiles` table from Supabase
       try {
         const { data: profData, error: profErr } = await supabase
           .from('profiles')
-          .select('id, email, role, full_name, created_at, updated_at, city, state_code, phone, is_active, status, avatar_url')
-          .range(0, 100);
+          .select('*');
 
-        if (profErr) {
-          console.warn('profiles query warning:', profErr);
-        } else if (profData && profData.length > 0) {
-          // Sort in JS memory to prevent unindexed Postgres statement timeouts
-          profData.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
-          // Include company & customer profiles in customer directory
-          const customerProfiles = profData.filter(p => {
-            const r = String(p.role || '').toLowerCase();
-            return r === 'company' || r === 'customer' || (r !== 'driver' && r !== 'admin' && r !== 'superadmin');
-          });
-          custData = [...customerProfiles];
+        if (!profErr && profData && Array.isArray(profData)) {
+          generalProfilesList = profData;
+        } else {
+          // Fallback with specific columns
+          const { data: fallbackData } = await supabase
+            .from('profiles')
+            .select('id, email, role, full_name, first_name, last_name, phone, created_at, updated_at, city, state_code, is_active, status, avatar_url');
+          if (fallbackData && Array.isArray(fallbackData)) {
+            generalProfilesList = fallbackData;
+          }
         }
       } catch (profErr) {
         console.warn('profiles query notice:', profErr);
       }
 
-      // 3. Check localStorage cache fallback for customer profiles
+      // Merge all profiles (customer_profiles take precedence for customer resolution)
+      const combinedProfilesMap = new Map();
+      generalProfilesList.forEach(p => {
+        if (p.id) combinedProfilesMap.set(String(p.id).toLowerCase(), p);
+      });
+      customerProfilesList.forEach(p => {
+        if (p.id) {
+          const existing = combinedProfilesMap.get(String(p.id).toLowerCase()) || {};
+          combinedProfilesMap.set(String(p.id).toLowerCase(), {
+            ...existing,
+            ...p,
+            role: p.role || 'customer'
+          });
+        }
+      });
+      allProfilesList = Array.from(combinedProfilesMap.values());
+      setAllProfiles(allProfilesList);
+
+      // Build customer directory records from customer_profiles and relevant profiles
+      const custDirMap = new Map();
+      customerProfilesList.forEach(c => {
+        const key = String(c.id || c.email || Math.random()).toLowerCase();
+        custDirMap.set(key, c);
+      });
+      generalProfilesList.filter(p => {
+        const r = String(p.role || '').toLowerCase();
+        return r === 'company' || r === 'customer' || (r !== 'driver' && r !== 'admin' && r !== 'superadmin');
+      }).forEach(c => {
+        const key = String(c.id || c.email || Math.random()).toLowerCase();
+        if (!custDirMap.has(key)) {
+          custDirMap.set(key, c);
+        }
+      });
+      custData = Array.from(custDirMap.values());
+
+      // 4. Check localStorage cache fallback for customer profiles
       try {
         const localSaved = JSON.parse(localStorage.getItem('rk9_admin_custom_customers') || '[]');
         if (Array.isArray(localSaved) && localSaved.length > 0) {
@@ -112,16 +218,16 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
       // Format customer records cleanly and compute delivery count and total saved/spend dynamically
       const finalList = custData.map((c) => {
         // Calculate dynamic delivery stats for this customer profile
-        const customerOrders = ordersList.filter(o => o.customer_id === c.id);
+        const customerOrders = ordersList.filter(o => String(o.customer_id).toLowerCase() === String(c.id).toLowerCase());
         const completedOrders = customerOrders.filter(o => {
           const s = String(o.order_status || o.status || '').toLowerCase();
           return s === 'completed' || s === 'delivered' || s === 'completed_payout';
         });
-        const totalSavedSpend = completedOrders.reduce((sum, o) => sum + Number(o.price || 0), 0);
+        const totalSavedSpend = completedOrders.reduce((sum, o) => sum + Number(o.price || o.total_amount || 0), 0);
 
         return {
           id: c.id || `cp-${Math.random()}`,
-          full_name: c.full_name || c.name || c.customer_name || 'Customer',
+          full_name: getProfileFullName(c) || c.full_name || c.name || c.customer_name || 'Customer',
           email: c.email || c.customer_email || '—',
           phone: c.phone || c.customer_phone || '—',
           avatar_url: c.avatar_url || c.avatar || null,
@@ -166,6 +272,10 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
     const dAddr = (o.dropoff_address || '').toLowerCase();
     const status = (o.order_status || '').toLowerCase();
     const id = (o.id || o.customer_id || '').toLowerCase();
+    const custInfo = getOrderCustomerDetails(o, allProfiles, customers);
+    const custName = (custInfo.name || '').toLowerCase();
+    const custEmail = (custInfo.email || '').toLowerCase();
+    const custPhone = (custInfo.phone || '').toLowerCase();
 
     return (
       ref.includes(q) ||
@@ -173,7 +283,10 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
       pAddr.includes(q) ||
       dAddr.includes(q) ||
       status.includes(q) ||
-      id.includes(q)
+      id.includes(q) ||
+      custName.includes(q) ||
+      custEmail.includes(q) ||
+      custPhone.includes(q)
     );
   });
 
@@ -208,8 +321,8 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
             setDirectoryPage(1);
           }}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'directory'
-              ? 'border-rose-600 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+            ? 'border-rose-600 text-rose-600'
+            : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
           Customer Directory ({filteredCustomers.length})
@@ -221,8 +334,8 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
             setOrdersPage(1);
           }}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'orders'
-              ? 'border-rose-600 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+            ? 'border-rose-600 text-rose-600'
+            : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
           Customer Orders ({orders.length})
@@ -267,7 +380,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
           <div className="p-6 border-b border-slate-100 flex justify-between items-center">
             <div>
               <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Customer Directory</h3>
-              <p className="text-xs text-slate-400 font-medium">Registered customer accounts & activity summaries (<code className="text-rose-600 font-mono text-[11px]">profiles</code>)</p>
+              <p className="text-xs text-slate-400 font-medium">Registered customer accounts & activity summaries</p>
             </div>
             <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
               {filteredCustomers.length} Customers
@@ -412,7 +525,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
           <div className="p-6 border-b border-slate-100 flex justify-between items-center">
             <div>
               <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Customer Orders Monitor</h3>
-              <p className="text-xs text-slate-400 font-medium">Real-time orders placed by mobile app customers (<code className="text-rose-600 font-mono text-[11px]">customer_orders</code>)</p>
+              <p className="text-xs text-slate-400 font-medium">Real-time orders placed by mobile app customers </p>
             </div>
             <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
               {filteredOrders.length} Orders Listed
@@ -448,9 +561,11 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {filteredOrders.slice((ordersPage - 1) * itemsPerPage, ordersPage * itemsPerPage).map((ord) => {
                     const statusLower = (ord.order_status || 'pending').toLowerCase();
-                    const matchedCustomer = customers.find(c => String(c.id).toLowerCase() === String(ord.customer_id || '').toLowerCase());
-                    const custName = matchedCustomer ? matchedCustomer.full_name : (ord.customer_id ? `User (${String(ord.customer_id).substring(0, 8)}...)` : 'Customer');
-                    const custEmail = matchedCustomer ? matchedCustomer.email : null;
+                    const custInfo = getOrderCustomerDetails(ord, allProfiles, customers);
+                    const custName = custInfo.name;
+                    const custEmail = custInfo.email;
+                    const custPhone = custInfo.phone;
+                    const custAvatar = custInfo.avatar_url;
 
                     return (
                       <tr key={ord.id} className="hover:bg-slate-50/60 transition-colors">
@@ -463,19 +578,32 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
 
                         {/* Customer Name */}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="min-w-0">
-                            <span className="font-extrabold text-slate-900 block truncate max-w-[150px]" title={custName}>
-                              {custName}
-                            </span>
-                            {custEmail ? (
-                              <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[150px]" title={custEmail}>
-                                {custEmail}
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-500 to-amber-500 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
+                              {custAvatar ? (
+                                <img src={custAvatar} alt={custName} className="w-full h-full object-cover" />
+                              ) : (
+                                <span>{getCustomerInitials(custName)}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-extrabold text-slate-900 block truncate max-w-[170px]" title={custName}>
+                                {custName}
                               </span>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 font-mono block truncate max-w-[150px]">
-                                {ord.customer_id ? String(ord.customer_id).substring(0, 10) + '...' : ''}
-                              </span>
-                            )}
+                              {custEmail ? (
+                                <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[170px]" title={custEmail}>
+                                  {custEmail}
+                                </span>
+                              ) : custPhone ? (
+                                <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[170px]">
+                                  {formatPhoneNumber(custPhone)}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-mono block truncate max-w-[170px]">
+                                  {ord.customer_id ? String(ord.customer_id).substring(0, 10) + '...' : ''}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
 
@@ -513,12 +641,12 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
                         {/* Status */}
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${statusLower === 'completed' || statusLower === 'delivered'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : statusLower === 'in_progress' || statusLower === 'active'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : statusLower === 'cancelled'
-                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : statusLower === 'in_progress' || statusLower === 'active'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : statusLower === 'cancelled'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
                             }`}>
                             {ord.order_status || 'pending'}
                           </span>
@@ -699,6 +827,29 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
                 <span className="text-slate-400">Order Status</span>
                 <span className="font-extrabold uppercase text-rose-600">{selectedOrderModal.order_status || 'pending'}</span>
               </div>
+              {(() => {
+                const modalCust = getOrderCustomerDetails(selectedOrderModal, allProfiles, customers);
+                return (
+                  <>
+                    <div className="flex justify-between border-b border-slate-100 pb-2">
+                      <span className="text-slate-400">Customer Name</span>
+                      <span className="font-extrabold text-slate-900">{modalCust.name}</span>
+                    </div>
+                    {modalCust.email && (
+                      <div className="flex justify-between border-b border-slate-100 pb-2">
+                        <span className="text-slate-400">Customer Email</span>
+                        <span className="font-semibold text-slate-700">{modalCust.email}</span>
+                      </div>
+                    )}
+                    {modalCust.phone && (
+                      <div className="flex justify-between border-b border-slate-100 pb-2">
+                        <span className="text-slate-400">Customer Phone</span>
+                        <span className="font-semibold text-slate-700">{formatPhoneNumber(modalCust.phone)}</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <div className="flex justify-between border-b border-slate-100 pb-2">
                 <span className="text-slate-400">Customer ID</span>
                 <span className="font-mono text-slate-700 text-[11px]">{selectedOrderModal.customer_id || '—'}</span>

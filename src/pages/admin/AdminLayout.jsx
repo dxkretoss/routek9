@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import adminLoginLogo from '../../assets/adminloginlogo.png';
 import footerLogo from '../../assets/footerlogo.png';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
@@ -51,14 +51,14 @@ import AdminSupportTickets from './AdminSupportTickets';
 const SIDEBAR_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'drivers', label: 'Driver List', icon: Truck },
-  { key: 'customers', label: 'Customer List', icon: Users },
+  { key: 'customers', label: 'Customer List', icon: Users, badge: 'APP' },
   { key: 'companies', label: 'Company List', icon: Building2 },
-  { key: 'packages', label: 'Package & Pricing', icon: PackageCheck },
+  { key: 'packages', label: 'Package & Pricing', icon: PackageCheck, badge: 'APP' },
   { key: 'gov_contracts', label: 'Gov Contracts', icon: ShieldCheck },
   { key: 'dispatch_orders', label: 'Dispatch Orders', icon: Package },
   { key: 'vehicles', label: 'Vehicle Management', icon: Car },
-  { key: 'cpr_notary', label: 'CPR & Notary Services', icon: HeartPulse },
-  { key: 'cpr_notary_bookings', label: 'CPR & Notary Bookings', icon: Calendar },
+  { key: 'cpr_notary', label: 'CPR & Notary Services', icon: HeartPulse, badge: 'APP' },
+  { key: 'cpr_notary_bookings', label: 'CPR & Notary Bookings', icon: Calendar, badge: 'APP' },
   { key: 'courses', label: 'Courses', icon: BookOpen },
   { key: 'exam_questions', label: 'Exam Questions', icon: HelpCircle },
   { key: 'legal_pages', label: 'Legal Pages', icon: FileText },
@@ -110,6 +110,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
   const [activeSection, setActiveSection] = useState(getInitialSection);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const mainContentRef = useRef(null);
 
   // ── Data State ───────────────
   const [drivers, setDrivers] = useState([]);
@@ -130,6 +131,14 @@ export default function AdminLayout({ currentUser, onLogout }) {
       setActiveSection(section);
     }
   }, [searchParams]);
+
+  // ── Scroll main content section to top on tab change without affecting sidebar ──
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTop = 0;
+    }
+  }, [activeSection]);
 
   const handleSectionChange = (key) => {
     if (!validateAdminToken()) {
@@ -167,21 +176,24 @@ export default function AdminLayout({ currentUser, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch lightweight profile metadata for total counts
+      // 1. Fetch lightweight profile metadata for total counts and user lists
       let driverCount = 295;
       let companyCount = 64;
       try {
-        const { data: roleCounts, error: cErr } = await supabase
+        const { data: profData, error: cErr } = await supabase
           .from('profiles')
-          .select('id, role');
-        if (!cErr && roleCounts && Array.isArray(roleCounts)) {
-          const driversList = roleCounts.filter(u => {
+          .select('id, role, full_name, email, city, state_code, created_at, status, is_active, vehicle');
+        if (!cErr && profData && Array.isArray(profData)) {
+          const driversList = profData.filter(u => {
             const r = String(u.role || '').toLowerCase();
             return r === 'driver' || !r || r === 'user';
           });
-          const companiesList = roleCounts.filter(u => String(u.role || '').toLowerCase() === 'company');
+          const companiesList = profData.filter(u => String(u.role || '').toLowerCase() === 'company');
           driverCount = driversList.length;
           companyCount = companiesList.length;
+          setDrivers(driversList);
+          setCompanies(companiesList);
+          setAllUsers(profData);
         }
       } catch (cErr) {
         console.warn("AdminLayout count notice:", cErr);
@@ -221,7 +233,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
   }
 
   // ─── Sidebar Content ──────────────────────────────────────
-  const SidebarContent = ({ isMobile = false } = {}) => {
+  const renderSidebarContent = (isMobile = false) => {
     const collapsed = sidebarCollapsed && !isMobile;
     return (
       <div className="flex flex-col h-full">
@@ -237,7 +249,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
         </div>
 
         {/* Nav Items */}
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto admin-sidebar-scrollbar">
           {SIDEBAR_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.key;
@@ -249,10 +261,24 @@ export default function AdminLayout({ currentUser, onLogout }) {
                   ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
                   : 'text-slate-400 hover:bg-white/5 hover:text-white'
                   } ${collapsed ? 'justify-center' : ''}`}
-                title={collapsed ? item.label : undefined}
+                title={collapsed ? (item.badge ? `${item.label} (${item.badge})` : item.label) : undefined}
               >
                 <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-rose-400'}`} />
-                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && (
+                  <div className="flex items-center justify-between flex-1 min-w-0">
+                    <span className="truncate">{item.label}</span>
+                    {item.badge && (
+                      <span
+                        className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider ${isActive
+                          ? 'bg-white/20 text-white border border-white/30'
+                          : 'bg-rose-500/15 text-rose-400 border border-rose-500/30 group-hover:bg-rose-500/25 group-hover:text-rose-300'
+                          }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -306,6 +332,8 @@ export default function AdminLayout({ currentUser, onLogout }) {
             drivers={drivers}
             companies={companies}
             allUsers={allUsers}
+            driversCount={driversCount}
+            companiesCount={companiesCount}
             loading={loading}
             error={error}
             onNavigate={handleSectionChange}
@@ -370,7 +398,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
             >
               <X className="w-5 h-5" />
             </button>
-            <SidebarContent isMobile={true} />
+            {renderSidebarContent(true)}
           </aside>
         </div>
       )}
@@ -380,7 +408,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
         className={`hidden lg:flex flex-col bg-[#0b132b] border-r border-white/5 transition-all duration-300 shrink-0 sticky top-0 h-screen ${sidebarCollapsed ? 'w-[72px]' : 'w-64'
           }`}
       >
-        <SidebarContent isMobile={false} />
+        {renderSidebarContent(false)}
         {/* Collapse Toggle */}
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -414,7 +442,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
         </header>
 
         {/* Content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <main ref={mainContentRef} className="flex-1 p-4 sm:p-6 lg:p-8">
           {renderSection()}
         </main>
       </div>
