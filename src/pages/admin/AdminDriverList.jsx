@@ -131,7 +131,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
 
       let query = supabase
         .from('profiles')
-        .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, bio, ready_to_work, website_url, avatar_url', { count: 'exact' })
+        .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, ready_to_work, website_url', { count: 'exact' })
         .or('role.eq.driver,role.is.null')
         .order('created_at', { ascending: false });
 

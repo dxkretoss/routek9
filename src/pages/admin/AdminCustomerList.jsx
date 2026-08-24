@@ -127,7 +127,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
         console.warn("customer_orders fetch exception:", oErr);
       }
 
-      // 2. Query dedicated `customer_profiles` table directly (contains mobile app customers)
+      // 2. Query dedicated `customer_profiles` table directly
       try {
         const { data: cpData, error: cpErr } = await supabase
           .from('customer_profiles')
@@ -142,22 +142,15 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
         console.warn("customer_profiles fetch exception:", cpErr);
       }
 
-      // 3. Query general `profiles` table from Supabase
+      // 3. Query general `profiles` table with confirmed columns (excluding heavy avatar blobs)
       try {
         const { data: profData, error: profErr } = await supabase
           .from('profiles')
-          .select('*');
+          .select('id, email, role, full_name, phone, created_at, updated_at, city, state_code, is_active, status')
+          .order('created_at', { ascending: false });
 
         if (!profErr && profData && Array.isArray(profData)) {
           generalProfilesList = profData;
-        } else {
-          // Fallback with specific columns
-          const { data: fallbackData } = await supabase
-            .from('profiles')
-            .select('id, email, role, full_name, first_name, last_name, phone, created_at, updated_at, city, state_code, is_active, status, avatar_url');
-          if (fallbackData && Array.isArray(fallbackData)) {
-            generalProfilesList = fallbackData;
-          }
         }
       } catch (profErr) {
         console.warn('profiles query notice:', profErr);
@@ -189,13 +182,43 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
       });
       generalProfilesList.filter(p => {
         const r = String(p.role || '').toLowerCase();
-        return r === 'company' || r === 'customer' || (r !== 'driver' && r !== 'admin' && r !== 'superadmin');
+        return r === 'company' || r === 'customer' || r === 'user' || r === 'client' || (!r && p.email) || (r !== 'driver' && r !== 'admin' && r !== 'superadmin');
       }).forEach(c => {
         const key = String(c.id || c.email || Math.random()).toLowerCase();
         if (!custDirMap.has(key)) {
           custDirMap.set(key, c);
         }
       });
+
+      // Also ensure all customers who placed orders are added to directory
+      ordersList.forEach(ord => {
+        const email = ord.customer_email || ord.sender_email || ord.email;
+        const name = ord.customer_name || ord.sender_name || (email ? email.split('@')[0] : 'Customer');
+        const phone = ord.customer_phone || ord.sender_phone || ord.phone || '';
+        const id = ord.customer_id || (email ? `cust-${email}` : `ord-cust-${ord.id}`);
+        const key = String(id).toLowerCase();
+
+        if (!custDirMap.has(key)) {
+          let matched = null;
+          if (email) {
+            matched = Array.from(custDirMap.values()).find(c => c.email && c.email.toLowerCase() === email.toLowerCase());
+          }
+          if (!matched) {
+            custDirMap.set(key, {
+              id: id,
+              user_id: ord.customer_id || id,
+              full_name: name,
+              email: email || '',
+              phone: phone,
+              created_at: ord.created_at || new Date().toISOString(),
+              status: 'ACTIVE',
+              is_active: true,
+              role: 'customer'
+            });
+          }
+        }
+      });
+
       custData = Array.from(custDirMap.values());
 
       // 4. Check localStorage cache fallback for customer profiles

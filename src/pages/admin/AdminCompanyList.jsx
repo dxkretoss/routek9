@@ -123,7 +123,9 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
       // 1. Fetch company_profiles metadata table (uses user_id as FK)
       let companyMeta = [];
       try {
-        const { data: cData } = await supabase.from('company_profiles').select('*');
+        const { data: cData } = await supabase
+          .from('company_profiles')
+          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description');
         if (cData) companyMeta = cData;
       } catch (cmErr) {
         console.warn("company_profiles notice:", cmErr);
@@ -139,7 +141,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
       // 2. Fetch Profiles with Role = 'company' with range(from, to) and exact count
       const { data: profilesData, count } = await supabase
         .from('profiles')
-        .select('*', { count: 'exact' })
+        .select('id, email, role, full_name, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work', { count: 'exact' })
         .eq('role', 'company')
         .order('created_at', { ascending: false })
         .range(from, to);

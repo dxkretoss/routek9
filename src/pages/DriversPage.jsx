@@ -18,7 +18,8 @@ import {
   UserCheck,
   Star,
   Loader2,
-
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 import heroBgPattern from '../assets/hero_bg_pattern.png';
@@ -73,6 +74,8 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
   const [stateFilter, setStateFilter] = useState('');
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [vehicleFilter, setVehicleFilter] = useState('All Vehicles');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9;
 
   // Modal State for Contacting Driver
   const [selectedDriver, setSelectedDriver] = useState(null);
@@ -88,36 +91,43 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('*');
+          .select('id, email, role, full_name, city, state_code, vehicle, experience, availability, has_cdl, status, is_active, created_at')
+          .or('role.eq.driver,role.is.null')
+          .order('created_at', { ascending: false })
+          .limit(100);
 
-        if (!error && data) {
-          // Filter drivers by role (case-insensitive) AND ready_to_work toggle (only show drivers who manually enabled directory listing)
-          const driverProfiles = data.filter(p =>
-            (!p.role || p.role.toLowerCase() === 'driver') &&
-            (p.ready_to_work === true || p.readyToWork === true)
-          );
+        if (!error && Array.isArray(data)) {
+          // Filter active drivers (role is driver or null, not deactivated)
+          const driverProfiles = data.filter(p => {
+            const role = String(p.role || '').toLowerCase().trim();
+            const isDriver = !role || role === 'driver';
+            const isNotInactive = p.status !== 'INACTIVE' && p.is_active !== false;
+            return isDriver && isNotInactive;
+          });
 
           const formatted = driverProfiles.map((d, index) => {
             const name = d.full_name || d.name || (d.email ? d.email.split('@')[0] : `Driver #${index + 1}`);
+            const stateStr = (d.state_code || d.state || 'US').toUpperCase();
             return {
               id: d.id,
               user_id: d.id,
               full_name: name,
               email: d.email || '',
               city: d.city || 'Available',
-              state: (d.state_code || d.state || 'US').toUpperCase(),
+              state: stateStr,
+              state_code: stateStr,
               vehicle_type: d.vehicle || d.vehicle_type || 'Cargo Van',
               years_experience: d.experience || d.years_experience || '1-3 Years',
               availability: d.availability || 'Immediate',
               has_cdl: Boolean(d.has_cdl ?? d.hasCDL ?? false),
-              bio: d.bio || 'Verified independent courier driver on RouteK9.',
-              avatar: d.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0b132b&color=ffffff`
+              bio: 'Verified independent courier driver on RouteK9.',
+              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0b132b&color=ffffff`
             };
           });
 
           setDrivers(formatted);
         } else {
-          console.warn("Supabase profiles query notice:", error);
+          console.warn("Supabase profiles query notice for drivers:", error);
           setDrivers([]);
         }
       } catch (err) {
@@ -246,6 +256,15 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
 
     return matchesSearch && matchesState && matchesVehicle;
   });
+
+  // Reset pagination when search or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, stateFilter, vehicleFilter]);
+
+  const totalPages = Math.ceil(filteredDrivers.length / itemsPerPage) || 1;
+  const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+  const paginatedDrivers = filteredDrivers.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
   // Calculate Metrics
   const totalDrivers = drivers.length;
@@ -471,8 +490,9 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredDrivers.map((driver) => (
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {paginatedDrivers.map((driver) => (
                 <div
                   key={driver.user_id}
                   className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 hover:shadow-md transition-all flex flex-col justify-between"
@@ -512,7 +532,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Experience:</span>
-                        <span className="font-bold text-[#0b132b]">{String(driver.years_experience).includes('Year') ? driver.years_experience : `${driver.years_experience} Years`}</span>
+                        <span className="font-bold text-[#0b132b]">{driver.years_experience}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Availability:</span>
@@ -522,24 +542,95 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
 
                     {/* Bio */}
                     {driver.bio && (
-                      <p className="text-xs text-slate-600 font-normal leading-relaxed line-clamp-3">
+                      <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">
                         {driver.bio}
                       </p>
                     )}
                   </div>
 
-                  {/* Contact Action */}
-                  <div className="pt-5 border-t border-slate-100 mt-5">
+                  {/* Bottom Row: Actions */}
+                  <div className="pt-4 border-t border-slate-100 mt-4">
                     <button
                       onClick={() => handleOpenContactModal(driver)}
-                      className="w-full py-2.5 rounded-xl bg-[#0b132b] hover:bg-[#1a264a] text-white text-xs font-bold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <MessageSquare className="w-4 h-4 text-rose-500" />
+                      <MessageSquare className="w-3.5 h-3.5" />
                       <span>Contact Driver</span>
                     </button>
                   </div>
                 </div>
               ))}
+              </div>
+
+              {/* Pagination Controls */}
+              {filteredDrivers.length > itemsPerPage && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-200/80">
+                  <div className="text-xs font-semibold text-slate-500">
+                    Showing <span className="font-extrabold text-slate-900">{((safePage - 1) * itemsPerPage) + 1}</span> to{' '}
+                    <span className="font-extrabold text-slate-900">{Math.min(safePage * itemsPerPage, filteredDrivers.length)}</span> of{' '}
+                    <span className="font-extrabold text-slate-900">{filteredDrivers.length}</span> drivers
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setCurrentPage(prev => Math.max(prev - 1, 1));
+                        window.scrollTo({ top: 350, behavior: 'smooth' });
+                      }}
+                      disabled={safePage === 1}
+                      className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+                      title="Previous Page"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <div className="flex items-center gap-1 px-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                        if (
+                          totalPages > 7 &&
+                          pageNum !== 1 &&
+                          pageNum !== totalPages &&
+                          Math.abs(pageNum - safePage) > 1
+                        ) {
+                          if (pageNum === 2 || pageNum === totalPages - 1) {
+                            return <span key={pageNum} className="text-xs text-slate-400 px-1 font-bold">...</span>;
+                          }
+                          return null;
+                        }
+
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => {
+                              setCurrentPage(pageNum);
+                              window.scrollTo({ top: 350, behavior: 'smooth' });
+                            }}
+                            className={`w-8 h-8 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${
+                              safePage === pageNum
+                                ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                        window.scrollTo({ top: 350, behavior: 'smooth' });
+                      }}
+                      disabled={safePage >= totalPages}
+                      className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+                      title="Next Page"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

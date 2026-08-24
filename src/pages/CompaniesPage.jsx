@@ -12,7 +12,9 @@ import {
   X, 
   CheckCircle2,
   Building,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
@@ -66,6 +68,8 @@ export default function CompaniesPage({ currentUser, onLogout }) {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [contractFilter, setContractFilter] = useState('All Contracts');
   const [selectedCompany, setSelectedCompany] = useState(null); // for Contact modal
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9;
 
   const handleContactCompany = (company) => {
     if (!currentUser) {
@@ -98,37 +102,73 @@ export default function CompaniesPage({ currentUser, onLogout }) {
     }
   }, [currentUser]);
 
-  // Fetch Courier Companies from Supabase profiles table
+  // Fetch Courier Companies from Supabase profiles and company_profiles tables
   useEffect(() => {
     async function loadCompanies() {
       setLoading(true);
       try {
+        // 1. Fetch company_profiles metadata table (lightweight select)
+        let companyMeta = [];
+        try {
+          const { data: cData } = await supabase
+            .from('company_profiles')
+            .select('user_id, company_name, city, state, contract_types, service_area, description, website, phone, contact_email');
+          if (Array.isArray(cData)) companyMeta = cData;
+        } catch (cmErr) {
+          console.warn("company_profiles notice in CompaniesPage:", cmErr);
+        }
+
+        const metaMap = (companyMeta || []).reduce((acc, curr) => {
+          const key = curr.user_id || curr.id;
+          if (key) acc[key] = curr;
+          return acc;
+        }, {});
+
+        // 2. Fetch profiles with lightweight schema columns (exclude heavy avatar_url blobs)
         const { data, error } = await supabase
           .from('profiles')
-          .select('*');
+          .select('id, email, role, full_name, city, state_code, phone, status, is_active, created_at')
+          .eq('role', 'company')
+          .order('created_at', { ascending: false })
+          .limit(100);
 
-        if (!error && data) {
-          // Filter profiles by role = 'company' (case-insensitive) AND ready_to_work === true
-          const companyProfiles = data.filter(p => 
-            p.role && p.role.toLowerCase() === 'company' &&
-            (p.ready_to_work === true || p.readyToWork === true)
-          );
+        if (!error && Array.isArray(data)) {
+          // Filter profiles by role = 'company' or where metadata exists in company_profiles
+          let companyProfiles = data.filter(p => {
+            const role = String(p.role || '').toLowerCase().trim();
+            const isCompanyRole = role === 'company' || role === 'corporate' || role === 'business' || Boolean(metaMap[p.id]);
+            const isNotInactive = p.status !== 'INACTIVE' && p.is_active !== false;
+            return isCompanyRole && isNotInactive;
+          });
 
-          const formatted = companyProfiles.map((c, index) => {
-            const name = c.full_name || c.name || (c.email ? c.email.split('@')[0] : `Company #${index + 1}`);
+          // Fallback if profiles table role wasn't set to company
+          if (companyProfiles.length === 0 && companyMeta.length > 0) {
+            companyProfiles = companyMeta.map(cm => ({
+              id: cm.user_id || cm.id,
+              ...cm
+            }));
+          }
+
+          const formatted = companyProfiles.map((p, index) => {
+            const meta = metaMap[p.id] || metaMap[p.user_id] || {};
+            const name = meta.company_name || p.company_name || p.full_name || p.name || (p.email ? p.email.split('@')[0] : `Logistics Partner #${index + 1}`);
+            const stateStr = (meta.state || p.state_code || p.state || 'TX').toUpperCase();
+            const cityStr = meta.city || p.city || 'Regional Hub';
+
             return {
-              id: c.id,
-              user_id: c.id,
+              id: p.id || p.user_id || `comp-${index}`,
+              user_id: p.id || p.user_id || `comp-${index}`,
               company_name: name,
-              email: c.email || '',
-              city: c.city || 'Operating Region',
-              state: (c.state_code || c.state || 'US').toUpperCase(),
-              contract_types: c.vehicle || c.contract_types || 'Medical Specimen, Scheduled Routes',
-              service_area: c.availability || c.service_area || 'Regional & Statewide Logistics',
-              description: c.bio || c.description || 'Verified courier logistics and route contracting company on RouteK9.',
-              website: c.website_url || c.website || c.dot_number || '',
-              phone: c.phone || '',
-              logo: c.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0b132b&color=ffffff`
+              email: meta.contact_email || meta.email || p.email || '',
+              city: cityStr,
+              state: stateStr,
+              state_code: stateStr,
+              contract_types: meta.contract_types || p.contract_types || p.vehicle || 'Medical Specimen, Scheduled Cargo Routes, On-Demand',
+              service_area: meta.service_area || p.service_area || p.availability || 'Regional & Statewide Logistics',
+              description: meta.description || p.description || 'Verified courier logistics and route contracting company on RouteK9.',
+              website: meta.website || p.website_url || p.website || p.dot_number || '',
+              phone: meta.phone || p.phone || '',
+              logo: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0b132b&color=ffffff`
             };
           });
 
@@ -196,6 +236,15 @@ export default function CompaniesPage({ currentUser, onLogout }) {
 
     return matchesSearch && matchesState && matchesContract;
   });
+
+  // Reset pagination when search or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, stateFilter, contractFilter]);
+
+  const totalPages = Math.ceil(filteredCompanies.length / itemsPerPage) || 1;
+  const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+  const paginatedCompanies = filteredCompanies.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
   const handleContactSubmit = async (e) => {
     e.preventDefault();
@@ -455,8 +504,9 @@ export default function CompaniesPage({ currentUser, onLogout }) {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredCompanies.map((c) => {
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {paginatedCompanies.map((c) => {
                 // Get initials
                 const initials = c.company_name
                   .split(' ')
@@ -524,8 +574,8 @@ export default function CompaniesPage({ currentUser, onLogout }) {
                         <a
                           href={c.website.startsWith('http') ? c.website : `https://${c.website}`}
                           target="_blank"
-                          rel="noreferrer"
-                          className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-white cursor-pointer"
+                          rel="noopener noreferrer"
+                          className="w-full py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-semibold transition-all border border-slate-200 flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <Globe className="w-3.5 h-3.5 text-slate-400" />
                           <span>Visit Website</span>
@@ -535,6 +585,77 @@ export default function CompaniesPage({ currentUser, onLogout }) {
                   </article>
                 );
               })}
+              </div>
+
+              {/* Pagination Controls */}
+              {filteredCompanies.length > itemsPerPage && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-200/80">
+                  <div className="text-xs font-semibold text-slate-500">
+                    Showing <span className="font-extrabold text-slate-900">{((safePage - 1) * itemsPerPage) + 1}</span> to{' '}
+                    <span className="font-extrabold text-slate-900">{Math.min(safePage * itemsPerPage, filteredCompanies.length)}</span> of{' '}
+                    <span className="font-extrabold text-slate-900">{filteredCompanies.length}</span> companies
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setCurrentPage(prev => Math.max(prev - 1, 1));
+                        window.scrollTo({ top: 350, behavior: 'smooth' });
+                      }}
+                      disabled={safePage === 1}
+                      className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+                      title="Previous Page"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <div className="flex items-center gap-1 px-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                        if (
+                          totalPages > 7 &&
+                          pageNum !== 1 &&
+                          pageNum !== totalPages &&
+                          Math.abs(pageNum - safePage) > 1
+                        ) {
+                          if (pageNum === 2 || pageNum === totalPages - 1) {
+                            return <span key={pageNum} className="text-xs text-slate-400 px-1 font-bold">...</span>;
+                          }
+                          return null;
+                        }
+
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => {
+                              setCurrentPage(pageNum);
+                              window.scrollTo({ top: 350, behavior: 'smooth' });
+                            }}
+                            className={`w-8 h-8 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${
+                              safePage === pageNum
+                                ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                        window.scrollTo({ top: 350, behavior: 'smooth' });
+                      }}
+                      disabled={safePage >= totalPages}
+                      className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+                      title="Next Page"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

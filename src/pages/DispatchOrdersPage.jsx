@@ -17,6 +17,7 @@ import {
   Search,
   Filter,
   Check,
+  ChevronLeft,
   ChevronRight,
   Info,
   Car,
@@ -56,6 +57,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const [declinedOrderIds, setDeclinedOrderIds] = useState([]);
   const [selectedOrderDetailModal, setSelectedOrderDetailModal] = useState(null);
   const [acceptingOrderId, setAcceptingOrderId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
 
   // Helper function to safely format dynamic values with '-' fallback
   const getDynamicVal = (val, formatter = null) => {
@@ -327,6 +330,15 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     }
     return true;
   });
+
+  // Reset pagination when any search or filter criteria changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [categoryFilterTab, vehicleFilter, searchTerm]);
+
+  const totalPages = Math.ceil(availableOrders.length / itemsPerPage) || 1;
+  const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+  const paginatedAvailableOrders = availableOrders.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
   // Helper to validate and retrieve active logged-in driver ID
   const getActiveDriverId = () => {
@@ -808,8 +820,9 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {availableOrders.map(order => (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {paginatedAvailableOrders.map(order => (
                   <div
                     key={order.rawId || order.id}
                     className="bg-white rounded-3xl border border-slate-200/90 hover:border-slate-300 shadow-lg overflow-hidden flex flex-col justify-between transition-all group hover:-translate-y-0.5"
@@ -982,6 +995,77 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
 
                   </div>
                 ))}
+              </div>
+
+                {/* Pagination Controls */}
+                {availableOrders.length > itemsPerPage && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-200/80">
+                    <div className="text-xs font-semibold text-slate-500">
+                      Showing <span className="font-extrabold text-slate-900">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
+                      <span className="font-extrabold text-slate-900">{Math.min(currentPage * itemsPerPage, availableOrders.length)}</span> of{' '}
+                      <span className="font-extrabold text-slate-900">{availableOrders.length}</span> orders
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setCurrentPage(prev => Math.max(prev - 1, 1));
+                          window.scrollTo({ top: 400, behavior: 'smooth' });
+                        }}
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+                        title="Previous Page"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+
+                      <div className="flex items-center gap-1 px-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                          if (
+                            totalPages > 7 &&
+                            pageNum !== 1 &&
+                            pageNum !== totalPages &&
+                            Math.abs(pageNum - currentPage) > 1
+                          ) {
+                            if (pageNum === 2 || pageNum === totalPages - 1) {
+                              return <span key={pageNum} className="text-xs text-slate-400 px-1 font-bold">...</span>;
+                            }
+                            return null;
+                          }
+
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => {
+                                setCurrentPage(pageNum);
+                                window.scrollTo({ top: 400, behavior: 'smooth' });
+                              }}
+                              className={`w-8 h-8 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${
+                                currentPage === pageNum
+                                  ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
+                                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                          window.scrollTo({ top: 400, behavior: 'smooth' });
+                        }}
+                        disabled={currentPage >= totalPages}
+                        className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+                        title="Next Page"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
