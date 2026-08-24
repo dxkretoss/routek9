@@ -364,6 +364,7 @@ export async function updateCustomerOrderStatusInDb(orderId, status, driverId = 
     }
 
     const payload = {
+      status: status,
       order_status: status,
       driver_id: validDriverUuid,
       updated_at: new Date().toISOString()

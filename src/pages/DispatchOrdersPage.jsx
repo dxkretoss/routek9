@@ -55,6 +55,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const [claimFailedModalState, setClaimFailedModalState] = useState({ isOpen: false, order: null });
   const [declinedOrderIds, setDeclinedOrderIds] = useState([]);
   const [selectedOrderDetailModal, setSelectedOrderDetailModal] = useState(null);
+  const [acceptingOrderId, setAcceptingOrderId] = useState(null);
 
   // Helper function to safely format dynamic values with '-' fallback
   const getDynamicVal = (val, formatter = null) => {
@@ -70,13 +71,13 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     if (row.extras_stairs) extras.push('Stairs required (+$5)');
     if (row.extras_wait_time) extras.push('Wait time expected (+$5/5min)');
 
-    // Dynamic package dimensions & weight tag
-    const h = row.pkg_height_in;
-    const w = row.pkg_width_in;
-    const l = row.pkg_length_in;
-    const weight = row.pkg_weight_lbs;
-    const hasDims = (h !== null && h !== undefined && h !== '') || (w !== null && w !== undefined && w !== '') || (l !== null && l !== undefined && l !== '');
-    const hasWeight = weight !== null && weight !== undefined && weight !== '';
+    // Dynamic package dimensions & weight tag (only if > 0)
+    const h = parseFloat(row.pkg_height_in);
+    const w = parseFloat(row.pkg_width_in);
+    const l = parseFloat(row.pkg_length_in);
+    const weight = parseFloat(row.pkg_weight_lbs);
+    const hasDims = (!isNaN(h) && h > 0) || (!isNaN(w) && w > 0) || (!isNaN(l) && l > 0);
+    const hasWeight = !isNaN(weight) && weight > 0;
     if (hasDims || hasWeight) {
       const dimsStr = hasDims ? `${h || 0}"×${w || 0}"×${l || 0}"` : '';
       const weightStr = hasWeight ? `${weight} lbs` : '';
@@ -91,17 +92,19 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     // Standardize status for UI display
     const rawDbStatus = (row.status || '').toLowerCase();
     const rawOrderStatus = (row.order_status || '').toLowerCase();
+    const hasDriverAssigned = Boolean(row.driver_id && String(row.driver_id).trim() !== '' && row.driver_id !== 'null');
+
     let uiStatus = 'AVAILABLE';
-    if (rawDbStatus === 'pending' || rawDbStatus === 'available' || rawOrderStatus === 'pending' || (!rawDbStatus && !rawOrderStatus)) {
-      uiStatus = 'AVAILABLE';
-    } else if (rawDbStatus === 'accepted' || rawOrderStatus === 'accepted') {
-      uiStatus = 'ACCEPTED';
+    if (rawDbStatus === 'delivered' || rawDbStatus === 'completed' || rawOrderStatus === 'completed' || rawOrderStatus === 'delivered') {
+      uiStatus = 'COMPLETED';
     } else if (rawDbStatus === 'in_progress' || rawDbStatus === 'ongoing' || rawOrderStatus === 'in_transit' || rawOrderStatus === 'in_progress') {
       uiStatus = 'IN_TRANSIT';
-    } else if (rawDbStatus === 'delivered' || rawDbStatus === 'completed' || rawOrderStatus === 'completed' || rawOrderStatus === 'delivered') {
-      uiStatus = 'COMPLETED';
+    } else if (rawDbStatus === 'accepted' || rawOrderStatus === 'accepted' || hasDriverAssigned) {
+      uiStatus = 'ACCEPTED';
     } else if (rawDbStatus === 'rejected' || rawDbStatus === 'declined' || rawDbStatus === 'cancelled') {
       uiStatus = 'REJECTED';
+    } else {
+      uiStatus = 'AVAILABLE';
     }
 
     // Dynamic Package Photos indicator
@@ -302,8 +305,9 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   // Filtered Orders for Marketplace
   const availableOrders = orders.filter(o => {
     if (o.status !== 'AVAILABLE') return false;
+    if (o.rawRow?.driver_id && String(o.rawRow.driver_id).trim() !== '' && o.rawRow.driver_id !== 'null') return false;
     if (declinedOrderIds.includes(o.rawId)) return false; // Exclude orders declined by this driver
-    
+
     // Check if order belongs to Package category dynamically
     const isPackageOrder = o.category === 'package' || Boolean(o.packageTypeName && o.packageTypeName !== '-' && o.packageTypeName !== 'General Courier') || Boolean(o.rawRow?.package_type_id);
     if (categoryFilterTab === 'package' && !isPackageOrder) return false;
@@ -350,108 +354,120 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const acceptedOrders = activeDeliveries;
   const totalEarnings = completedOrders.reduce((sum, o) => sum + (parseFloat(o.price) || 0), 0);
 
-  // Handler: Accept Order
+  // Handler: Accept / Claim Order
   const handleAcceptOrder = async (orderToAccept) => {
     const targetId = typeof orderToAccept === 'string' ? orderToAccept : orderToAccept.rawId || orderToAccept.id;
     const matchedOrder = orders.find(o => o.rawId === targetId || o.id === targetId);
 
     if (!matchedOrder) return;
 
-    // Validate or generate UUID for driver_id column
-    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-    let driverUuid = currentUser?.id;
-    if (!isUuid(driverUuid)) {
-      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        driverUuid = crypto.randomUUID();
-      } else {
-        driverUuid = 'a1b2c3d4-e5f6-4789-a012-3456789abcde';
-      }
-    }
+    setAcceptingOrderId(matchedOrder.rawId || matchedOrder.id);
 
-    const driverName = currentUser?.name || currentUser?.email || `Driver (${driverUuid.substring(0, 8)})`;
-
-    // Pre-check: Fetch the latest status from Supabase to prevent double claim
     try {
-      const { data: latestOrder, error: checkError } = await supabase
-        .from('customer_orders')
-        .select('status, driver_id')
-        .eq('id', matchedOrder.rawId)
-        .maybeSingle();
-
-      if (checkError) {
-        console.warn("Check status error:", checkError.message);
-      }
-
-      if (latestOrder) {
-        const dbStatus = (latestOrder.status || '').toLowerCase();
-        if (dbStatus === 'accepted' || dbStatus === 'in_transit' || dbStatus === 'in_progress' || dbStatus === 'completed' || latestOrder.driver_id) {
-          // Open Claim Failed Modal
-          setClaimFailedModalState({ isOpen: true, order: matchedOrder });
-
-          setNotification({
-            type: 'error',
-            message: `Claim failed: Order ${matchedOrder.id} has already been accepted by another driver.`
-          });
-
-          // Instantly sync local state to reflect that it is accepted by someone else
-          setOrders(prev => prev.map(o => {
-            if (o.rawId === matchedOrder.rawId) {
-              return {
-                ...o,
-                status: 'CLAIMED_BY_OTHER',
-                rawStatus: dbStatus,
-                assignedDriver: { name: 'Another Driver', id: latestOrder.driver_id || 'other_driver' }
-              };
-            }
-            return o;
-          }));
-          return;
+      // Validate or generate UUID for driver_id column
+      const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      let driverUuid = currentUser?.id;
+      if (!isUuid(driverUuid)) {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+          driverUuid = crypto.randomUUID();
+        } else {
+          driverUuid = 'a1b2c3d4-e5f6-4789-a012-3456789abcde';
         }
       }
+
+      const driverName = currentUser?.name || currentUser?.email || `Driver (${driverUuid.substring(0, 8)})`;
+
+      // Pre-check: Fetch the latest status from Supabase to prevent double claim
+      try {
+        const { data: latestOrder, error: checkError } = await supabase
+          .from('customer_orders')
+          .select('status, driver_id')
+          .eq('id', matchedOrder.rawId)
+          .maybeSingle();
+
+        if (checkError) {
+          console.warn("Check status error:", checkError.message);
+        }
+
+        if (latestOrder) {
+          const dbStatus = (latestOrder.status || '').toLowerCase();
+          if (dbStatus === 'accepted' || dbStatus === 'in_transit' || dbStatus === 'in_progress' || dbStatus === 'completed' || latestOrder.driver_id) {
+            // Open Claim Failed Modal
+            setClaimFailedModalState({ isOpen: true, order: matchedOrder });
+
+            setNotification({
+              type: 'error',
+              message: `Order #${matchedOrder.id} has already been claimed by another driver.`
+            });
+
+            // Instantly sync local state to reflect that it is accepted by someone else
+            setOrders(prev => prev.map(o => {
+              if (o.rawId === matchedOrder.rawId) {
+                return {
+                  ...o,
+                  status: 'CLAIMED_BY_OTHER',
+                  rawStatus: dbStatus,
+                  assignedDriver: { name: 'Another Driver', id: latestOrder.driver_id || 'other_driver' }
+                };
+              }
+              return o;
+            }));
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Pre-check error:", err);
+      }
+
+      // 1. Update Database in Supabase (status -> 'accepted', driver_id -> driverUuid)
+      const dbRes = await updateCustomerOrderStatusInDb(matchedOrder.rawId || matchedOrder.id, 'accepted', driverUuid);
+
+      if (dbRes && !dbRes.success) {
+        setNotification({
+          type: 'error',
+          message: `Unable to accept order #${matchedOrder.id}. Please check your connection and try again.`
+        });
+        return;
+      }
+
+      const assignedId = dbRes?.driverId || driverUuid;
+
+      // 2. Update Local State
+      setOrders(prev => prev.map(o => {
+        if (o.rawId === matchedOrder.rawId || o.id === matchedOrder.id) {
+          return {
+            ...o,
+            status: 'ACCEPTED',
+            rawStatus: 'accepted',
+            assignedDriverName: driverName,
+            assignedDriver: { name: driverName, id: assignedId }
+          };
+        }
+        return o;
+      }));
+
+      // 3. Trigger Modal & Toast with user-friendly text
+      setAcceptedModalState({
+        isOpen: true,
+        order: {
+          ...matchedOrder,
+          status: 'ACCEPTED',
+          assignedDriverName: driverName
+        }
+      });
+      setNotification({
+        type: 'success',
+        message: `Order successfully accepted! You can now start this delivery in Active Deliveries.`
+      });
     } catch (err) {
-      console.warn("Pre-check error:", err);
-    }
-
-    // 1. Update Database in Supabase (status -> 'accepted', driver_id -> driverUuid)
-    const dbRes = await updateCustomerOrderStatusInDb(matchedOrder.rawId || matchedOrder.id, 'accepted', driverUuid);
-
-    if (dbRes && !dbRes.success) {
+      console.error(err);
       setNotification({
         type: 'error',
-        message: `DB update failed: Row-Level Security (RLS) policies on 'customer_orders' table likely block updates. Please run the SQL command in Supabase SQL Editor to allow updates.`
+        message: `Failed to accept order. Please try again.`
       });
-      return;
+    } finally {
+      setAcceptingOrderId(null);
     }
-
-    const assignedId = dbRes?.driverId || driverUuid;
-
-    // 2. Update Local State
-    setOrders(prev => prev.map(o => {
-      if (o.rawId === matchedOrder.rawId || o.id === matchedOrder.id) {
-        return {
-          ...o,
-          status: 'ACCEPTED',
-          rawStatus: 'accepted',
-          assignedDriverName: driverName,
-          assignedDriver: { name: driverName, id: assignedId }
-        };
-      }
-      return o;
-    }));
-
-    // 3. Trigger Modal & Toast
-    setAcceptedModalState({
-      isOpen: true,
-      order: {
-        ...matchedOrder,
-        status: 'ACCEPTED',
-        assignedDriverName: driverName
-      }
-    });
-    setNotification({
-      type: 'success',
-      message: `Order ${matchedOrder.id} status updated to ACCEPTED & driver_id set to ${assignedId}!`
-    });
   };
 
   // Handler: Decline / Reject Order
@@ -644,7 +660,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
               Dispatch Orders & Marketplace
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 font-medium max-w-2xl">
-              Live courier orders fetched directly from <code className="text-rose-400 font-mono text-xs">customer_orders</code> database table.
+              Browse, claim, and fulfill live on-demand courier and delivery dispatch orders in real-time.
             </p>
           </div>
 
@@ -727,31 +743,19 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
 
           {activeTab === 'marketplace' && (
             <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-              {/* Category Filter Tabs */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
-                <button
-                  onClick={() => setCategoryFilterTab('ALL')}
-                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${categoryFilterTab === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-                >
-                  All Orders
-                </button>
-                <button
-                  onClick={() => setCategoryFilterTab('package')}
-                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${categoryFilterTab === 'package' ? 'bg-rose-600 text-white shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'}`}
-                >
-                  <Box className="w-3.5 h-3.5" />
-                  <span>Package Deliveries</span>
-                </button>
-                <button
-                  onClick={() => setCategoryFilterTab('food_grocery')}
-                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${categoryFilterTab === 'food_grocery' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-                >
-                  Food / Grocery
-                </button>
-              </div>
+              {/* Category Filter Dropdown */}
+              <select
+                value={categoryFilterTab}
+                onChange={(e) => setCategoryFilterTab(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer shadow-2xs"
+              >
+                <option value="ALL">All Orders</option>
+                <option value="package">Package Deliveries</option>
+                <option value="food_grocery">Food / Grocery</option>
+              </select>
 
               <div className="relative flex-1 sm:w-56">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Search order ref, city..."
@@ -780,8 +784,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
         {loading ? (
           <div className="bg-white border border-slate-200/90 rounded-3xl p-16 text-center space-y-4 shadow-sm">
             <Loader2 className="w-10 h-10 animate-spin text-rose-600 mx-auto" />
-            <h3 className="text-base font-bold text-[#0b132b]">Fetching live dispatch orders from Supabase...</h3>
-            <p className="text-xs text-slate-400 font-medium">Connecting to <code className="text-rose-600 font-mono">customer_orders</code> database table.</p>
+            <h3 className="text-base font-bold text-[#0b132b]">Fetching live dispatch orders...</h3>
+            <p className="text-xs text-slate-400 font-medium">Loading available orders and active courier assignments...</p>
           </div>
         ) : null}
 
@@ -843,12 +847,12 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                     </div>
 
                     {/* Order Body Details */}
-                    <div className="p-6 space-y-5 flex-1">
+                    <div className="p-5 space-y-3.5 flex-1">
 
                       {/* Pickup & Dropoff Route Card */}
-                      <div className="bg-slate-50/60 hover:bg-slate-50/80 p-4 pr-24 rounded-2xl border border-slate-200/60 relative transition-colors space-y-4">
+                      <div className="bg-slate-50/60 hover:bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60 relative transition-colors space-y-3">
                         {/* Connecting Line */}
-                        <div className="absolute left-[25px] top-9 bottom-9 w-px border-l border-dashed border-slate-300" />
+                        <div className="absolute left-[25px] top-8 bottom-8 w-px border-l border-dashed border-slate-300" />
 
                         {/* Pickup Point */}
                         <div className="flex items-start gap-4">
@@ -860,65 +864,77 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                         </div>
 
                         {/* Drop-off Point */}
-                        <div className="flex items-start gap-4">
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 shrink-0 mt-1.5 ml-1 relative z-10" />
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Drop-off Location</span>
-                            <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.dropoff}>{order.dropoff}</p>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-4 min-w-0 flex-1">
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 shrink-0 mt-1.5 ml-1 relative z-10" />
+                            <div className="min-w-0 flex-1">
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Drop-off Location</span>
+                              <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.dropoff}>{order.dropoff}</p>
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Direct Google Maps Route Launcher Button */}
-                        <a
-                          href={getGoogleMapsDirectionsUrl(order)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="absolute right-4 top-1/2 -translate-y-1/2 px-3.5 py-2.5 rounded-xl border border-rose-200/80 bg-rose-50/80 hover:bg-rose-100/90 text-rose-600 font-extrabold text-[10px] tracking-wider uppercase transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:shadow-md active:scale-95 z-10"
-                          title="Open live Google Maps driving directions in new tab"
-                        >
-                          <Navigation className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-                          <span>Map</span>
-                        </a>
+                          {/* Show in map text link */}
+                          <a
+                            href={getGoogleMapsDirectionsUrl(order)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-extrabold text-rose-600 hover:text-rose-700 hover:underline transition-all cursor-pointer shrink-0 self-end"
+                            title="Open live Google Maps driving directions in new tab"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Show in map</span>
+                          </a>
+                        </div>
                       </div>
 
                       {/* Specs Badge Grid */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col items-center justify-center min-h-[52px]">
-                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Vehicle</span>
-                          <span className="font-extrabold text-[#0b132b] text-xs">{order.vehicle}</span>
+                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Vehicle</span>
+                          <span className="font-extrabold text-[#0b132b] text-[11px] truncate block max-w-full leading-tight px-0.5" title={order.vehicle}>
+                            {order.vehicle.replace(' VEHICLE', '')}
+                          </span>
                         </div>
-                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col items-center justify-center min-h-[52px]">
-                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Distance</span>
-                          <span className="font-extrabold text-[#0b132b] text-xs truncate block max-w-full">
+                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Distance</span>
+                          <span className="font-extrabold text-[#0b132b] text-[11px] truncate block max-w-full leading-tight">
                             {order.distanceDisplay !== '-' ? order.distanceDisplay : (order.distanceMiles > 0 ? `${order.distanceMiles} mi` : '-')}
                           </span>
                         </div>
-                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col items-center justify-center min-h-[52px]">
-                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Category</span>
-                          <span className="font-extrabold text-rose-600 text-xs truncate block max-w-full uppercase" title={order.category}>
+                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Category</span>
+                          <span className="font-extrabold text-rose-600 text-[11px] truncate block max-w-full uppercase leading-tight" title={order.category}>
                             {order.category}
                           </span>
                         </div>
-                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col items-center justify-center min-h-[52px]">
-                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Package Tier</span>
-                          <span className="font-extrabold text-amber-600 text-[11px] truncate block max-w-full" title={order.packageTypeName}>{order.packageTypeName}</span>
+                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Package Tier</span>
+                          <span className="font-extrabold text-slate-800 text-[11px] truncate block max-w-full capitalize leading-tight" title={order.packageTypeName}>
+                            {order.packageTypeName}
+                          </span>
                         </div>
                       </div>
 
-                      {/* Instructions / Additional Info Notes */}
-                      {order.info && (
-                        <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200/80 text-xs text-amber-900 flex items-start gap-2 font-medium">
-                          <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                          <span className="line-clamp-3"><strong className="font-extrabold">Notes:</strong> {order.info}</span>
-                        </div>
-                      )}
+                      {/* Compact Notes & Extras Tags Row */}
+                      {((order.extras && order.extras.length > 0) || order.info) && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          {order.info && (
+                            <span
+                              className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200/80 px-2.5 py-1 rounded-xl shadow-2xs max-w-full"
+                              title={order.info}
+                            >
+                              <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span className="truncate max-w-[280px]"><strong>Note:</strong> {order.info}</span>
+                            </span>
+                          )}
 
-                      {/* Extras & Dimensions Tags */}
-                      {order.extras && order.extras.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {order.extras.map((extra, idx) => (
-                            <span key={idx} className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                              + {extra}
+                          {order.extras && order.extras.map((extra, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-slate-100/90 text-slate-700 border border-slate-200/90 px-2.5 py-1 rounded-xl shadow-2xs"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                              <span>{extra.startsWith('+ ') ? extra.slice(2) : extra}</span>
                             </span>
                           ))}
                         </div>
@@ -947,10 +963,20 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
 
                       <button
                         onClick={() => handleAcceptOrder(order)}
-                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer min-w-0"
+                        disabled={acceptingOrderId === (order.rawId || order.id)}
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer min-w-0 disabled:opacity-75 disabled:cursor-wait"
                       >
-                        <CheckCircle2 className="w-4 h-4 shrink-0" />
-                        <span className="truncate">Accept Order</span>
+                        {acceptingOrderId === (order.rawId || order.id) ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                            <span className="truncate">Accepting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            <span className="truncate">Accept Order</span>
+                          </>
+                        )}
                       </button>
                     </div>
 
@@ -1184,7 +1210,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
               <button
                 onClick={() => {
                   setAcceptedModalState({ isOpen: false, order: null });
-                  setActiveTab('accepted');
+                  setActiveTab('active');
                 }}
                 className="w-full sm:flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
