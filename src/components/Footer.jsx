@@ -16,12 +16,12 @@ export default function Footer({ onSelectState }) {
           </div>
 
           {/* Nav Links & Legal Info */}
-          <div className="flex flex-col items-center md:items-end space-y-2">
-            {/* <div className="flex items-center gap-6 text-xs font-semibold text-slate-300">
+          <div className="flex flex-col items-center md:items-end space-y-2.5">
+            {/* <div className="flex items-center gap-5 text-xs font-bold text-slate-300">
               <Link to="/terms" className="hover:text-rose-400 transition-colors">
                 Terms & Conditions
               </Link>
-              <span className="text-slate-700">•</span>
+              <span className="text-slate-600 font-normal">•</span>
               <Link to="/privacy" className="hover:text-emerald-400 transition-colors">
                 Privacy Policy
               </Link>
