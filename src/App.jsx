@@ -38,6 +38,8 @@ import ProCheckoutPage from './pages/ProCheckoutPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import MobileResetPasswordPage from './pages/MobileResetPasswordPage';
 import CompleteProfilePage from './pages/CompleteProfilePage';
+import TermsPage from './pages/TermsPage';
+import PrivacyPage from './pages/PrivacyPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import { US_STATES } from './data/statesData';
@@ -234,15 +236,13 @@ export default function App() {
         try {
           const { data, error } = await supabase
             .from('transactions')
-            .select('*');
+            .select('course_id, status, user_id, email')
+            .eq('user_id', currentUser.id)
+            .limit(50);
 
           if (data && !error) {
             const courseIds = data
-              .filter(tx =>
-                tx.status === 'Succeeded' &&
-                (String(tx.user_id) === String(currentUser.id) ||
-                  (tx.email && currentUser.email && tx.email.toLowerCase() === currentUser.email.toLowerCase()))
-              )
+              .filter(tx => tx.status === 'Succeeded')
               .map(tx => tx.course_id)
               .filter(Boolean);
             setPurchasedCourses(courseIds);
@@ -427,7 +427,9 @@ export default function App() {
       try {
         const { data: txs } = await supabase
           .from('transactions')
-          .select('*');
+          .select('course_id, status, user_id, email, created_at, amount, description')
+          .eq('user_id', profile?.id || currentUser?.id)
+          .limit(20);
 
         if (txs && txs.length > 0) {
           const userSubs = txs.filter(tx =>
@@ -709,6 +711,10 @@ export default function App() {
           <Route path="/dispatch-orders" element={<DispatchOrdersPage currentUser={currentUser} onLogout={handleLogout} />} />
           {/* <Route path="/growth" element={<GrowthPage currentUser={currentUser} onLogout={handleLogout} />} /> */}
           <Route path="/certification" element={<CertificationPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/terms" element={<TermsPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/terms-and-conditions" element={<TermsPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/privacy" element={<PrivacyPage currentUser={currentUser} onLogout={handleLogout} />} />
+          <Route path="/privacy-policy" element={<PrivacyPage currentUser={currentUser} onLogout={handleLogout} />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

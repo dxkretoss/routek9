@@ -18,7 +18,9 @@ import {
   CheckCircle2,
   ChevronUp,
   Globe,
-  UserCheck
+  UserCheck,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
@@ -34,6 +36,11 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
   const [updatingId, setUpdatingId] = useState(null);
   const [selectedCompanyRoutesModal, setSelectedCompanyRoutesModal] = useState(null);
   const [expandedRouteId, setExpandedRouteId] = useState(null);
+
+  // Server-Side Range Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCompaniesCount, setTotalCompaniesCount] = useState(64);
+  const itemsPerPage = 10;
 
   // Group Corporate Dispatched Routes by Company
   const groupedRoutesByCompany = React.useMemo(() => {
@@ -105,33 +112,64 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
   }
 
   // Load Company Profiles from Supabase & localStorage
-  const loadCompanies = async () => {
+  const loadCompanies = async (pageToLoad = currentPage) => {
     setLoading(true);
-    try {
-      // 1. Fetch Profiles with Role = 'company'
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'company')
-        .order('created_at', { ascending: false });
+    const p = typeof pageToLoad === 'number' ? pageToLoad : currentPage;
+    setCurrentPage(p);
+    const from = (p - 1) * itemsPerPage;
+    const to = from + itemsPerPage - 1;
 
-      const list = (profilesData || []).map((p) => {
-        const isDeactivated = p.status === 'INACTIVE';
+    try {
+      // 1. Fetch company_profiles metadata table (uses user_id as FK)
+      let companyMeta = [];
+      try {
+        const { data: cData } = await supabase.from('company_profiles').select('*');
+        if (cData) companyMeta = cData;
+      } catch (cmErr) {
+        console.warn("company_profiles notice:", cmErr);
+      }
+
+      // Map company_profiles metadata by user_id
+      const metaMap = (companyMeta || []).reduce((acc, curr) => {
+        const key = curr.user_id || curr.id;
+        if (key) acc[key] = curr;
+        return acc;
+      }, {});
+
+      // 2. Fetch Profiles with Role = 'company' with range(from, to) and exact count
+      const { data: profilesData, count } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .eq('role', 'company')
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (count !== null && count !== undefined) {
+        setTotalCompaniesCount(count);
+      }
+
+      const rawProfiles = profilesData || [];
+
+      const list = rawProfiles.map((p) => {
+        const meta = metaMap[p.id] || {};
+        const isDeactivated = p.status === 'INACTIVE' || p.is_active === false;
 
         return {
           ...p,
-          company_name: p.full_name || p.company_name || p.email?.split('@')[0] || 'Company',
-          city: p.city || 'Houston',
-          state_code: p.state_code || 'TX',
-          phone: p.phone || '',
+          company_name: meta.company_name || p.full_name || p.company_name || p.email?.split('@')[0] || 'Company',
+          contact_name: meta.contact_name || p.full_name || 'Primary Contact',
+          city: p.city || meta.city || 'Houston',
+          state_code: p.state_code || meta.state || 'TX',
+          phone: p.phone || meta.phone || '',
+          contact_email: meta.contact_email || p.email || '',
           status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
-          ready_to_work: p.ready_to_work !== undefined ? p.ready_to_work : (p.readyToWork !== undefined ? p.readyToWork : false),
-          website_url: p.website_url || p.website || '',
-          contract_types: p.vehicle || p.contract_types || 'Medical Specimen, Scheduled Routes',
-          service_area: p.availability || p.service_area || 'Regional & Statewide Logistics',
+          ready_to_work: p.ready_to_work !== false,
+          website_url: p.website_url || meta.website || '',
+          contract_types: meta.contract_types || p.vehicle || p.contract_types || 'Medical Specimen, Scheduled Routes',
+          service_area: meta.service_area || p.availability || p.service_area || 'Regional & Statewide Logistics',
           experience: p.experience || '',
           dot_number: p.dot_number || p.dotNumber || '',
-          bio: p.bio || p.description || ''
+          bio: meta.description || p.bio || p.description || ''
         };
       });
 
@@ -325,7 +363,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
             : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
-          Company Directory
+          Company Directory ({totalCompaniesCount || 64})
         </button>
         <button
           onClick={() => setActiveTab('routes')}
@@ -506,6 +544,46 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
               </table>
             </div>
           )}
+
+          {/* Pagination Footer */}
+          <div className="p-4 bg-slate-50/80 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-medium text-slate-600">
+            <div>
+              Showing <span className="font-extrabold text-slate-900">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
+              <span className="font-extrabold text-slate-900">{Math.min(currentPage * itemsPerPage, totalCompaniesCount || 64)}</span> of{' '}
+              <span className="font-extrabold text-slate-900">{totalCompaniesCount || 64}</span> companies
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const prevP = Math.max(currentPage - 1, 1);
+                  loadCompanies(prevP);
+                }}
+                disabled={currentPage === 1 || loading}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white font-extrabold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+
+              <div className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 font-black text-rose-600 text-xs shadow-2xs">
+                Page {currentPage} of {Math.ceil((totalCompaniesCount || 64) / itemsPerPage) || 1}
+              </div>
+
+              <button
+                onClick={() => {
+                  const totalP = Math.ceil((totalCompaniesCount || 64) / itemsPerPage) || 1;
+                  const nextP = Math.min(currentPage + 1, totalP);
+                  loadCompanies(nextP);
+                }}
+                disabled={currentPage >= (Math.ceil((totalCompaniesCount || 64) / itemsPerPage) || 1) || loading}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white font-extrabold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         /* Routes Tab Content */
