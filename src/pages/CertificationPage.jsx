@@ -69,10 +69,10 @@ export default function CertificationPage({ currentUser, onLogout }) {
     if (sessionIdFromUrl && !processingRef.current) {
       processingRef.current = true;
       setHasProcessed(true);
-      
+
       async function processSuccessfulPayment() {
         setStage("paid");
-        
+
         // 1. Record the transaction in Supabase
         try {
           const txPayload = {
@@ -85,7 +85,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
             status: 'Succeeded',
             created_at: new Date().toISOString()
           };
-          
+
           await safeInsertTransaction(txPayload);
         } catch (err) {
           console.warn("Could not save HIPAA transaction:", err);
@@ -112,14 +112,12 @@ export default function CertificationPage({ currentUser, onLogout }) {
               message: 'Congratulations! Your official HIPAA & Bloodborne Pathogens Certificate is now unlocked and available to download.',
               category: 'Certification',
               important: true,
-              actionUrl: '/dashboard',
-              actionText: 'Download PDF'
             });
           } catch (notifErr) {
             console.warn("Could not save HIPAA certification notification:", notifErr);
           }
         }
-        
+
         // 3. Clear session_id from URL search params to avoid loops
         try {
           queryParams.delete('session_id');
@@ -129,7 +127,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
           console.warn("URL cleanup error:", urlErr);
         }
       }
-      
+
       processSuccessfulPayment();
     }
   }, [currentUser, hasProcessed]);
@@ -415,7 +413,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
   // Handle mock payment submit
   const handlePaymentSuccess = async () => {
     setStage("paid");
-    
+
     const mockSessionId = `mock_cs_${Date.now()}`;
     try {
       const txPayload = {
@@ -453,8 +451,6 @@ export default function CertificationPage({ currentUser, onLogout }) {
           message: 'Congratulations! Your official HIPAA & Bloodborne Pathogens Certificate is now unlocked and available to download.',
           category: 'Certification',
           important: true,
-          actionUrl: '/dashboard',
-          actionText: 'Download PDF'
         });
       } catch (notifErr) {
         console.warn("Could not save HIPAA certification notification:", notifErr);

@@ -679,8 +679,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
           category: 'FLEET_INVITE',
           unread: true,
           important: true,
-          actionUrl: '/dashboard?tab=inbox',
-          actionText: 'View Invitation'
         });
 
         alert(`📩 Fleet Join Invitation sent to registered driver (${enteredEmail})! They will appear in your fleet list as soon as they accept in their Inbox.`);
@@ -952,8 +950,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             category: 'Fleet',
             unread: true,
             important: true,
-            actionUrl: '/dashboard?tab=fleet',
-            actionText: 'View Fleet Drivers'
           });
         }
       } catch (createErr) {
@@ -1108,8 +1104,6 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             status: n.status || 'PENDING',
             category: n.category || 'Dispatch Inquiry',
             companyId: n.company_id,
-            actionUrl: n.action_url,
-            actionText: n.action_text
           }));
           setInboxNotifications(formatted);
         } else {

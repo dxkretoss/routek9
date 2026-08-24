@@ -212,8 +212,6 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
           message: `Thank you! Your Route K9 PRO Membership (${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'}) is now active. Enjoy premium features!`,
           category: 'Earnings',
           important: true,
-          actionUrl: '/dashboard',
-          actionText: 'View Dashboard'
         });
       } catch (notifErr) {
         console.warn("Could not save PRO notification:", notifErr);

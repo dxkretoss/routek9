@@ -793,8 +793,6 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
                 message: `A company dispatcher has assigned a new route to you: "${newRoute.title}".`,
                 category: 'Route Match',
                 important: true,
-                actionUrl: '/dashboard',
-                actionText: 'View Dashboard'
               });
             } catch (notifErr) {
               console.warn("Could not save assigned route notification:", notifErr);
@@ -1049,8 +1047,6 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
           category: 'FLEET_INVITE',
           unread: true,
           important: true,
-          actionUrl: '/dashboard?tab=inbox',
-          actionText: 'View Invitation'
         });
 
         setJoinBusy(false);

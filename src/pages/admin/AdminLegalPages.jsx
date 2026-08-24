@@ -170,7 +170,8 @@ export default function AdminLegalPages() {
       setStatusMsg({ type: 'success', text: `Successfully saved and published "${title}" to database!` });
       setIsNewPage(false);
       setEditingSlug(finalSlug);
-      loadAllPages();
+      await loadAllPages();
+      setViewMode('list');
     } catch (err) {
       console.error("Error saving legal page:", err);
       setStatusMsg({ type: 'error', text: err.message || 'Failed to save page to database.' });
@@ -214,6 +215,17 @@ export default function AdminLegalPages() {
               </button>
             </div>
           </div>
+
+          {/* Alert Status Banner in List View */}
+          {statusMsg && (
+            <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between gap-3 shadow-xs ${statusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'}`}>
+              <div className="flex items-center gap-2">
+                {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                <span>{statusMsg.text}</span>
+              </div>
+              <button onClick={() => setStatusMsg(null)} className="text-current underline cursor-pointer hover:opacity-80">Dismiss</button>
+            </div>
+          )}
 
           {/* Directory Table Card */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
