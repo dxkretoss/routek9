@@ -97,14 +97,33 @@ export default function AdminSupportTickets() {
     const matchesSearch = !q
       ? true
       : (t.full_name || '').toLowerCase().includes(q) ||
-        (t.contact_info || '').toLowerCase().includes(q) ||
-        (t.issue_type || '').toLowerCase().includes(q) ||
-        (t.description || '').toLowerCase().includes(q);
+      (t.contact_info || '').toLowerCase().includes(q) ||
+      (t.issue_type || '').toLowerCase().includes(q) ||
+      (t.description || '').toLowerCase().includes(q);
 
     const matchesStatus = statusFilter === 'ALL' || String(t.status || '').toUpperCase() === statusFilter;
 
     return matchesSearch && matchesStatus;
   });
+
+  // Generate mailto link for direct customer email reply
+  const getMailtoLink = (ticket) => {
+    if (!ticket) return '#';
+    const contact = (ticket.contact_info || '').trim();
+    const emailMatch = contact.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const targetEmail = emailMatch ? emailMatch[0] : contact;
+
+    const subject = encodeURIComponent(`RouteK9 Support: ${ticket.issue_type || 'Inquiry'} (Ticket #${ticket.id || ''})`);
+    const body = encodeURIComponent(
+      `Hello ${ticket.full_name || 'Customer'},\n\nThank you for reaching out to RouteK9 Support.\n\n` +
+      `Regarding your inquiry regarding "${ticket.issue_type || 'General Support'}":\n` +
+      `"${ticket.description || ''}"\n\n` +
+      `[Type your reply message here]\n\n` +
+      `Best regards,\nRouteK9 Support Team\nhttps://routek9.com`
+    );
+
+    return `mailto:${targetEmail}?subject=${subject}&body=${body}`;
+  };
 
   // Pagination Calculations
   const totalTickets = filteredTickets.length;
@@ -119,8 +138,7 @@ export default function AdminSupportTickets() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/60">
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight flex items-center gap-2">
-            <LifeBuoy className="w-6 h-6 text-rose-600" />
-            <span>Support Tickets Management</span>
+            Support Tickets Management
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
             Monitor incoming user support inquiries, update ticket status, & inspect issue details
@@ -147,42 +165,15 @@ export default function AdminSupportTickets() {
                 setStatusFilter(st);
                 setCurrentPage(1);
               }}
-              className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${
-                statusFilter === st
-                  ? 'border-rose-600 text-rose-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
+              className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${statusFilter === st
+                ? 'border-rose-600 text-rose-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
             >
               {st} ({count})
             </button>
           );
         })}
-      </div>
-
-      {/* Search Input Bar */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            placeholder="Search by name, contact info, issue type, or description..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Main Tickets Table */}
@@ -193,14 +184,37 @@ export default function AdminSupportTickets() {
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Support Ticket Requests</h3>
               <p className="text-xs text-slate-400 font-medium">Manage ticket status from Open to Closed in real-time</p>
             </div>
-            <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
-              {filteredTickets.length} Tickets Found
-            </span>
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search by name, contact info, issue type, or description..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setCurrentPage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           {filteredTickets.length === 0 ? (
@@ -214,7 +228,6 @@ export default function AdminSupportTickets() {
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">
                     <th className="px-6 py-4">Applicant / User</th>
-                    <th className="px-6 py-4">Contact Info</th>
                     <th className="px-6 py-4">Issue Type</th>
                     <th className="px-6 py-4">Description Snippet</th>
                     <th className="px-6 py-4">Submitted Date</th>
@@ -227,27 +240,21 @@ export default function AdminSupportTickets() {
                     const statusUpper = String(ticket.status || 'OPEN').toUpperCase();
                     const formattedDate = ticket.created_at
                       ? new Date(ticket.created_at).toLocaleString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
                       : 'N/A';
 
                     return (
                       <tr key={ticket.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="px-6 py-4 font-bold text-slate-900">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center shrink-0">
-                              {(ticket.full_name || 'U').charAt(0).toUpperCase()}
-                            </div>
-                            <span className="font-extrabold text-slate-900">{ticket.full_name || 'User'}</span>
+                        <td className="px-6 py-4">
+                          <div>
+                            <div className="font-extrabold text-slate-900 text-xs">{ticket.full_name || 'User'}</div>
+                            <div className="text-[11px] text-slate-400 font-medium">{ticket.contact_info || 'N/A'}</div>
                           </div>
-                        </td>
-
-                        <td className="px-6 py-4 font-medium text-slate-700 font-mono text-[11px]">
-                          {ticket.contact_info || 'N/A'}
                         </td>
 
                         <td className="px-6 py-4">
@@ -271,11 +278,10 @@ export default function AdminSupportTickets() {
                               value={statusUpper}
                               onChange={(e) => handleStatusChange(ticket.id, e.target.value)}
                               disabled={updatingId === ticket.id}
-                              className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
-                                statusUpper === 'OPEN'
-                                  ? 'bg-rose-50 text-rose-700 border-rose-300 font-black'
-                                  : 'bg-emerald-50 text-emerald-700 border-emerald-300 font-black'
-                              }`}
+                              className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${statusUpper === 'OPEN'
+                                ? 'bg-rose-50 text-rose-700 border-rose-300 font-black'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-300 font-black'
+                                }`}
                             >
                               <option value="OPEN">OPEN</option>
                               <option value="CLOSED">CLOSED</option>
@@ -286,13 +292,23 @@ export default function AdminSupportTickets() {
 
                         {/* Actions */}
                         <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => setSelectedTicketModal(ticket)}
-                            className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer inline-flex"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-slate-500" />
-                            <span>View Details</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <a
+                              href={getMailtoLink(ticket)}
+                              title={`Reply via Email to ${ticket.contact_info || 'Customer'}`}
+                              className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer inline-flex"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                              <span>Reply</span>
+                            </a>
+                            <button
+                              onClick={() => setSelectedTicketModal(ticket)}
+                              className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer inline-flex"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-500" />
+                              <span>View Details</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -396,10 +412,17 @@ export default function AdminSupportTickets() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 flex justify-end">
+            <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <a
+                href={getMailtoLink(selectedTicketModal)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition-all shadow-md shadow-rose-600/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Mail className="w-4 h-4" />
+                <span>Reply via Email ({selectedTicketModal.contact_info || 'Customer'})</span>
+              </a>
               <button
                 onClick={() => setSelectedTicketModal(null)}
-                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer"
+                className="w-full sm:w-auto px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer"
               >
                 Close Window
               </button>

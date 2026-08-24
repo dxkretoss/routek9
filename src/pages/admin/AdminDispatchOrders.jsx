@@ -16,6 +16,8 @@ import {
   X,
   ExternalLink,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Building2,
   Calendar,
   Sparkles
@@ -30,6 +32,10 @@ export default function AdminDispatchOrders() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [successMsg, setSuccessMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Detail Modal State
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -114,7 +120,8 @@ export default function AdminDispatchOrders() {
             urgency: o.schedule_type || 'Same day',
             speed: o.speed_tier || 'Standard',
             info: o.special_instructions || o.instructions || 'No special notes.',
-            price: Number(o.price || o.payout || 0),
+            price: Number(o.total_amount ?? o.price ?? o.payout ?? o.subtotal ?? 0),
+            total_amount: Number(o.total_amount ?? o.price ?? o.payout ?? o.subtotal ?? 0),
             status: uiStatus,
             postedBy: {
               id: o.customer_id || '',
@@ -188,7 +195,7 @@ export default function AdminDispatchOrders() {
 
       const { error } = await supabase
         .from('customer_orders')
-        .update({ 
+        .update({
           order_status: dbOrderStatus,
           driver_id: dbDriverId,
           status: dbDeliveryStatus,
@@ -234,6 +241,11 @@ export default function AdminDispatchOrders() {
     }
   };
 
+  // Reset pagination when search or filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
+
   // Filter orders
   const filteredOrders = orders.filter(o => {
     const matchesStatus = statusFilter === 'ALL' || o.status === statusFilter;
@@ -248,6 +260,9 @@ export default function AdminDispatchOrders() {
 
     return matchesStatus && matchesSearch;
   });
+
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
+  const paginatedOrders = filteredOrders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Calculate Metrics
   const totalVolume = orders.reduce((sum, o) => sum + (o.price || 0), 0);
@@ -343,21 +358,21 @@ export default function AdminDispatchOrders() {
           />
         </div>
 
-        {/* Status Filter */}
-        <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Status:</span>
-          {['ALL', 'AVAILABLE', 'ACCEPTED', 'IN_TRANSIT', 'COMPLETED'].map(st => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer ${statusFilter === st
-                ? 'bg-[#0b132b] text-white shadow'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-            >
-              {st.replace('_', ' ')}
-            </button>
-          ))}
+        {/* Status Filter Dropdown */}
+        <div className="relative self-start sm:self-auto">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="pl-3.5 pr-8 py-2 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700 shadow-2xs cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-rose-500 transition-all appearance-none"
+          >
+            <option value="ALL">All Status</option>
+            <option value="AVAILABLE">Available</option>
+            <option value="ACCEPTED">Accepted</option>
+            <option value="IN_TRANSIT">In Transit</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
       </div>
 
@@ -391,7 +406,7 @@ export default function AdminDispatchOrders() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                {filteredOrders.map((order, idx) => {
+                {paginatedOrders.map((order, idx) => {
                   const isAvailable = order.status === 'AVAILABLE';
                   const isAccepted = order.status === 'ACCEPTED';
                   const isInTransit = order.status === 'IN_TRANSIT';
@@ -410,9 +425,6 @@ export default function AdminDispatchOrders() {
                       {/* Posted By (User / Customer) */}
                       <td className="p-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px] shrink-0">
-                            {order.postedBy?.name ? order.postedBy.name.charAt(0) : 'U'}
-                          </div>
                           <div>
                             <div className="font-bold text-slate-900 text-xs">{order.postedBy?.name || 'Registered Customer'}</div>
                             <div className="text-[10px] text-slate-400">{order.postedBy?.email || 'N/A'}</div>
@@ -455,7 +467,7 @@ export default function AdminDispatchOrders() {
 
                       {/* Payout */}
                       <td className="p-4 text-center">
-                        <div className="font-extrabold text-[#0b132b] text-sm">${Number(order.price).toFixed(2)}</div>
+                        <div className="font-extrabold text-[#0b132b] text-sm">${Number(order.total_amount ?? order.price ?? 0).toFixed(2)}</div>
                         <div className="text-[10px] text-slate-400 font-bold">{order.distanceMiles} mi</div>
                       </td>
 
@@ -507,6 +519,41 @@ export default function AdminDispatchOrders() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Footer */}
+          {filteredOrders.length > 0 && (
+            <div className="p-4 bg-slate-50/80 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-medium text-slate-600">
+              <div>
+                Showing <span className="font-extrabold text-slate-900">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
+                <span className="font-extrabold text-slate-900">{Math.min(currentPage * itemsPerPage, filteredOrders.length)}</span> of{' '}
+                <span className="font-extrabold text-slate-900">{filteredOrders.length}</span> orders
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white font-extrabold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Previous</span>
+                </button>
+
+                <div className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 font-black text-rose-600 text-xs shadow-2xs">
+                  Page {currentPage} of {totalPages}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage >= totalPages || loading}
+                  className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white font-extrabold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -605,7 +652,7 @@ export default function AdminDispatchOrders() {
               </div>
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Driver Payout</span>
-                <span className="font-extrabold text-emerald-700">${Number(selectedOrder.price).toFixed(2)}</span>
+                <span className="font-extrabold text-emerald-700">${Number(selectedOrder.total_amount ?? selectedOrder.price ?? 0).toFixed(2)}</span>
               </div>
             </div>
 

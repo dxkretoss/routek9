@@ -14,6 +14,8 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Filter,
   User,
   Mail,
   Phone,
@@ -26,8 +28,8 @@ export default function AdminCprNotaryBookings() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'completed', 'confirmed', 'cancelled'
-  const [serviceTab, setServiceTab] = useState('cpr'); // 'cpr', 'notary', 'all'
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'confirmed', 'completed', 'cancelled'
+  const [serviceTab, setServiceTab] = useState('all'); // 'all', 'cpr', 'notary'
   const [selectedBooking, setSelectedBooking] = useState(null);
 
   // Pagination state
@@ -67,24 +69,31 @@ export default function AdminCprNotaryBookings() {
         setTotalBookingsCount(rawBookings.length);
       }
 
-      // 1. Fetch customer_profiles table to resolve customer_id -> full_name, email, phone
+      // 1. Fetch customer_profiles and profiles tables to resolve customer_id -> full_name, email, phone
       const customerIds = [...new Set(rawBookings.map(b => b.customer_id).filter(Boolean))];
       let customerMap = {};
       if (customerIds.length > 0) {
         try {
-          const { data: custData } = await supabase
-            .from('customer_profiles')
-            .select('id, full_name, email, phone')
-            .in('id', customerIds);
+          const [cpRes, pRes] = await Promise.allSettled([
+            supabase.from('customer_profiles').select('id, full_name, email, phone').in('id', customerIds),
+            supabase.from('profiles').select('id, full_name, email, phone').in('id', customerIds)
+          ]);
 
-          if (custData && Array.isArray(custData)) {
-            customerMap = custData.reduce((acc, cust) => {
-              acc[cust.id] = cust;
-              return acc;
-            }, {});
+          if (pRes.status === 'fulfilled' && Array.isArray(pRes.value.data)) {
+            pRes.value.data.forEach(p => {
+              if (p.id) customerMap[String(p.id).toLowerCase()] = p;
+            });
+          }
+          if (cpRes.status === 'fulfilled' && Array.isArray(cpRes.value.data)) {
+            cpRes.value.data.forEach(cp => {
+              if (cp.id) {
+                const key = String(cp.id).toLowerCase();
+                customerMap[key] = { ...(customerMap[key] || {}), ...cp };
+              }
+            });
           }
         } catch (cErr) {
-          console.warn("Notice fetching customer_profiles:", cErr);
+          console.warn("Notice fetching customer_profiles/profiles:", cErr);
         }
       }
 
@@ -109,7 +118,8 @@ export default function AdminCprNotaryBookings() {
 
       // 3. Enrich rawBookings with customer profile details & cpr_notary_services titles
       const enrichedBookings = rawBookings.map(b => {
-        const cust = customerMap[b.customer_id] || {};
+        const custKey = String(b.customer_id || '').toLowerCase();
+        const cust = customerMap[custKey] || {};
         const serv = serviceMap[b.service_type] || {};
 
         // Title mapped from cpr_notary_services table title column
@@ -119,13 +129,16 @@ export default function AdminCprNotaryBookings() {
         const rawCat = b.service_category || b.serviceCategory;
         const cat = rawCat ? String(rawCat).trim().toLowerCase() : (serv.category ? String(serv.category).toLowerCase() : null);
 
+        const emailVal = b.customer_email || b.email || cust.email || '';
+        const nameVal = b.customer_name || cust.full_name || (emailVal ? emailVal.split('@')[0] : 'Customer');
+
         return {
           ...b,
           category: cat,
           service_title: displayTitle,
-          customer_name: cust.full_name || (cust.email ? cust.email.split('@')[0] : null),
-          customer_email: cust.email || '',
-          customer_phone: cust.phone || ''
+          customer_name: nameVal,
+          customer_email: emailVal,
+          customer_phone: b.customer_phone || b.phone || cust.phone || ''
         };
       });
 
@@ -244,15 +257,17 @@ export default function AdminCprNotaryBookings() {
 
   return (
     <div className="w-full space-y-6 animate-fadeIn">
-      {/* Top Controls: Refresh Button */}
-      <div className="flex items-center justify-between">
+      {/* Top Header & Refresh Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight">
-            CPR & Notary Bookings
-          </h2>
-          {/* <p className="text-xs text-slate-500 font-medium mt-1">
-            Displaying customer bookings with service titles from <code className="text-rose-600 font-mono text-[11px]">cpr_notary_services</code>
-          </p> */}
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight">
+              CPR & Notary Bookings
+            </h2>
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-600 border border-rose-200">
+              {bookings.length} Total Bookings
+            </span>
+          </div>
           <p className="text-xs text-slate-500 font-medium mt-1">
             Manage dynamic mobile CPR certifications and Notary public services.
           </p>
@@ -260,7 +275,7 @@ export default function AdminCprNotaryBookings() {
 
         <button
           onClick={() => loadBookings(currentPage)}
-          className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-2 text-xs"
+          className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-2 text-xs self-start sm:self-auto"
           title="Refresh List"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -268,61 +283,17 @@ export default function AdminCprNotaryBookings() {
         </button>
       </div>
 
-      {/* Primary Category Switch Tabs (CPR vs Notary) */}
-      <div className="flex border-b border-slate-200 gap-2">
-        <button
-          onClick={() => {
-            setServiceTab('cpr');
-            setCurrentPage(1);
-          }}
-          className={`px-5 py-2.5 text-xs font-extrabold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${serviceTab === 'cpr'
-            ? 'border-rose-600 text-rose-600'
-            : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-        >
-          <HeartPulse className="w-4 h-4" />
-          <span>CPR Bookings ({cprCount})</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setServiceTab('notary');
-            setCurrentPage(1);
-          }}
-          className={`px-5 py-2.5 text-xs font-extrabold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${serviceTab === 'notary'
-            ? 'border-rose-600 text-rose-600'
-            : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-        >
-          <FileCheck className="w-4 h-4" />
-          <span>Notary Bookings ({notaryCount})</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setServiceTab('all');
-            setCurrentPage(1);
-          }}
-          className={`px-5 py-2.5 text-xs font-extrabold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${serviceTab === 'all'
-            ? 'border-rose-600 text-rose-600'
-            : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-        >
-          <ShoppingBag className="w-4 h-4" />
-          <span>All Bookings ({bookings.length})</span>
-        </button>
-      </div>
-
-      {/* Search Input & Status Filters */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+      {/* Filter Bar & Search */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-4 md:space-y-0 md:flex md:items-center md:justify-between gap-4">
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search orders by customer name, email, booking ref, address, or service title..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full pl-10 ${searchQuery ? 'pr-10' : 'pr-4'} py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:outline-hidden shadow-2xs`}
+            className={`w-full pl-10 ${searchQuery ? 'pr-10' : 'pr-4'} py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-xs font-medium focus:outline-hidden focus:border-rose-500 transition-all`}
           />
           {searchQuery && (
             <button
@@ -335,32 +306,56 @@ export default function AdminCprNotaryBookings() {
           )}
         </div>
 
-        {/* Status Pills */}
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold self-start md:self-auto">
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${statusFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setStatusFilter('completed')}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${statusFilter === 'completed' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-500 hover:text-emerald-700'}`}
-          >
-            Completed
-          </button>
-          <button
-            onClick={() => setStatusFilter('confirmed')}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${statusFilter === 'confirmed' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-500 hover:text-blue-700'}`}
-          >
-            Confirmed
-          </button>
-          <button
-            onClick={() => setStatusFilter('cancelled')}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${statusFilter === 'cancelled' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-500 hover:text-rose-700'}`}
-          >
-            Cancelled
-          </button>
+        {/* Filters: Category & Status Pills */}
+        <div className="flex flex-wrap items-center gap-3 text-xs font-bold">
+          {/* Category Filter Tabs */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+            <button
+              onClick={() => {
+                setServiceTab('all');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${serviceTab === 'all' ? 'bg-white text-slate-900 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
+            >
+              All Categories
+            </button>
+            <button
+              onClick={() => {
+                setServiceTab('cpr');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${serviceTab === 'cpr' ? 'bg-rose-600 text-white shadow-2xs font-extrabold' : 'text-slate-500 hover:text-rose-600'}`}
+            >
+              CPR
+            </button>
+            <button
+              onClick={() => {
+                setServiceTab('notary');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${serviceTab === 'notary' ? 'bg-blue-600 text-white shadow-2xs font-extrabold' : 'text-slate-500 hover:text-blue-600'}`}
+            >
+              Notary
+            </button>
+          </div>
+
+          {/* Status Dropdown Filter */}
+          <div className="relative">
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="pl-3.5 pr-8 py-2 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700 shadow-2xs cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-rose-500 transition-all appearance-none"
+            >
+              <option value="all">All Status</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
         </div>
       </div>
 
@@ -369,7 +364,7 @@ export default function AdminCprNotaryBookings() {
         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
           <div>
             <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">
-              {serviceTab === 'cpr' ? 'CPR Training Orders' : serviceTab === 'notary' ? "Notary Orders" : 'All Customer Orders'}
+              {serviceTab === 'cpr' ? 'CPR Training Orders' : serviceTab === 'notary' ? "Notary Orders" : 'CPR & Notary Customer Orders'}
             </h3>
           </div>
           <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
@@ -418,14 +413,14 @@ export default function AdminCprNotaryBookings() {
                         </span>
                       </td>
 
-                      {/* Customer Name & ID */}
+                      {/* Customer Name & Email */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="min-w-0">
-                          <span className="font-extrabold text-slate-900 block truncate max-w-[150px]" title={custName}>
+                          <span className="font-extrabold text-slate-900 block truncate max-w-[170px]" title={custName}>
                             {custName}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-mono block truncate max-w-[130px]" title={ord.customer_id}>
-                            {shortCustId}
+                          <span className="text-[11px] text-slate-400 font-medium block truncate max-w-[170px]" title={ord.customer_email || '—'}>
+                            {ord.customer_email || '—'}
                           </span>
                         </div>
                       </td>

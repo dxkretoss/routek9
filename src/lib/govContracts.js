@@ -207,24 +207,33 @@ export async function syncGovContractsFromSamApi() {
     console.warn("SAM.gov API network exception:", err);
   }
 
-  // Delete existing entries in DB first so old expired ones are completely wiped out
-  const { data: existingRows } = await supabase.from('gov_contracts').select('id, notice_id');
-  if (Array.isArray(existingRows) && existingRows.length > 0) {
-    for (const row of existingRows) {
-      await supabase.from('gov_contracts').delete().or(`id.eq.${row.id},notice_id.eq.${row.notice_id}`);
-    }
-  }
-
+  // VALIDATION: ONLY update database if API call successfully returned valid contracts
   if (freshContracts.length > 0) {
+    // Delete existing entries in DB and replace with fresh contracts
+    const { data: existingRows } = await supabase.from('gov_contracts').select('id, notice_id');
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      for (const row of existingRows) {
+        await supabase.from('gov_contracts').delete().or(`id.eq.${row.id},notice_id.eq.${row.notice_id}`);
+      }
+    }
+
     await seedDefaultContractsToDb(freshContracts);
+    const updatedFromDb = await fetchGovContractsFromDb();
+
+    return {
+      success: true,
+      error: null,
+      list: updatedFromDb
+    };
   }
 
-  const updatedFromDb = await fetchGovContractsFromDb();
+  // If API call did not return new contracts, DO NOT wipe database; retain existing contracts
+  const existingFromDb = await fetchGovContractsFromDb();
 
   return {
-    success: true,
-    error: null,
-    list: updatedFromDb
+    success: false,
+    error: "SAM.gov API did not return new contracts. Retaining existing contracts.",
+    list: existingFromDb
   };
 }
 

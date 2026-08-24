@@ -342,49 +342,43 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
         </button>
       </div>
 
-      {/* Search Filter Input */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            placeholder={activeTab === 'directory' ? "Search customers by name, email, phone, or ID..." : "Search orders by order ref, pickup, dropoff, or status..."}
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setDirectoryPage(1);
-              setOrdersPage(1);
-            }}
-            className={`w-full pl-10 ${searchQuery ? 'pr-10' : 'pr-4'} py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:outline-hidden shadow-2xs`}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setDirectoryPage(1);
-                setOrdersPage(1);
-              }}
-              className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* TABS CONTENT */}
       {activeTab === 'directory' ? (
         /* TAB 1: Customer Directory Table */
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Customer Directory</h3>
               <p className="text-xs text-slate-400 font-medium">Registered customer accounts & activity summaries</p>
             </div>
-            <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
-              {filteredCustomers.length} Customers
-            </span>
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search customers by name, email, phone, or ID..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setDirectoryPage(1);
+                  setOrdersPage(1);
+                }}
+                className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setDirectoryPage(1);
+                    setOrdersPage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -404,7 +398,6 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">
                     <th className="px-6 py-4">Customer Name</th>
-                    <th className="px-6 py-4">Email</th>
                     <th className="px-6 py-4">Phone</th>
                     <th className="px-6 py-4">Deliveries</th>
                     <th className="px-6 py-4">Total Spend</th>
@@ -418,28 +411,21 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
 
                     return (
                       <tr key={cust.id} className="hover:bg-slate-50/60 transition-colors">
-                        {/* Customer Avatar & Name */}
+                        {/* Customer Avatar & Name & Email */}
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-rose-500 to-amber-500 text-white font-extrabold text-xs flex items-center justify-center shadow-xs shrink-0">
                               {initials}
                             </div>
                             <div className="min-w-0">
-                              <span className="font-extrabold text-slate-900 block truncate max-w-[160px]" title={cust.full_name}>
+                              <span className="font-extrabold text-slate-900 block truncate max-w-[180px]" title={cust.full_name}>
                                 {cust.full_name}
                               </span>
-                              <span className="text-[10px] text-slate-400 font-mono block truncate max-w-[140px]">
-                                ID: {String(cust.id).substring(0, 12)}...
+                              <span className="text-[11px] text-slate-400 font-medium block truncate max-w-[180px]" title={cust.email}>
+                                {cust.email || '—'}
                               </span>
                             </div>
                           </div>
-                        </td>
-
-                        {/* Email */}
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-semibold text-slate-700 block truncate max-w-[180px]" title={cust.email}>
-                            {cust.email}
-                          </span>
                         </td>
 
                         {/* Phone */}
@@ -522,14 +508,39 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
       ) : (
         /* TAB 2: Customer Orders Monitor */
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Customer Orders Monitor</h3>
-              <p className="text-xs text-slate-400 font-medium">Real-time orders placed by mobile app customers </p>
+              <p className="text-xs text-slate-400 font-medium">Real-time orders placed by mobile app customers</p>
             </div>
-            <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
-              {filteredOrders.length} Orders Listed
-            </span>
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search orders by order ref, pickup, dropoff, or status..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setDirectoryPage(1);
+                  setOrdersPage(1);
+                }}
+                className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setDirectoryPage(1);
+                    setOrdersPage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (

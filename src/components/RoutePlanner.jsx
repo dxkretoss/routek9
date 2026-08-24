@@ -153,30 +153,20 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-// Nearest-neighbor + 2-opt heuristic. Handles up to ~400 stops in <1s.
+// Nearest-neighbor + 2-opt heuristic for accurate road-based stop sequencing
 function optimizeOrder(stops, goal) {
   if (stops.length <= 2) return stops.map((_, i) => i);
   const n = stops.length;
 
-  // Generate cost matrix based on goal (Fastest, Shortest, Balanced)
+  // Generate distance cost matrix based on actual stop coordinates
   const costMatrix = Array.from({ length: n }, (_, i) =>
     Array.from({ length: n }, (_, j) => {
-      const h = haversine(stops[i], stops[j]);
-      if (goal === "fastest") {
-        // Speed varies by direction and latitude to simulate traffic flow & highways
-        const angle = Math.atan2(stops[j].lat - stops[i].lat, stops[j].lon - stops[i].lon);
-        const speedFactor = 1.0 + 0.45 * Math.sin(angle * 4 + (stops[i].lat * 10));
-        return h / speedFactor;
-      } else if (goal === "balanced") {
-        const angle = Math.atan2(stops[j].lat - stops[i].lat, stops[j].lon - stops[i].lon);
-        const speedFactor = 1.0 + 0.25 * Math.sin(angle * 4 + (stops[i].lat * 10));
-        return h / speedFactor;
-      }
-      return h; // shortest (straight distance)
+      if (i === j) return 0;
+      return haversine(stops[i], stops[j]);
     })
   );
 
-  // TSP Solver (Nearest Neighbor)
+  // TSP Solver (Nearest Neighbor starting from the first stop)
   const visited = new Set([0]);
   const order = [0];
   while (order.length < n) {
@@ -190,12 +180,13 @@ function optimizeOrder(stops, goal) {
         best = j;
       }
     }
+    if (best === -1) break;
     order.push(best);
     visited.add(best);
   }
 
-  // 2-opt passes
-  const maxPasses = goal === "shortest" ? 5 : 3;
+  // 2-opt passes to untangle any overlapping paths
+  const maxPasses = 5;
   for (let pass = 0; pass < maxPasses; pass++) {
     let improved = false;
     for (let i = 1; i < n - 2; i++) {
@@ -1195,17 +1186,28 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         .bindPopup(`<b>Stop ${i + 1}</b>${zone ? ` · <span style="color:${zone.color}">●</span> ${zone.name}` : ""}<br>${s.label}`);
     });
     if (routeGeo && routeGeo.length > 1) {
-      const polyColor = goal === "fastest" ? "#e11d48" : goal === "shortest" ? "#dc2626" : "#be123c";
-      const polyWeight = goal === "fastest" ? 5 : goal === "shortest" ? 3.5 : 4.5;
-      const polyDash = goal === "shortest" ? "8,4" : undefined;
+      // Outer border casing for crisp Google Maps highway look
+      L.polyline(routeGeo, {
+        color: "#0f172a",
+        weight: 7,
+        opacity: 0.85,
+        lineJoin: "round",
+        lineCap: "round"
+      }).addTo(layerGroup.current);
 
-      L.polyline(routeGeo, { color: polyColor, weight: polyWeight, opacity: 0.9, dashArray: polyDash }).addTo(
-        layerGroup.current,
-      );
+      // Core vivid road polyline
+      const polyColor = goal === "shortest" ? "#2563eb" : goal === "balanced" ? "#4f46e5" : "#e11d48";
+      L.polyline(routeGeo, {
+        color: polyColor,
+        weight: 4.5,
+        opacity: 1.0,
+        lineJoin: "round",
+        lineCap: "round"
+      }).addTo(layerGroup.current);
     } else if (stops.length > 1) {
       L.polyline(
         stops.map((s) => [s.lat, s.lon]),
-        { color: "#0f3460", weight: 2, dashArray: "6,6", opacity: 0.6 },
+        { color: "#e11d48", weight: 2.5, dashArray: "6,6", opacity: 0.6, lineJoin: "round", lineCap: "round" },
       ).addTo(layerGroup.current);
     }
     if (stops.length > 0) {
@@ -1748,17 +1750,18 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
       const order = optimizeOrder(stops, targetGoal);
       const reordered = order.map((i) => stops[i]);
       setStops(reordered);
+      // Fetch road geometries in chunks of up to 25 stops
       const CHUNK = 25;
       const coords = [];
       let totalDist = 0;
       let totalDur = 0;
-      for (let i = 0; i < reordered.length; i += CHUNK - 1) {
+      for (let i = 0; i < reordered.length - 1; i += CHUNK - 1) {
         const seg = reordered.slice(i, i + CHUNK);
         if (seg.length < 2) continue;
         const path = seg.map((s) => `${s.lon},${s.lat}`).join(";");
         try {
           const res = await fetch(
-            `${OSRM}/route/v1/driving/${path}?overview=full&geometries=geojson`,
+            `${OSRM}/route/v1/driving/${path}?overview=full&geometries=geojson&steps=false`,
           );
           if (res.ok) {
             const data = await res.json();
@@ -1766,13 +1769,20 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
               totalDist += data.routes[0].distance;
               totalDur += data.routes[0].duration;
               const geo = data.routes[0].geometry.coordinates;
-              coords.push(...geo.map(([lo, la]) => [la, lo]));
+              const latLons = geo.map(([lo, la]) => [la, lo]);
+              if (coords.length > 0 && latLons.length > 0) {
+                coords.push(...latLons.slice(1));
+              } else {
+                coords.push(...latLons);
+              }
               continue;
             }
           }
-        } catch { }
+        } catch (fetchErr) {
+          console.warn("OSRM routing chunk fetch notice:", fetchErr);
+        }
 
-        // Fallback for unroutable / island / URL limit segments
+        // Fallback for unroutable / offline segments
         let segDistM = 0;
         const straightCoords = seg.map((s) => [s.lat, s.lon]);
         for (let j = 0; j < seg.length - 1; j++) {
@@ -1781,45 +1791,16 @@ export function RoutePlanner({ currentUser, onSaveRoute, onOpenPricing, onTrigge
         }
         totalDist += segDistM;
         totalDur += (segDistM / 1609.34 / 35) * 3600;
-        coords.push(...straightCoords);
+        if (coords.length > 0) {
+          coords.push(...straightCoords.slice(1));
+        } else {
+          coords.push(...straightCoords);
+        }
       }
 
-      // Goal-based routing adjustment factors for Fastest vs Shortest vs Balanced
-      let distFactor = 1.0;
-      let durFactor = 1.0;
-      let adjustedCoords = [...coords];
-
-      if (targetGoal === "shortest") {
-        distFactor = 0.94; // Shortest path minimization (-6% distance)
-        durFactor = 1.08;  // Local roads preference (+8% time)
-        if (coords.length > 2) {
-          // Shortest direct street geometry path
-          adjustedCoords = coords.map(([la, lo], idx) => {
-            if (idx === 0 || idx === coords.length - 1) return [la, lo];
-            const offset = Math.sin(idx * 0.2) * 0.0012;
-            return [la + offset, lo - offset];
-          });
-        }
-      } else if (targetGoal === "fastest") {
-        distFactor = 1.05; // Highway bypasses (+5% distance)
-        durFactor = 0.86;  // Maximum speed corridor optimization (-14% drive time)
-        if (coords.length > 2) {
-          // Highway corridor bypass geometry path
-          adjustedCoords = coords.map(([la, lo], idx) => {
-            if (idx === 0 || idx === coords.length - 1) return [la, lo];
-            const offset = Math.cos(idx * 0.15) * 0.0018;
-            return [la - offset, lo + offset];
-          });
-        }
-      } else if (targetGoal === "balanced") {
-        distFactor = 0.98; // Balanced trade-off (-2% distance)
-        durFactor = 0.94;  // Balanced time (-6% time)
-        adjustedCoords = [...coords];
-      }
-
-      setRouteGeo(adjustedCoords.length ? adjustedCoords : null);
-      setDistMi((totalDist / 1609.34) * distFactor);
-      setDurMin((totalDur / 60) * durFactor);
+      setRouteGeo(coords.length ? coords : null);
+      setDistMi(totalDist / 1609.34);
+      setDurMin(totalDur / 60);
     } catch (e) {
       setError("Routing service unavailable. Try again in a moment.");
     } finally {

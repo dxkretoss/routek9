@@ -188,8 +188,7 @@ export default function AdminLegalPages() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/60">
             <div>
               <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight flex items-center gap-2">
-                <FileText className="w-6 h-6 text-rose-600" />
-                <span>Legal Pages Management (CMS)</span>
+                Legal Pages Management (CMS)
               </h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 Manage, edit, & publish HTML legal documents rendered across Web and Mobile apps
@@ -221,11 +220,7 @@ export default function AdminLegalPages() {
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
               <div>
                 <h3 className="text-lg font-extrabold text-[#0b132b] font-serif-heading">Active Legal Documents</h3>
-                <p className="text-xs text-slate-400 font-medium">Click "Edit Page" to launch the Jodit Editor</p>
               </div>
-              <span className="px-3 py-1 bg-rose-50 text-rose-700 font-extrabold text-xs rounded-full border border-rose-200">
-                {pagesList.length} Pages Configured
-              </span>
             </div>
 
             {loadingList ? (
@@ -427,7 +422,7 @@ export default function AdminLegalPages() {
                       value={contentHtml}
                       config={editorConfig}
                       onBlur={(newContent) => setContentHtml(newContent)}
-                      onChange={() => {}}
+                      onChange={() => { }}
                     />
                   </div>
                 </div>

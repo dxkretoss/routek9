@@ -239,7 +239,6 @@ export default function AdminExamQuestions() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
           <div className="flex items-center gap-2.5">
-
             <h2 className="text-xl sm:text-2xl font-extrabold text-[#0b132b] font-serif-heading tracking-tight">
               Certification Exam Questions
             </h2>

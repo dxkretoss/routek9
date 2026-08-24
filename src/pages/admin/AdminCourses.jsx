@@ -243,7 +243,7 @@ export default function AdminCourses() {
       title: newTitle.trim(),
       subtitle: newSubtitle.trim() || 'Professional training course for route couriers.',
       description: newSubtitle.trim() || 'Professional training course for route couriers.',
-      price: Number(newPrice) || 49,
+      price: !isNaN(parseFloat(newPrice)) ? parseFloat(newPrice) : 49,
       projectedPay: newProjectedPay.trim() || '$50,000 – $150,000+ / year',
       access: 'One-time • Lifetime access • Certificate on completion',
       image: newImageUrl.trim() || PRESET_IMAGES[0].url,
@@ -318,7 +318,7 @@ export default function AdminCourses() {
       title: editTitle.trim(),
       subtitle: editSubtitle.trim(),
       description: editSubtitle.trim(),
-      price: Number(editPrice) || 49,
+      price: !isNaN(parseFloat(editPrice)) ? parseFloat(editPrice) : 49,
       projectedPay: editProjectedPay.trim(),
       image: editImageUrl.trim(),
       image_url: editImageUrl.trim(),
@@ -603,7 +603,8 @@ export default function AdminCourses() {
                   <input
                     type="number"
                     required
-                    min="1"
+                    min="0"
+                    step="any"
                     placeholder="49"
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
@@ -911,7 +912,8 @@ export default function AdminCourses() {
                   <input
                     type="number"
                     required
-                    min="1"
+                    min="0"
+                    step="any"
                     value={editPrice}
                     onChange={(e) => setEditPrice(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
