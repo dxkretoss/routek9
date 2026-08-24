@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   optimizeDeps: {
-    include: ['react-simple-maps', 'prop-types', 'topojson-client', 'd3-scale']
+    include: ['react-simple-maps', 'prop-types', 'topojson-client', 'd3-scale', 'jodit-react', 'jodit']
   },
   server: {
     proxy: {

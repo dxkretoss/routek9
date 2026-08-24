@@ -33,12 +33,21 @@ import {
   Map as MapIcon,
   Globe
 } from 'lucide-react';
-import { supabase, fetchCustomerOrdersFromDb, updateCustomerOrderStatusInDb, updateCustomerStatusColumnInDb } from '../lib/supabase';
+import {
+  supabase,
+  fetchCustomerOrdersFromDb,
+  updateCustomerOrderStatusInDb,
+  updateCustomerStatusColumnInDb,
+  acceptPackageOrder,
+  startPackageDelivery,
+  completePackageDelivery
+} from '../lib/supabase';
 
 export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('marketplace'); // 'marketplace' | 'accepted'
+  const [activeTab, setActiveTab] = useState('marketplace'); // 'marketplace' | 'active' | 'history'
+  const [categoryFilterTab, setCategoryFilterTab] = useState('ALL'); // 'ALL' | 'package' | 'food_grocery'
   const [searchTerm, setSearchTerm] = useState('');
   const [vehicleFilter, setVehicleFilter] = useState('ALL');
   const [notification, setNotification] = useState(null);
@@ -80,22 +89,32 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     }
 
     // Standardize status for UI display
-    const rawStatus = (row.order_status || '').toLowerCase();
+    const rawDbStatus = (row.status || '').toLowerCase();
+    const rawOrderStatus = (row.order_status || '').toLowerCase();
     let uiStatus = 'AVAILABLE';
-    if (rawStatus === 'pending' || rawStatus === 'available' || !rawStatus) {
+    if (rawDbStatus === 'pending' || rawDbStatus === 'available' || rawOrderStatus === 'pending' || (!rawDbStatus && !rawOrderStatus)) {
       uiStatus = 'AVAILABLE';
-    } else if (rawStatus === 'accepted') {
+    } else if (rawDbStatus === 'accepted' || rawOrderStatus === 'accepted') {
       uiStatus = 'ACCEPTED';
-    } else if (rawStatus === 'in_transit' || rawStatus === 'in_progress' || rawStatus === 'active') {
+    } else if (rawDbStatus === 'in_progress' || rawDbStatus === 'ongoing' || rawOrderStatus === 'in_transit' || rawOrderStatus === 'in_progress') {
       uiStatus = 'IN_TRANSIT';
-    } else if (rawStatus === 'completed' || rawStatus === 'delivered') {
+    } else if (rawDbStatus === 'delivered' || rawDbStatus === 'completed' || rawOrderStatus === 'completed' || rawOrderStatus === 'delivered') {
       uiStatus = 'COMPLETED';
-    } else if (rawStatus === 'rejected' || rawStatus === 'declined' || rawStatus === 'cancelled') {
+    } else if (rawDbStatus === 'rejected' || rawDbStatus === 'declined' || rawDbStatus === 'cancelled') {
       uiStatus = 'REJECTED';
     }
 
-    // Dynamic Vehicle Text
-    const vehicleText = getDynamicVal(row.vehicle_type, (v) => String(v).toUpperCase());
+    // Dynamic Package Photos indicator
+    if (Array.isArray(row.package_photo_urls) && row.package_photo_urls.length > 0) {
+      extras.push(`📷 ${row.package_photo_urls.length} Photo(s) Attached`);
+    }
+
+    // Dynamic Vehicle Text (Format UUIDs gracefully)
+    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    let vehicleText = 'STANDARD VEHICLE';
+    if (row.vehicle_type && !isUuid(row.vehicle_type)) {
+      vehicleText = String(row.vehicle_type).toUpperCase();
+    }
 
     // Dynamic Speed Tier Text
     const speedTierText = getDynamicVal(row.speed_tier, (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1));
@@ -106,6 +125,9 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     } else if (speedTierText === '-' && estTimeText) {
       speedFormatted = estTimeText;
     }
+
+    // Package Type Name
+    const packageTypeName = row.package_type_name || row.package_type || (row.category === 'package' ? 'Package Box' : (row.delivery_type || 'General Courier'));
 
     // Dynamic Delivery Type Text
     let deliveryTypeText = '-';
@@ -154,12 +176,13 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
       rawId: row.id || '-',
       id: displayId,
       orderRef: getDynamicVal(row.order_ref),
-      pickup: getDynamicVal(row.pickup_address),
-      dropoff: getDynamicVal(row.dropoff_address),
+      pickup: getDynamicVal(row.pickup_address || row.pickup),
+      dropoff: getDynamicVal(row.dropoff_address || row.dropoff),
       distanceMiles: numericDist,
       distanceDisplay: distanceDisplay,
       estTimeMinutes: getDynamicVal(row.estimated_time),
-      category: getDynamicVal(row.category),
+      category: (row.category || 'package').toLowerCase(),
+      packageTypeName: packageTypeName,
       deliveryType: deliveryTypeText,
       vehicle: vehicleText,
       urgency: getDynamicVal(row.schedule_type, (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1)),
@@ -280,6 +303,11 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const availableOrders = orders.filter(o => {
     if (o.status !== 'AVAILABLE') return false;
     if (declinedOrderIds.includes(o.rawId)) return false; // Exclude orders declined by this driver
+    
+    // Check if order belongs to Package category dynamically
+    const isPackageOrder = o.category === 'package' || Boolean(o.packageTypeName && o.packageTypeName !== '-' && o.packageTypeName !== 'General Courier') || Boolean(o.rawRow?.package_type_id);
+    if (categoryFilterTab === 'package' && !isPackageOrder) return false;
+    if (categoryFilterTab === 'food_grocery' && o.category !== 'food' && o.category !== 'groceries') return false;
     if (vehicleFilter !== 'ALL' && o.vehicle.toLowerCase() !== vehicleFilter.toLowerCase()) return false;
     if (searchTerm.trim() !== '') {
       const term = searchTerm.toLowerCase();
@@ -289,6 +317,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
         o.pickup.toLowerCase().includes(term) ||
         o.dropoff.toLowerCase().includes(term) ||
         o.deliveryType.toLowerCase().includes(term) ||
+        (o.packageTypeName && o.packageTypeName.toLowerCase().includes(term)) ||
         o.category.toLowerCase().includes(term)
       );
     }
@@ -305,11 +334,21 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   };
 
   const activeDriverId = getActiveDriverId();
-  const acceptedOrders = orders.filter(o =>
-    (o.status === 'ACCEPTED' || o.status === 'IN_TRANSIT' || o.status === 'COMPLETED') &&
-    o.assignedDriver?.id === activeDriverId
+
+  // Active Deliveries (Accepted or In Progress) assigned to logged-in driver
+  const activeDeliveries = orders.filter(o =>
+    (o.status === 'ACCEPTED' || o.status === 'IN_TRANSIT' || o.dbStatus === 'accepted' || o.dbStatus === 'in_progress' || o.dbStatus === 'ongoing') &&
+    (o.assignedDriver?.id === activeDriverId || !o.assignedDriver?.id || o.rawRow?.driver_id === activeDriverId)
   );
-  const totalEarnings = acceptedOrders.reduce((sum, o) => sum + (o.status === 'COMPLETED' ? o.price : 0), 0);
+
+  // Completed History Deliveries assigned to logged-in driver
+  const completedOrders = orders.filter(o =>
+    (o.status === 'COMPLETED' || o.dbStatus === 'delivered' || o.dbStatus === 'completed') &&
+    (o.assignedDriver?.id === activeDriverId || o.rawRow?.driver_id === activeDriverId)
+  );
+
+  const acceptedOrders = activeDeliveries;
+  const totalEarnings = completedOrders.reduce((sum, o) => sum + (parseFloat(o.price) || 0), 0);
 
   // Handler: Accept Order
   const handleAcceptOrder = async (orderToAccept) => {
@@ -520,6 +559,76 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     setNotification({ type: 'success', message: `Order ${matchedOrder.id} status updated to ${newDbStatus.toUpperCase()}!` });
   };
 
+  // Handler: Start Delivery (In Progress)
+  const handleStartDelivery = async (order) => {
+    const orderId = order.rawId || order.id;
+    const driverId = getActiveDriverId();
+
+    // 1. Update DB in Supabase (status -> 'in_progress', order_status -> 'in_transit')
+    const res = await startPackageDelivery(orderId, driverId);
+
+    if (res && !res.success) {
+      setNotification({
+        type: 'error',
+        message: `Failed to update status: ${res.error || 'Database error'}`
+      });
+      return;
+    }
+
+    // 2. Update Local State
+    setOrders(prev => prev.map(o => {
+      if (o.rawId === orderId || o.id === orderId) {
+        return {
+          ...o,
+          status: 'IN_TRANSIT',
+          dbStatus: 'in_progress',
+          rawStatus: 'in_transit'
+        };
+      }
+      return o;
+    }));
+
+    setNotification({
+      type: 'success',
+      message: `Order ${order.id} status updated to IN PROGRESS!`
+    });
+  };
+
+  // Handler: Complete Delivery (Delivered)
+  const handleCompleteDelivery = async (order) => {
+    const orderId = order.rawId || order.id;
+    const driverId = getActiveDriverId();
+
+    // 1. Update DB in Supabase (status -> 'delivered', order_status -> 'completed')
+    const res = await completePackageDelivery(orderId, driverId);
+
+    if (res && !res.success) {
+      setNotification({
+        type: 'error',
+        message: `Failed to complete delivery: ${res.error || 'Database error'}`
+      });
+      return;
+    }
+
+    // 2. Update Local State
+    setOrders(prev => prev.map(o => {
+      if (o.rawId === orderId || o.id === orderId) {
+        return {
+          ...o,
+          status: 'COMPLETED',
+          dbStatus: 'delivered',
+          rawStatus: 'completed'
+        };
+      }
+      return o;
+    }));
+
+    setNotification({
+      type: 'success',
+      message: `Order ${order.id} delivery completed! Payout $${order.price.toFixed(2)} added to earnings.`
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 py-8 px-4 sm:px-6 lg:px-8 font-sans antialiased">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -590,28 +699,62 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                 }`}
             >
               <Package className="w-4 h-4" />
-              <span>Available Marketplace ({availableOrders.length})</span>
+              <span>Available Feed ({availableOrders.length})</span>
             </button>
 
             <button
-              onClick={() => setActiveTab('accepted')}
-              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'accepted'
+              onClick={() => setActiveTab('active')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'active'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+            >
+              <Truck className="w-4 h-4" />
+              <span>Active Deliveries ({activeDeliveries.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${activeTab === 'history'
                 ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>My Deliveries ({acceptedOrders.length})</span>
+              <span>Completed History ({completedOrders.length})</span>
             </button>
           </div>
 
           {activeTab === 'marketplace' && (
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-64">
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                <button
+                  onClick={() => setCategoryFilterTab('ALL')}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${categoryFilterTab === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  All Orders
+                </button>
+                <button
+                  onClick={() => setCategoryFilterTab('package')}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${categoryFilterTab === 'package' ? 'bg-rose-600 text-white shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <Box className="w-3.5 h-3.5" />
+                  <span>Package Deliveries</span>
+                </button>
+                <button
+                  onClick={() => setCategoryFilterTab('food_grocery')}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${categoryFilterTab === 'food_grocery' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Food / Grocery
+                </button>
+              </div>
+
+              <div className="relative flex-1 sm:w-56">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
                   type="text"
-                  placeholder="Search city, ID, category..."
+                  placeholder="Search order ref, city..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 shadow-2xs"
@@ -622,7 +765,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
               <select
                 value={vehicleFilter}
                 onChange={(e) => setVehicleFilter(e.target.value)}
-                className="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer shadow-2xs"
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer shadow-2xs"
               >
                 <option value="ALL">All Vehicles</option>
                 {availableVehicleOptions.map(veh => (
@@ -648,9 +791,9 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
             {availableOrders.length === 0 ? (
               <div className="bg-white border border-slate-200/90 rounded-3xl p-16 text-center space-y-4 shadow-sm">
                 <Package className="w-12 h-12 text-slate-400 mx-auto" />
-                <h3 className="text-lg font-bold text-[#0b132b]">No available dispatch orders match your filter</h3>
+                <h3 className="text-lg font-bold text-[#0b132b]">No available package orders match your filter</h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto font-medium">
-                  Try adjusting your search criteria or re-syncing database records.
+                  Try adjusting your category tabs or search criteria.
                 </p>
                 <button
                   onClick={() => loadOrdersFromDb(true)}
@@ -670,12 +813,18 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                     {/* Top Header Row */}
                     <div className="p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
                       <div className="flex flex-col gap-1 min-w-0">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-mono font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-mono font-extrabold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0">
                             {order.id}
                           </span>
-                          <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider truncate max-w-[200px]" title={order.deliveryType}>
-                            {order.deliveryType}
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase text-rose-700 bg-rose-100/80 px-2.5 py-0.5 rounded-md border border-rose-200">
+                            <Box className="w-3 h-3 text-rose-600" />
+                            <span>PACKAGE</span>
+                            {order.packageTypeName && (
+                              <span className="font-bold text-slate-800 border-l border-rose-300 pl-1.5">
+                                {order.packageTypeName}
+                              </span>
+                            )}
                           </span>
                         </div>
                         {order.scheduledAt && (
@@ -745,22 +894,22 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                           </span>
                         </div>
                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col items-center justify-center min-h-[52px]">
-                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Trip Type</span>
-                          <span className="font-extrabold text-rose-600 text-xs truncate block max-w-full" title={order.tripType}>
-                            {order.tripType}
+                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Category</span>
+                          <span className="font-extrabold text-rose-600 text-xs truncate block max-w-full uppercase" title={order.category}>
+                            {order.category}
                           </span>
                         </div>
                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col items-center justify-center min-h-[52px]">
-                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Speed / Tier</span>
-                          <span className="font-extrabold text-amber-600 text-[11px] truncate block max-w-full" title={order.speed}>{order.speed}</span>
+                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Package Tier</span>
+                          <span className="font-extrabold text-amber-600 text-[11px] truncate block max-w-full" title={order.packageTypeName}>{order.packageTypeName}</span>
                         </div>
                       </div>
 
-                      {/* Instructions / Info Notes */}
+                      {/* Instructions / Additional Info Notes */}
                       {order.info && (
                         <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200/80 text-xs text-amber-900 flex items-start gap-2 font-medium">
                           <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                          <span className="line-clamp-3">{order.info}</span>
+                          <span className="line-clamp-3"><strong className="font-extrabold">Notes:</strong> {order.info}</span>
                         </div>
                       )}
 
@@ -812,22 +961,126 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
           </div>
         )}
 
-        {/* ─── TAB 2: MY ACCEPTED DELIVERIES ─────────────────────────────────── */}
-        {!loading && activeTab === 'accepted' && (
+        {/* ─── TAB 2: ACTIVE DELIVERIES ─────────────────────────────────── */}
+        {!loading && activeTab === 'active' && (
           <div className="space-y-6">
-            {acceptedOrders.length === 0 ? (
+            {activeDeliveries.length === 0 ? (
               <div className="bg-white border border-slate-200/90 rounded-3xl p-16 text-center space-y-4 shadow-sm">
-                <CheckCircle2 className="w-12 h-12 text-slate-400 mx-auto" />
-                <h3 className="text-lg font-bold text-[#0b132b]">No accepted deliveries yet</h3>
+                <Truck className="w-12 h-12 text-slate-400 mx-auto" />
+                <h3 className="text-lg font-bold text-[#0b132b]">No active deliveries in progress</h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto font-medium">
-                  Browse the Available Marketplace tab to review open courier dispatch jobs and accept them.
+                  Accept package delivery orders from the Available Feed to begin the delivery lifecycle.
                 </p>
                 <button
                   onClick={() => setActiveTab('marketplace')}
                   className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition-all inline-flex items-center gap-2 cursor-pointer"
                 >
-                  <span>Browse Open Orders</span>
+                  <span>Browse Available Orders</span>
                 </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {activeDeliveries.map(order => {
+                  const isInProgress = order.status === 'IN_TRANSIT' || order.dbStatus === 'in_progress' || order.dbStatus === 'ongoing';
+
+                  return (
+                    <div
+                      key={order.rawId || order.id}
+                      className="bg-white rounded-3xl border-2 border-rose-500/20 shadow-xl overflow-hidden flex flex-col justify-between"
+                    >
+                      {/* Top Header Row */}
+                      <div className="p-5 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-black text-rose-600 bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200">
+                            {order.id}
+                          </span>
+                          <span className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider ${isInProgress ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'}`}>
+                            {isInProgress ? '⚡ IN PROGRESS' : '✓ ACCEPTED'}
+                          </span>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-xl font-black text-emerald-600">
+                            {order.priceDisplay !== '-' ? order.priceDisplay : `$${order.price.toFixed(2)}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Content Details */}
+                      <div className="p-6 space-y-4">
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                          <Box className="w-4 h-4 text-rose-600" />
+                          <span>Package Tier: <strong className="text-slate-900 font-extrabold">{order.packageTypeName}</strong></span>
+                        </div>
+
+                        {/* Route Locations */}
+                        <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                          <div>
+                            <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest block">Pickup Address:</span>
+                            <p className="text-xs font-extrabold text-slate-900 mt-0.5">{order.pickup}</p>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block">Drop-off Address:</span>
+                            <p className="text-xs font-extrabold text-slate-900 mt-0.5">{order.dropoff}</p>
+                          </div>
+                        </div>
+
+                        {order.info && (
+                          <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <strong className="font-bold text-slate-800">Notes:</strong> {order.info}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Lifecycle Action Footer */}
+                      <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+                        <a
+                          href={getGoogleMapsDirectionsUrl(order)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Navigation className="w-3.5 h-3.5 text-rose-600" />
+                          <span>{isInProgress ? 'Dropoff Map' : 'Pickup Map'}</span>
+                        </a>
+
+                        {!isInProgress ? (
+                          <button
+                            onClick={() => handleStartDelivery(order)}
+                            className="flex-1 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <Truck className="w-4 h-4" />
+                            <span>Start Delivery / In Progress</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleCompleteDelivery(order)}
+                            className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Complete Delivery</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── TAB 3: COMPLETED HISTORY ─────────────────────────────────── */}
+        {!loading && activeTab === 'history' && (
+          <div className="space-y-6">
+            {completedOrders.length === 0 ? (
+              <div className="bg-white border border-slate-200/90 rounded-3xl p-16 text-center space-y-4 shadow-sm">
+                <CheckCircle2 className="w-12 h-12 text-slate-300 mx-auto" />
+                <h3 className="text-lg font-bold text-[#0b132b]">No completed delivery history yet</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto font-medium">
+                  Deliveries completed by your account will be archived here along with payout summaries.
+                </p>
               </div>
             ) : (
               <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xl">
@@ -835,79 +1088,39 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-extrabold text-[10px] uppercase tracking-wider">
-                        <th className="px-6 py-4">Order ID & Type</th>
+                        <th className="px-6 py-4">Order Ref & Tier</th>
                         <th className="px-6 py-4">Pickup Location</th>
                         <th className="px-6 py-4">Drop-off Location</th>
-                        <th className="px-6 py-4">Payout</th>
-                        <th className="px-6 py-4 text-right">Actions</th>
+                        <th className="px-6 py-4">Earned Payout</th>
+                        <th className="px-6 py-4 text-center">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-800">
-                      {acceptedOrders.map(order => (
+                      {completedOrders.map(order => (
                         <tr key={order.rawId || order.id} className="hover:bg-slate-50/30 transition-colors">
                           <td className="px-6 py-4.5">
-                            <div className="space-y-1">
-                              <span className="text-xs font-mono font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 inline-block">
+                            <div className="space-y-0.5">
+                              <span className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block">
                                 {order.id}
                               </span>
-                              <div className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wide truncate max-w-[150px]">
-                                {order.deliveryType}
+                              <div className="text-[10px] font-extrabold text-rose-600 uppercase">
+                                {order.packageTypeName}
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-4.5 max-w-xs">
-                            <span className="text-slate-900 font-bold line-clamp-2" title={order.pickup}>
-                              {order.pickup}
-                            </span>
+                            <span className="text-slate-900 font-bold line-clamp-2" title={order.pickup}>{order.pickup}</span>
                           </td>
                           <td className="px-6 py-4.5 max-w-xs">
-                            <span className="text-slate-900 font-bold line-clamp-2" title={order.dropoff}>
-                              {order.dropoff}
-                            </span>
+                            <span className="text-slate-900 font-bold line-clamp-2" title={order.dropoff}>{order.dropoff}</span>
                           </td>
                           <td className="px-6 py-4.5">
-                            <span className="text-sm font-black text-emerald-600">
-                              {order.priceDisplay !== '-' ? order.priceDisplay : `$${order.price.toFixed(2)}`}
-                            </span>
+                            <span className="text-sm font-black text-emerald-600">{order.priceDisplay !== '-' ? order.priceDisplay : `$${order.price.toFixed(2)}`}</span>
                           </td>
-                          <td className="px-6 py-4.5 text-right space-x-2 whitespace-nowrap">
-                            {/* Status Dropdown Selection */}
-                            <select
-                              value={order.dbStatus}
-                              onChange={(e) => handleUpdateDbStatusColumn(order.rawId || order.id, e.target.value)}
-                              className={`px-3 py-2 rounded-xl border font-extrabold text-[10px] tracking-wider uppercase transition-all cursor-pointer inline-flex items-center focus:outline-hidden ${order.dbStatus === 'delivered'
-                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/75'
-                                : order.dbStatus === 'ongoing'
-                                  ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100/75'
-                                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100/75'
-                                }`}
-                            >
-                              <option value="pending">Pending</option>
-                              <option value="ongoing">Ongoing</option>
-                              <option value="delivered">Delivered</option>
-                            </select>
-
-                            {/* Map Directions Button */}
-                            <a
-                              href={getGoogleMapsDirectionsUrl(order)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-3.5 py-2 rounded-xl border border-rose-200 bg-rose-50/80 hover:bg-rose-100 text-rose-600 font-extrabold text-[10px] tracking-wider uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs"
-                              title="Open live Google Maps driving directions"
-                            >
-                              <Navigation className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                              <span>Map</span>
-                            </a>
-
-                            {/* Details Button */}
-                            <button
-                              onClick={() => setSelectedOrderDetailModal(order)}
-                              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-[10px] tracking-wider uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs"
-                              title="View full order specifications"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                              <span>Details</span>
-                            </button>
+                          <td className="px-6 py-4.5 text-center">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              DELIVERED
+                            </span>
                           </td>
                         </tr>
                       ))}

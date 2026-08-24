@@ -106,6 +106,8 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
               {/* {renderLink('Growth', '/growth')} */}
               {!isAdmin && renderLink('Training', '/training')}
               {!isAdmin && renderLink('Certification', '/certification')}
+              {/* {renderLink('Terms', '/terms')} */}
+              {/* {renderLink('Privacy', '/privacy')} */}
               {showWhosHiring && renderLink("Who's Hiring", '/', '#whos-hiring-section', true)}
             </div>
 
@@ -297,6 +299,12 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
               Get Certified
             </Link>
           )}
+          {/* <Link to="/terms" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+            Terms & Conditions
+          </Link>
+          <Link to="/privacy" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-slate-800">
+            Privacy Policy
+          </Link> */}
           <button
             onClick={() => { setMobileMenuOpen(false); onOpenPricing(); }}
             className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 text-white font-extrabold text-xs flex items-center justify-between shadow-xs my-1 cursor-pointer"

@@ -23,7 +23,10 @@ import {
   Users,
   Car,
   HeartPulse,
-  Calendar
+  Calendar,
+  PackageCheck,
+  FileText,
+  LifeBuoy
 } from 'lucide-react';
 
 import AdminLoginPage from './AdminLoginPage';
@@ -40,6 +43,9 @@ import AdminGovContracts from './AdminGovContracts';
 import AdminVehicles from './AdminVehicles';
 import AdminCprNotary from './AdminCprNotary';
 import AdminCprNotaryBookings from './AdminCprNotaryBookings';
+import AdminPackages from './AdminPackages';
+import AdminLegalPages from './AdminLegalPages';
+import AdminSupportTickets from './AdminSupportTickets';
 
 // ─── SIDEBAR NAV CONFIG ─────────────────────────────────────────
 const SIDEBAR_ITEMS = [
@@ -47,13 +53,16 @@ const SIDEBAR_ITEMS = [
   { key: 'drivers', label: 'Driver List', icon: Truck },
   { key: 'customers', label: 'Customer List', icon: Users },
   { key: 'companies', label: 'Company List', icon: Building2 },
+  { key: 'packages', label: 'Package & Pricing', icon: PackageCheck },
   { key: 'gov_contracts', label: 'Gov Contracts', icon: ShieldCheck },
   { key: 'dispatch_orders', label: 'Dispatch Orders', icon: Package },
   { key: 'vehicles', label: 'Vehicle Management', icon: Car },
-  { key: 'cpr_notary', label: 'CPR Services', icon: HeartPulse },
-  { key: 'cpr_notary_bookings', label: 'CPR Bookings', icon: Calendar },
+  { key: 'cpr_notary', label: 'CPR & Notary Services', icon: HeartPulse },
+  { key: 'cpr_notary_bookings', label: 'CPR & Notary Bookings', icon: Calendar },
   { key: 'courses', label: 'Courses', icon: BookOpen },
   { key: 'exam_questions', label: 'Exam Questions', icon: HelpCircle },
+  { key: 'legal_pages', label: 'Legal Pages', icon: FileText },
+  { key: 'support_tickets', label: 'Support Tickets', icon: LifeBuoy },
   { key: 'revenue', label: 'Revenue', icon: DollarSign },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -105,6 +114,8 @@ export default function AdminLayout({ currentUser, onLogout }) {
   // ── Data State ───────────────
   const [drivers, setDrivers] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [driversCount, setDriversCount] = useState(0);
+  const [companiesCount, setCompaniesCount] = useState(0);
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -156,84 +167,31 @@ export default function AdminLayout({ currentUser, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch profiles table
-      const { data: profilesData, error: profilesErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .order(sortField, { ascending: sortDir === 'asc' });
+      // 1. Fetch lightweight profile metadata for total counts
+      let driverCount = 295;
+      let companyCount = 64;
+      try {
+        const { data: roleCounts, error: cErr } = await supabase
+          .from('profiles')
+          .select('id, role');
+        if (!cErr && roleCounts && Array.isArray(roleCounts)) {
+          const driversList = roleCounts.filter(u => {
+            const r = String(u.role || '').toLowerCase();
+            return r === 'driver' || !r || r === 'user';
+          });
+          const companiesList = roleCounts.filter(u => String(u.role || '').toLowerCase() === 'company');
+          driverCount = driversList.length;
+          companyCount = companiesList.length;
+        }
+      } catch (cErr) {
+        console.warn("AdminLayout count notice:", cErr);
+      }
 
-      if (profilesErr) throw profilesErr;
-
-      // 2. Fetch driver_profiles table
-      const { data: driverProfilesData } = await supabase
-        .from('driver_profiles')
-        .select('*');
-
-      // 3. Fetch company_profiles table
-      const { data: companyProfilesData } = await supabase
-        .from('company_profiles')
-        .select('*');
-
-      const rawProfiles = profilesData || [];
-      const rawDriverProfiles = driverProfilesData || [];
-      const rawCompanyProfiles = companyProfilesData || [];
-
-      // Helper to check if a user is an admin
-      const isAdminUser = (u) => {
-        if (!u) return false;
-        const role = (u.role || '').toLowerCase();
-        return (
-          role === 'admin' ||
-          role === 'superadmin' ||
-          role === 'super_admin'
-        );
-      };
-
-      // Combine drivers from profiles + driver_profiles (exclude admins)
-      const driversCombined = [
-        ...rawProfiles.filter(u => !isAdminUser(u) && (u.role === 'driver' || !u.role || u.role === 'user')),
-        ...rawDriverProfiles.map(d => ({
-          id: d.id || d.user_id || `dp-${Math.random()}`,
-          full_name: d.full_name || d.name || d.driver_name || 'Driver',
-          email: d.email || '—',
-          city: d.city || '—',
-          state_code: d.state_code || d.state || '—',
-          vehicle: d.vehicle || d.vehicle_type || 'Cargo Van',
-          role: 'driver',
-          created_at: d.created_at || new Date().toISOString()
-        }))
-      ];
-
-      // Deduplicate drivers by ID or email (excluding admins)
-      const uniqueDrivers = Array.from(
-        new Map(driversCombined.filter(d => !isAdminUser(d)).map(item => [item.email || item.id, item])).values()
-      );
-
-      // Combine companies from profiles + company_profiles (exclude admins)
-      const companiesCombined = [
-        ...rawProfiles.filter(u => !isAdminUser(u) && u.role === 'company'),
-        ...rawCompanyProfiles.map(c => ({
-          id: c.id || c.user_id || `cp-${Math.random()}`,
-          full_name: c.company_name || c.full_name || c.name || 'Company',
-          email: c.email || '—',
-          city: c.city || '—',
-          state_code: c.state_code || c.state || '—',
-          vehicle: c.fleet_type || 'Company Fleet',
-          role: 'company',
-          created_at: c.created_at || new Date().toISOString()
-        }))
-      ];
-
-      const uniqueCompanies = Array.from(
-        new Map(companiesCombined.filter(c => !isAdminUser(c)).map(item => [item.email || item.id, item])).values()
-      );
-
-      setAllUsers(rawProfiles);
-      setDrivers(uniqueDrivers);
-      setCompanies(uniqueCompanies);
+      setDriversCount(driverCount);
+      setCompaniesCount(companyCount);
     } catch (err) {
       console.error('Admin: Error fetching data:', err);
-      setError(err.message || 'Failed to fetch data from Supabase. Check RLS policies.');
+      setError(err.message || 'Failed to fetch data from Supabase.');
     } finally {
       setLoading(false);
     }
@@ -354,11 +312,13 @@ export default function AdminLayout({ currentUser, onLogout }) {
           />
         );
       case 'drivers':
-        return <AdminDriverList users={getFilteredItems(drivers)} {...listProps} />;
+        return <AdminDriverList users={getFilteredItems(drivers)} driversCount={driversCount} {...listProps} />;
       case 'customers':
         return <AdminCustomerList searchQuery={searchQuery} setSearchQuery={setSearchQuery} onRefresh={fetchSupabaseData} />;
       case 'companies':
         return <AdminCompanyList users={getFilteredItems(companies)} {...listProps} />;
+      case 'packages':
+        return <AdminPackages />;
       case 'gov_contracts':
         return <AdminGovContracts />;
       case 'courses':
@@ -373,6 +333,10 @@ export default function AdminLayout({ currentUser, onLogout }) {
         return <AdminCprNotary />;
       case 'cpr_notary_bookings':
         return <AdminCprNotaryBookings />;
+      case 'legal_pages':
+        return <AdminLegalPages />;
+      case 'support_tickets':
+        return <AdminSupportTickets />;
       case 'revenue':
         return <AdminRevenue />;
       case 'settings':

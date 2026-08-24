@@ -11,6 +11,8 @@ import {
   FileText,
   Eye,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   User,
   Mail,
   Phone,
@@ -25,11 +27,12 @@ import {
 import { supabase, updateDriverVerification, fetchAllRouteBids, updateBidStatus, fetchDriverCertifications } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
-export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh }) {
+export default function AdminDriverList({ users = [], driversCount = 0, searchQuery, setSearchQuery, onRefresh }) {
   const [drivers, setDrivers] = useState([]);
   const [bids, setBids] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
   const [activeTab, setActiveTab] = useState('drivers'); // 'drivers', 'routes', or 'bids'
   const [vehicleFilter, setVehicleFilter] = useState('all');
@@ -40,6 +43,12 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
   const [selectedDriverRoutesModal, setSelectedDriverRoutesModal] = useState(null);
   const [expandedRouteId, setExpandedRouteId] = useState(null);
   const [activeDriverModal, setActiveDriverModal] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, vehicleFilter]);
   function getFriendlyZoneName(stop, stopsList = []) {
     if (!stop) return '';
     if (stop.zoneName) return stop.zoneName;
@@ -110,177 +119,100 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
     return index >= 0 ? `Zone ${index + 1}` : 'Zone';
   }
 
-  // Load Driver Profiles, Bids, and Saved Routes from Supabase & localStorage
-  const loadData = async () => {
+  const [totalDriversCount, setTotalDriversCount] = useState(driversCount || 295);
+
+  // Load Driver Profiles (10 items per page range)
+  const loadData = async (targetPage = currentPage) => {
     setLoading(true);
+    setFetchError(null);
     try {
-      // 1. Fetch Profiles with Role = 'driver'
-      const { data: profilesData } = await supabase
+      const from = (targetPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+
+      let query = supabase
         .from('profiles')
-        .select('*')
-        .eq('role', 'driver')
+        .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, bio, ready_to_work, website_url, avatar_url', { count: 'exact' })
+        .or('role.eq.driver,role.is.null')
         .order('created_at', { ascending: false });
 
-      // 2. Fetch Driver Profiles metadata
-      const { data: driverMeta } = await supabase
-        .from('driver_profiles')
-        .select('*');
+      if (searchQuery) {
+        const q = searchQuery.trim();
+        query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,city.ilike.%${q}%,state_code.ilike.%${q}%`);
+      }
 
-      const metaMap = (driverMeta || []).reduce((acc, curr) => {
-        const key = curr.id || curr.user_id || curr.driver_id;
-        if (key) acc[key] = curr;
-        return acc;
-      }, {});
+      if (vehicleFilter && vehicleFilter !== 'all') {
+        query = query.ilike('vehicle', `%${vehicleFilter}%`);
+      }
 
-      const combinedDrivers = (profilesData || []).map((p) => {
-        const isDeactivated = p.status === 'INACTIVE' ||
-          metaMap[p.id]?.status === 'INACTIVE';
+      const { data: pageProfiles, count: fetchedCount, error: pErr } = await query.range(from, to);
 
-        const vehicleVal = p.vehicle || metaMap[p.id]?.vehicle_type || p.vehicle_type || 'Cargo Van';
-        const cityVal = p.city || metaMap[p.id]?.city || 'Houston';
-        const stateVal = p.state_code || metaMap[p.id]?.state_code || 'TX';
+      if (pErr) throw pErr;
+
+      if (fetchedCount !== null) {
+        setTotalDriversCount(fetchedCount);
+      }
+
+      const pageItems = pageProfiles || [];
+
+      // Format drivers for display
+      const rawDrivers = pageItems.map((p) => {
+        const isDeactivated = p.status === 'INACTIVE' || p.is_active === false;
 
         return {
           ...p,
-          vehicle: vehicleVal,
-          city: cityVal,
-          state_code: stateVal,
-          phone: metaMap[p.id]?.phone || p.phone || p.phone_number || '',
-          verified: metaMap[p.id]?.verified || p.verified || false,
+          full_name: p.full_name || (p.email ? p.email.split('@')[0] : 'Driver'),
+          vehicle: p.vehicle || 'Cargo Van',
+          city: p.city || 'Houston',
+          state_code: p.state_code || 'TX',
+          phone: p.phone || '',
+          verified: Boolean(p.verified || false),
           status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
-          ready_to_work: p.ready_to_work !== undefined ? p.ready_to_work : (p.readyToWork !== undefined ? p.readyToWork : false),
-          website_url: p.website_url || p.website || '',
+          ready_to_work: p.ready_to_work !== false,
+          website_url: p.website_url || '',
           experience: p.experience || '1-3 Years',
           availability: p.availability || 'Immediate',
-          has_cdl: Boolean(p.has_cdl ?? p.hasCDL ?? false),
+          has_cdl: Boolean(p.has_cdl || false),
           bio: p.bio || '',
-          dot_number: p.dot_number || p.dotNumber || ''
+          dot_number: p.dot_number || '',
+          membership: p.membership || 'Free'
         };
       });
 
-      // 2.5 Fetch transactions table
-      let rawTxs = [];
-      try {
-        const { data: txsData } = await supabase.from('transactions').select('*');
-        rawTxs = txsData || [];
-      } catch (txErr) {
-        console.warn("Could not load transactions in AdminDriverList:", txErr);
-      }
+      setDrivers(rawDrivers);
+      setLoading(false);
 
-      const getSubscriptionDetails = (userId, email) => {
-        const userSubs = rawTxs.filter(tx =>
-          tx.status === 'Succeeded' &&
-          (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
-          ((tx.user_id && String(tx.user_id) === String(userId)) || (tx.email && email && tx.email.toLowerCase() === email.toLowerCase()))
-        );
+      // Secondary non-blocking background hydration (Routes & Bids)
+      (async () => {
+        try {
+          // Route Bids
+          const bidsData = await fetchAllRouteBids();
+          setBids(bidsData || []);
 
-        if (userSubs.length > 0) {
-          userSubs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          const latestSub = userSubs[0];
-          const createdTime = new Date(latestSub.created_at).getTime();
-          const isYearly = latestSub.course_id === 'pro-yearly' || latestSub.description?.toLowerCase().includes('yearly') || latestSub.amount?.includes('299');
-          const validityPeriod = isYearly ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
-          const msLeft = createdTime + validityPeriod - Date.now();
-          const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
-
-          if (msLeft > 0) {
-            return {
-              isPro: true,
-              plan: isYearly ? 'Pro (Yearly)' : 'Pro (Monthly)',
-              subscribedAt: new Date(createdTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-              nextRenewal: new Date(createdTime + validityPeriod).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-              daysLeft,
-              amountPaid: latestSub.amount || (isYearly ? '$299.00' : '$29.00')
-            };
-          }
-        }
-
-        return {
-          isPro: false,
-          plan: 'Free',
-          subscribedAt: null,
-          nextRenewal: null,
-          daysLeft: 0,
-          amountPaid: '$0.00'
-        };
-      };
-
-      // 2.7 Fetch company_drivers for fleet connection mapping
-      let fleetRelations = [];
-      let companyProfilesMap = {};
-      try {
-        const { data: cdData } = await supabase.from('company_drivers').select('*').eq('status', 'ACTIVE');
-        fleetRelations = cdData || [];
-
-        const compIds = Array.from(new Set(fleetRelations.map(r => r.company_id).filter(Boolean)));
-        if (compIds.length > 0) {
-          const { data: compProfiles } = await supabase.from('profiles').select('*').in('id', compIds);
-          companyProfilesMap = (compProfiles || []).reduce((acc, curr) => {
-            acc[curr.id] = curr;
-            return acc;
-          }, {});
-        }
-      } catch (cdErr) {
-        console.warn("Could not load company_drivers in AdminDriverList:", cdErr);
-      }
-
-      const finalDrivers = combinedDrivers.map(d => {
-        const sub = getSubscriptionDetails(d.id, d.email);
-        const cleanEmail = (d.email || '').toLowerCase();
-        const connected = fleetRelations.filter(r =>
-          (r.driver_id && String(r.driver_id) === String(d.id)) ||
-          (r.email && r.email.toLowerCase() === cleanEmail)
-        ).map(r => {
-          const comp = companyProfilesMap[r.company_id] || {};
-          return comp.full_name || comp.company_name || 'Logistics Company';
-        });
-
-        return {
-          ...d,
-          membership: sub.isPro ? 'Pro' : 'Free',
-          subscription: sub,
-          connectedCompanies: connected
-        };
-      });
-
-      setDrivers(finalDrivers);
-
-      // 3. Fetch Route Bids from Supabase
-      const bidsData = await fetchAllRouteBids();
-      setBids(bidsData || []);
-
-      // 4. Fetch Saved Routes from Supabase DB
-      try {
-        const { data: routesData } = await supabase
-          .from('routes')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (routesData) {
-          const driverIdsSet = new Set(finalDrivers.map(d => d.id));
-          const driverOnlyRoutes = routesData.filter(r =>
-            !r.company_id || driverIdsSet.has(r.user_id) || driverIdsSet.has(r.company_id)
-          );
-          setRoutes(driverOnlyRoutes.map(r => {
-            const matchingDriver = finalDrivers.find(d => d.id === r.user_id || d.id === r.company_id);
-            return {
+          // Saved Routes
+          const { data: routesData } = await supabase.from('routes').select('*').limit(50);
+          if (routesData) {
+            const driverIdsSet = new Set(rawDrivers.map(d => d.id));
+            const driverOnlyRoutes = routesData.filter(r =>
+              !r.company_id || driverIdsSet.has(r.user_id) || driverIdsSet.has(r.company_id)
+            );
+            setRoutes(driverOnlyRoutes.map(r => ({
               id: r.id,
               user_id: r.user_id,
               title: r.title || 'Saved Courier Route',
-              driverName: r.driver_name || matchingDriver?.full_name || 'Solo Driver',
-              vehicle: matchingDriver?.vehicle || 'Cargo Van',
-              stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
+              driverName: r.driver_name || 'Solo Driver',
+              vehicle: 'Cargo Van',
+              stopsCount: r.stops_count || 0,
               distanceMiles: r.distance_miles || 0,
               durationMinutes: r.duration_minutes || 0,
               status: r.status || 'ACTIVE',
               stops: r.stops_data || [],
               createdAt: r.created_at
-            };
-          }));
+            })));
+          }
+        } catch (subErr) {
+          console.warn("Background hydration notice:", subErr);
         }
-      } catch (rErr) {
-        console.warn("Could not load Supabase routes for admin:", rErr);
-      }
+      })();
 
     } catch (err) {
       console.warn("Admin data load warning:", err);
@@ -290,8 +222,8 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(currentPage);
+  }, [searchQuery, vehicleFilter]);
 
   // Fetch Certifications dynamically from Supabase database when modal opens
   useEffect(() => {
@@ -374,15 +306,25 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
 
   // Filter Drivers
   const filteredDrivers = drivers.filter((d) => {
-    const matchesSearch = searchQuery
-      ? d.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.city?.toLowerCase().includes(searchQuery.toLowerCase())
-      : true;
+    if (!d) return false;
+    const q = (searchQuery || '').trim().toLowerCase();
+    const matchesSearch = !q
+      ? true
+      : (d.full_name || d.name || '').toLowerCase().includes(q) ||
+      (d.email || '').toLowerCase().includes(q) ||
+      (d.city || '').toLowerCase().includes(q) ||
+      (d.state_code || d.state || '').toLowerCase().includes(q);
 
-    const matchesVehicle = vehicleFilter === 'all' || d.vehicle?.toLowerCase().includes(vehicleFilter.toLowerCase());
+    const matchesVehicle = vehicleFilter === 'all' || (d.vehicle || '').toLowerCase().includes(vehicleFilter.toLowerCase());
     return matchesSearch && matchesVehicle;
   });
+
+  // Pagination Calculations (10 drivers per page)
+  const displayTotalCount = totalDriversCount || driversCount || 295;
+  const totalPages = Math.ceil(displayTotalCount / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, displayTotalCount);
+  const paginatedDrivers = drivers;
 
   return (
     <div className="space-y-6">
@@ -397,7 +339,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
           </p>
         </div>
         <button
-          onClick={loadData}
+          onClick={() => loadData(currentPage)}
           className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-2 self-start sm:self-auto"
         >
           <span>Refresh Data</span>
@@ -413,7 +355,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
             : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
         >
-          Driver Directory ({drivers.length})
+          Driver Directory ({displayTotalCount})
         </button>
         <button
           onClick={() => setActiveTab('routes')}
@@ -498,10 +440,11 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredDrivers.map((driver) => {
+                {paginatedDrivers.map((driver, idx) => {
                   const isInactive = driver.status === 'INACTIVE';
+                  const uniqueKey = driver.id ? `${driver.id}_${idx}` : `drv_${driver.email || idx}`;
                   return (
-                    <tr key={driver.id} className={`hover:bg-slate-50/60 transition-colors ${isInactive ? 'bg-rose-50/20' : ''}`}>
+                    <tr key={uniqueKey} className={`hover:bg-slate-50/60 transition-colors ${isInactive ? 'bg-rose-50/20' : ''}`}>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           {driver.avatar_url || driver.avatar ? (
@@ -619,6 +562,49 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Footer Controls (10 Drivers per page) */}
+          {displayTotalCount > 0 && (
+            <div className="p-4 bg-slate-50/80 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-medium text-slate-600">
+              <div>
+                Showing <span className="font-extrabold text-slate-900">{drivers.length > 0 ? startIndex + 1 : 0}</span> to{' '}
+                <span className="font-extrabold text-slate-900">{Math.min(startIndex + drivers.length, displayTotalCount)}</span> of{' '}
+                <span className="font-extrabold text-slate-900">{displayTotalCount}</span> drivers
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const nextP = Math.max(currentPage - 1, 1);
+                    setCurrentPage(nextP);
+                    loadData(nextP);
+                  }}
+                  disabled={currentPage === 1}
+                  className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white font-extrabold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Previous</span>
+                </button>
+
+                <div className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 font-black text-rose-600 text-xs shadow-2xs">
+                  Page {currentPage} of {totalPages}
+                </div>
+
+                <button
+                  onClick={() => {
+                    const nextP = Math.min(currentPage + 1, totalPages);
+                    setCurrentPage(nextP);
+                    loadData(nextP);
+                  }}
+                  disabled={currentPage >= totalPages}
+                  className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white font-extrabold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       ) : activeTab === 'routes' ? (
@@ -653,7 +639,7 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
-                  {filteredGroupedRoutes.map((group) => {
+                  {filteredGroupedRoutes.map((group, idx) => {
                     const latestRoute = group.latestRoute || group.routes[0];
                     const routeStops = latestRoute?.stops || [];
                     const completedCount = routeStops.filter(s => s.status === 'complete').length;
@@ -672,8 +658,10 @@ export default function AdminDriverList({ searchQuery, setSearchQuery, onRefresh
                       })
                       : 'N/A';
 
+                    const groupKey = group.key ? `${group.key}_${idx}` : `grp_${idx}`;
+
                     return (
-                      <tr key={group.key} className="hover:bg-slate-50/60 transition-colors">
+                      <tr key={groupKey} className="hover:bg-slate-50/60 transition-colors">
                         <td className="px-6 py-4 font-bold text-slate-900">
                           <div className="flex items-center gap-3">
                             {group.driverAvatar ? (

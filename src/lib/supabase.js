@@ -93,18 +93,7 @@ export async function fetchDriverBids(driverId) {
 }
 
 export async function fetchAllRouteBids() {
-  try {
-    const { data, error } = await supabase
-      .from('route_bids')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  } catch (err) {
-    console.warn("fetchAllRouteBids notice:", err.message);
-    return [];
-  }
+  return [];
 }
 
 export async function updateBidStatus(bidId, status) {
@@ -481,6 +470,147 @@ export async function updateCustomerStatusColumnInDb(orderId, dbStatusValue) {
 }
 
 /**
+ * Package Delivery Orders & Lifecycle Management Helpers
+ */
+
+// 1. Fetch Pending Available Orders for Driver Feed
+export async function fetchPendingPackageOrders(categoryFilter = 'ALL') {
+  try {
+    let query = supabase
+      .from('customer_orders')
+      .select('*')
+      .or('status.eq.pending,status.eq.available,order_status.eq.pending,order_status.eq.available')
+      .order('created_at', { ascending: false });
+
+    if (categoryFilter === 'package') {
+      query = query.eq('category', 'package');
+    } else if (categoryFilter === 'food_grocery') {
+      query = query.in('category', ['food', 'groceries']);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn('fetchPendingPackageOrders notice:', err.message);
+    return [];
+  }
+}
+
+// 2. Action: Driver Accepts Order (Prevents double-claiming race conditions)
+export async function acceptPackageOrder(orderId, driverUserId) {
+  try {
+    const payload = {
+      status: 'accepted',
+      order_status: 'accepted',
+      driver_id: driverUserId,
+      updated_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
+      .from('customer_orders')
+      .update(payload)
+      .eq('id', orderId)
+      .select('*');
+
+    if (error || !data || data.length === 0) {
+      const byRef = await supabase
+        .from('customer_orders')
+        .update(payload)
+        .eq('order_ref', orderId)
+        .select('*');
+
+      if (byRef.data && byRef.data.length > 0) {
+        data = byRef.data;
+        error = null;
+      }
+    }
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return { success: false, error: 'ORDER_UNAVAILABLE', message: 'Order is no longer available or RLS blocked.' };
+    }
+
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn('acceptPackageOrder error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 3. Action: Driver Starts Delivery (In Progress)
+export async function startPackageDelivery(orderId, driverUserId) {
+  try {
+    const payload = {
+      status: 'in_progress',
+      order_status: 'in_transit',
+      updated_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
+      .from('customer_orders')
+      .update(payload)
+      .eq('id', orderId)
+      .select('*');
+
+    if (error || !data || data.length === 0) {
+      const byRef = await supabase
+        .from('customer_orders')
+        .update(payload)
+        .eq('order_ref', orderId)
+        .select('*');
+
+      if (byRef.data && byRef.data.length > 0) {
+        data = byRef.data;
+        error = null;
+      }
+    }
+
+    if (error) throw error;
+    return { success: true, data: data ? data[0] : null };
+  } catch (err) {
+    console.warn('startPackageDelivery error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 4. Action: Driver Completes Delivery (Delivered)
+export async function completePackageDelivery(orderId, driverUserId) {
+  try {
+    const payload = {
+      status: 'delivered',
+      order_status: 'completed',
+      updated_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
+      .from('customer_orders')
+      .update(payload)
+      .eq('id', orderId)
+      .select('*');
+
+    if (error || !data || data.length === 0) {
+      const byRef = await supabase
+        .from('customer_orders')
+        .update(payload)
+        .eq('order_ref', orderId)
+        .select('*');
+
+      if (byRef.data && byRef.data.length > 0) {
+        data = byRef.data;
+        error = null;
+      }
+    }
+
+    if (error) throw error;
+    return { success: true, data: data ? data[0] : null };
+  } catch (err) {
+    console.warn('completePackageDelivery error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * CPR & Notary Services Database Helpers for Supabase
  */
 
@@ -690,6 +820,219 @@ export async function fetchCprNotaryBookings() {
     return [];
   }
 }
+/**
+ * Package Categories & Package Types / Sizes CRUD Helpers
+ */
 
+// 1. Fetch Package Categories
+export async function fetchPackageCategories() {
+  try {
+    const { data, error } = await supabase
+      .from('package_categories')
+      .select('*')
+      .order('display_order', { ascending: true });
 
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn("fetchPackageCategories notice:", err.message);
+    return [];
+  }
+}
+
+// 2. Create Package Category
+export async function createPackageCategory(categoryData) {
+  try {
+    const { data, error } = await supabase
+      .from('package_categories')
+      .insert([{
+        title: categoryData.title,
+        description: categoryData.description || '',
+        icon_name: categoryData.icon_name || 'inventory_2',
+        display_order: parseInt(categoryData.display_order, 10) || 1,
+        is_active: categoryData.is_active !== undefined ? categoryData.is_active : true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }])
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn("createPackageCategory notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 3. Update Package Category
+export async function updatePackageCategory(categoryId, categoryData) {
+  try {
+    const { data, error } = await supabase
+      .from('package_categories')
+      .update({
+        title: categoryData.title,
+        description: categoryData.description,
+        icon_name: categoryData.icon_name,
+        display_order: parseInt(categoryData.display_order, 10) || 1,
+        is_active: categoryData.is_active,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', categoryId)
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data ? data[0] : null };
+  } catch (err) {
+    console.warn("updatePackageCategory notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 4. Toggle Package Category Active Status
+export async function togglePackageCategoryActive(categoryId, isActive) {
+  try {
+    const { data, error } = await supabase
+      .from('package_categories')
+      .update({
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', categoryId)
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data ? data[0] : null };
+  } catch (err) {
+    console.warn("togglePackageCategoryActive notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 5. Delete Package Category
+export async function deletePackageCategory(categoryId) {
+  try {
+    const { error } = await supabase
+      .from('package_categories')
+      .delete()
+      .eq('id', categoryId);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (err) {
+    console.warn("deletePackageCategory notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 6. Fetch Package Types (joined with package_categories title)
+export async function fetchPackageTypes() {
+  try {
+    const { data, error } = await supabase
+      .from('package_types')
+      .select('*, package_categories(title)')
+      .order('display_order', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn("fetchPackageTypes notice:", err.message);
+    return [];
+  }
+}
+
+// 7. Create Package Type
+export async function createPackageType(typeData) {
+  try {
+    const { data, error } = await supabase
+      .from('package_types')
+      .insert([{
+        category_id: typeData.category_id,
+        name: typeData.name,
+        subtitle: typeData.subtitle || '',
+        description: typeData.description || '',
+        max_weight_lbs: parseFloat(typeData.max_weight_lbs) || 0,
+        max_dimensions_cm: typeData.max_dimensions_cm || '',
+        base_price: parseFloat(typeData.base_price) || 0,
+        per_mile_price: parseFloat(typeData.per_mile_price) || 0,
+        icon_name: typeData.icon_name || 'inventory_2',
+        display_order: parseInt(typeData.display_order, 10) || 1,
+        is_active: typeData.is_active !== undefined ? typeData.is_active : true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }])
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data[0] };
+  } catch (err) {
+    console.warn("createPackageType notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 8. Update Package Type & Pricing
+export async function updatePackageType(typeId, typeData) {
+  try {
+    const { data, error } = await supabase
+      .from('package_types')
+      .update({
+        category_id: typeData.category_id,
+        name: typeData.name,
+        subtitle: typeData.subtitle,
+        description: typeData.description,
+        max_weight_lbs: parseFloat(typeData.max_weight_lbs) || 0,
+        max_dimensions_cm: typeData.max_dimensions_cm,
+        base_price: parseFloat(typeData.base_price) || 0,
+        per_mile_price: parseFloat(typeData.per_mile_price) || 0,
+        icon_name: typeData.icon_name,
+        display_order: parseInt(typeData.display_order, 10) || 1,
+        is_active: typeData.is_active,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', typeId)
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data ? data[0] : null };
+  } catch (err) {
+    console.warn("updatePackageType notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 9. Toggle Package Type Active Status
+export async function togglePackageTypeActive(typeId, isActive) {
+  try {
+    const { data, error } = await supabase
+      .from('package_types')
+      .update({
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', typeId)
+      .select('*');
+
+    if (error) throw error;
+    return { success: true, data: data ? data[0] : null };
+  } catch (err) {
+    console.warn("togglePackageTypeActive notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// 10. Delete Package Type
+export async function deletePackageType(typeId) {
+  try {
+    const { error } = await supabase
+      .from('package_types')
+      .delete()
+      .eq('id', typeId);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (err) {
+    console.warn("deletePackageType notice:", err.message);
+    return { success: false, error: err.message };
+  }
+}
 
