@@ -698,6 +698,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
                 priceAmount={25}
                 productName="HIPAA & Bloodborne Pathogens Certification"
                 fullName={fullName}
+                email={currentUser?.email || email}
                 returnUrl={window.location.href}
                 onSuccess={handlePaymentSuccess}
               />

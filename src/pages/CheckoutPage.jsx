@@ -238,6 +238,7 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
             priceAmount={activeCourse.price}
             productName={activeCourse.title}
             fullName={certName}
+            email={currentUser?.email || email}
             returnUrl={window.location.href}
             onSuccess={() => handlePay({ preventDefault: () => { } })}
           />

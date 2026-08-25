@@ -4,7 +4,7 @@ import { getStripe, getStripeEnvironment } from "../lib/stripe";
 import { createCertificationCheckout } from "../lib/payments.functions";
 import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 
-export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, priceAmount, productName, onSuccess }) {
+export function StripeEmbeddedCheckout({ priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName, onSuccess }) {
   const [clientSecret, setClientSecret] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,7 +17,15 @@ export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, priceAmou
       setError(null);
       try {
         const result = await createCertificationCheckout({
-          data: { priceId, fullName, returnUrl, priceAmount, productName, environment: getStripeEnvironment() },
+          data: {
+            priceId,
+            fullName,
+            email: email || customerEmail,
+            returnUrl,
+            priceAmount,
+            productName,
+            environment: getStripeEnvironment()
+          },
         });
 
         if (!isMounted) return;
@@ -41,7 +49,7 @@ export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, priceAmou
     return () => {
       isMounted = false;
     };
-  }, [priceId, fullName, returnUrl, priceAmount, productName]);
+  }, [priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName]);
 
   if (loading) {
     return (
@@ -49,7 +57,7 @@ export function StripeEmbeddedCheckout({ priceId, fullName, returnUrl, priceAmou
         <Loader2 className="w-10 h-10 animate-spin text-rose-600 mx-auto" />
         <div>
           <h4 className="text-sm font-extrabold text-[#0b132b]">Connecting to Stripe Secure Gateway...</h4>
-          <p className="text-xs text-slate-400 font-medium mt-1">Initializing official 256-bit encrypted checkout session</p>
+          {/* <p className="text-xs text-slate-400 font-medium mt-1">Initializing official 256-bit encrypted checkout session</p> */}
         </div>
       </div>
     );

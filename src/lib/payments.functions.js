@@ -5,7 +5,7 @@ import { getStripeEnvironment } from "./stripe";
  * Uses Lovable Gateway / Vite Proxy to create official Stripe sessions seamlessly.
  */
 export async function createCertificationCheckout({ data }) {
-  const { priceId, fullName, returnUrl, priceAmount, productName: customProductName, environment = getStripeEnvironment() } = data || {};
+  const { priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName: customProductName, environment = getStripeEnvironment() } = data || {};
 
   if (!priceId || !/^[a-zA-Z0-9_-]+$/.test(priceId)) {
     return { error: "Invalid priceId" };
@@ -70,6 +70,11 @@ export async function createCertificationCheckout({ data }) {
       "line_items[0][price_data][unit_amount]": String(amountInCents),
       "line_items[0][quantity]": "1",
     });
+
+    const targetEmail = (email || customerEmail || "").trim();
+    if (targetEmail && targetEmail.includes("@")) {
+      params.append("customer_email", targetEmail);
+    }
 
     if (isSubscription) {
       params.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");

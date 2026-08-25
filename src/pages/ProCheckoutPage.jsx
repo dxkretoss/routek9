@@ -328,6 +328,7 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
                 priceAmount={price}
                 productName={`Route K9 PRO (${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'})`}
                 fullName={cardholderName}
+                email={currentUser?.email || email}
                 returnUrl={window.location.href}
                 onSuccess={() => handlePay({ preventDefault: () => { } })}
               />
