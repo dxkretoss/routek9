@@ -25,7 +25,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
-export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
+export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
   const [companies, setCompanies] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [activeTab, setActiveTab] = useState('directory'); // 'directory' or 'routes'
@@ -41,6 +41,18 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCompaniesCount, setTotalCompaniesCount] = useState(64);
   const itemsPerPage = 10;
+
+  // Reset search when active tab changes
+  useEffect(() => {
+    if (setSearchQuery) setSearchQuery('');
+  }, [activeTab]);
+
+  // Reset search when leaving/unmounting company list page
+  useEffect(() => {
+    return () => {
+      if (setSearchQuery) setSearchQuery('');
+    };
+  }, []);
 
   // Group Corporate Dispatched Routes by Company
   const groupedRoutesByCompany = React.useMemo(() => {
@@ -111,46 +123,88 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
     return parts[0].substring(0, 2).toUpperCase();
   }
 
-  // Load Company Profiles from Supabase & localStorage
+  const pageCacheRef = React.useRef({});
+
+  // Background hydration for transactions, company_drivers, and routes
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const [txsRes, cdRes, routesRes] = await Promise.allSettled([
+          supabase.from('transactions').select('amount, status, course_id, user_id, email, created_at').eq('status', 'Succeeded').limit(200),
+          supabase.from('company_drivers').select('company_id, full_name, name, email, phone').eq('status', 'ACTIVE').limit(200),
+          supabase.from('routes').select('id, title, company_id, user_id, stops_count, distance_miles, duration_minutes, created_at').not('company_id', 'is', null).order('created_at', { ascending: false }).limit(50)
+        ]);
+
+        if (!isMounted) return;
+
+        if (routesRes.status === 'fulfilled' && routesRes.value?.data) {
+          const mappedRoutes = routesRes.value.data.map(r => ({
+            id: r.id,
+            title: r.title || 'Corporate Dispatched Route',
+            companyId: r.company_id || r.user_id,
+            companyName: 'Partner Company',
+            stopsCount: r.stops_count || 0,
+            distanceMiles: r.distance_miles || 0,
+            durationMinutes: r.duration_minutes || 0,
+            createdAt: r.created_at,
+            stops: []
+          }));
+          setRoutes(mappedRoutes);
+        }
+      } catch (e) {
+        console.warn("Background company hydration notice:", e);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Load Company Profiles from Supabase & Cache
   const loadCompanies = async (pageToLoad = currentPage) => {
-    setLoading(true);
     const p = typeof pageToLoad === 'number' ? pageToLoad : currentPage;
     setCurrentPage(p);
+    const cacheKey = `comp_${p}_${(searchQuery || '').trim().toLowerCase()}`;
+
+    // Instant cache hit
+    if (pageCacheRef.current[cacheKey]) {
+      setCompanies(pageCacheRef.current[cacheKey].data);
+      if (typeof pageCacheRef.current[cacheKey].count === 'number') {
+        setTotalCompaniesCount(pageCacheRef.current[cacheKey].count);
+      }
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     const from = (p - 1) * itemsPerPage;
     const to = from + itemsPerPage - 1;
 
     try {
-      // 1. Fetch company_profiles metadata table (uses user_id as FK)
-      let companyMeta = [];
-      try {
-        const { data: cData } = await supabase
+      // 1. Fetch company_profiles metadata and profiles in parallel
+      const [metaRes, profRes] = await Promise.allSettled([
+        supabase
           .from('company_profiles')
-          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description');
-        if (cData) companyMeta = cData;
-      } catch (cmErr) {
-        console.warn("company_profiles notice:", cmErr);
-      }
+          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description')
+          .limit(200),
+        supabase
+          .from('profiles')
+          .select('id, email, role, full_name, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work')
+          .eq('role', 'company')
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      ]);
 
-      // Map company_profiles metadata by user_id
-      const metaMap = (companyMeta || []).reduce((acc, curr) => {
+      const companyMeta = (metaRes.status === 'fulfilled' && metaRes.value?.data) ? metaRes.value.data : [];
+      const metaMap = companyMeta.reduce((acc, curr) => {
         const key = curr.user_id || curr.id;
         if (key) acc[key] = curr;
         return acc;
       }, {});
 
-      // 2. Fetch Profiles with Role = 'company' with range(from, to) and exact count
-      const { data: profilesData, count } = await supabase
-        .from('profiles')
-        .select('id, email, role, full_name, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work', { count: 'exact' })
-        .eq('role', 'company')
-        .order('created_at', { ascending: false })
-        .range(from, to);
-
-      if (count !== null && count !== undefined) {
-        setTotalCompaniesCount(count);
-      }
-
-      const rawProfiles = profilesData || [];
+      const rawProfiles = (profRes.status === 'fulfilled' && profRes.value?.data) ? profRes.value.data : [];
 
       const list = rawProfiles.map((p) => {
         const meta = metaMap[p.id] || {};
@@ -171,117 +225,39 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
           service_area: meta.service_area || p.availability || p.service_area || 'Regional & Statewide Logistics',
           experience: p.experience || '',
           dot_number: p.dot_number || p.dotNumber || '',
-          bio: meta.description || p.bio || p.description || ''
+          bio: meta.description || p.bio || p.description || '',
+          membership: 'Free',
+          subscription: { isPro: false, plan: 'Free', subscribedAt: null, nextRenewal: null, daysLeft: 0, amountPaid: '$0.00' },
+          connectedDrivers: []
         };
       });
 
-      // 2. Fetch transactions table
-      let rawTxs = [];
-      try {
-        const { data: txsData } = await supabase.from('transactions').select('*');
-        rawTxs = txsData || [];
-      } catch (txErr) {
-        console.warn("Could not load transactions in AdminCompanyList:", txErr);
-      }
-
-      const getSubscriptionDetails = (userId, email) => {
-        const userSubs = rawTxs.filter(tx =>
-          tx.status === 'Succeeded' &&
-          (tx.course_id === 'pro-monthly' || tx.course_id === 'pro-yearly' || tx.course_id?.includes('pro')) &&
-          ((tx.user_id && String(tx.user_id) === String(userId)) || (tx.email && email && tx.email.toLowerCase() === email.toLowerCase()))
-        );
-
-        if (userSubs.length > 0) {
-          userSubs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          const latestSub = userSubs[0];
-          const createdTime = new Date(latestSub.created_at).getTime();
-          const isYearly = latestSub.course_id === 'pro-yearly' || latestSub.description?.toLowerCase().includes('yearly') || latestSub.amount?.includes('299');
-          const validityPeriod = isYearly ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
-          const msLeft = createdTime + validityPeriod - Date.now();
-          const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
-
-          if (msLeft > 0) {
-            return {
-              isPro: true,
-              plan: isYearly ? 'Pro (Yearly)' : 'Pro (Monthly)',
-              subscribedAt: new Date(createdTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-              nextRenewal: new Date(createdTime + validityPeriod).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-              daysLeft,
-              amountPaid: latestSub.amount || (isYearly ? '$299.00' : '$29.00')
-            };
-          }
-        }
-
-        return {
-          isPro: false,
-          plan: 'Free',
-          subscribedAt: null,
-          nextRenewal: null,
-          daysLeft: 0,
-          amountPaid: '$0.00'
-        };
+      pageCacheRef.current[cacheKey] = {
+        data: list,
+        count: totalCompaniesCount
       };
 
-      // 2.5 Fetch company_drivers for fleet drivers list
-      let companyDriverRows = [];
-      try {
-        const { data: cdData } = await supabase.from('company_drivers').select('*').eq('status', 'ACTIVE');
-        companyDriverRows = cdData || [];
-      } catch (cdErr) {
-        console.warn("Could not load company_drivers in AdminCompanyList:", cdErr);
-      }
+      setCompanies(list);
+      setLoading(false);
 
-      const finalList = list.map((c) => {
-        const sub = getSubscriptionDetails(c.id, c.email);
-        const compDrivers = companyDriverRows.filter(r => String(r.company_id) === String(c.id)).map(r => ({
-          name: r.full_name || r.name || 'Driver',
-          email: r.email,
-          phone: r.phone
-        }));
-
-        return {
-          ...c,
-          membership: sub.isPro ? 'Pro' : 'Free',
-          subscription: sub,
-          connectedDrivers: compDrivers
-        };
-      });
-
-      setCompanies(finalList);
-
-      // Fetch corporate routes
-      try {
-        const { data: routesData, error: routesErr } = await supabase
-          .from('routes')
-          .select('*')
-          .not('company_id', 'is', null)
-          .order('created_at', { ascending: false });
-
-        if (!routesErr && routesData) {
-          const companyIdsSet = new Set(finalList.map(c => c.id));
-          const mappedRoutes = routesData
-            .filter(r => r.company_id && companyIdsSet.has(r.company_id))
-            .map(r => {
-              const creator = finalList.find(c => c.id === r.company_id || c.id === r.user_id);
-              return {
-                id: r.id,
-                title: r.title || 'Corporate Dispatched Route',
-                companyId: r.company_id || r.user_id,
-                companyName: creator ? creator.company_name : 'Partner Company',
-                stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
-                distanceMiles: r.distance_miles || 0,
-                durationMinutes: r.duration_minutes || 0,
-                createdAt: r.created_at,
-                stops: r.stops_data || []
-              };
-            });
-          setRoutes(mappedRoutes);
-        }
-      } catch (rErr) {
-        console.warn("Could not load corporate routes in AdminCompanyList:", rErr);
+      // Async background count
+      if (p === 1) {
+        supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('role', 'company')
+          .then(res => {
+            if (typeof res.count === 'number') {
+              setTotalCompaniesCount(res.count);
+              if (pageCacheRef.current[cacheKey]) {
+                pageCacheRef.current[cacheKey].count = res.count;
+              }
+            }
+          })
+          .catch(() => { });
       }
     } catch (err) {
-      console.warn("Admin company data load warning:", err);
+      console.warn("AdminCompanyList load error:", err);
     } finally {
       setLoading(false);
     }
@@ -411,7 +387,7 @@ export default function AdminCompanyList({ searchQuery, setSearchQuery }) {
           {loading ? (
             <div className="p-12 text-center space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
-              <p className="text-xs font-bold text-slate-500">Loading company profiles...</p>
+              <p className="text-xs font-bold text-slate-500">Loading Company Profiles...</p>
             </div>
           ) : filteredCompanies.length === 0 ? (
             <div className="p-16 text-center">

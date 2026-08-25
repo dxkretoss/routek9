@@ -22,25 +22,6 @@ export default function AdminRevenue() {
   const [rawTransactions, setRawTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const mockTransactions = useMemo(() => {
-    const now = new Date();
-    const d1 = new Date(now.getTime() - 1 * 24 * 3600 * 1000).toISOString(); // 1 day ago
-    const d2 = new Date(now.getTime() - 3 * 24 * 3600 * 1000).toISOString(); // 3 days ago
-    const d3 = new Date(now.getTime() - 15 * 24 * 3600 * 1000).toISOString(); // 15 days ago
-    const d4 = new Date(now.getTime() - 45 * 24 * 3600 * 1000).toISOString(); // 45 days ago
-    const d5 = new Date(now.getTime() - 75 * 24 * 3600 * 1000).toISOString(); // 75 days ago
-    const d6 = new Date(now.getFullYear() - 1, 10, 15).toISOString(); // Previous Year
-
-    return [
-      { id: 'tx_101', email: 'routek9company@yopmail.com', description: 'Route K9 PRO Membership (Monthly)', amount: '$29.00', created_at: d1, status: 'Succeeded' },
-      { id: 'tx_102', email: 'routetestdriver@yopmail.com', description: 'Master Contractor Training', amount: '$49.00', created_at: d2, status: 'Succeeded' },
-      { id: 'tx_103', email: 'john.driver@gmail.com', description: 'Route K9 PRO Membership (Monthly)', amount: '$29.00', created_at: d3, status: 'Succeeded' },
-      { id: 'tx_104', email: 'sarah.courier@yahoo.com', description: 'HIPAA Medical Courier Certification', amount: '$49.00', created_at: d4, status: 'Succeeded' },
-      { id: 'tx_105', email: 'mike.fleet@logistics.com', description: 'TSA Airport Security Clearance Course', amount: '$99.00', created_at: d5, status: 'Succeeded' },
-      { id: 'tx_106', email: 'alex.trans@gmail.com', description: 'Route K9 PRO Membership (Yearly)', amount: '$299.00', created_at: d6, status: 'Succeeded' }
-    ];
-  }, []);
-
   // Fetch transactions from Supabase
   useEffect(() => {
     async function loadTransactions() {
@@ -52,46 +33,23 @@ export default function AdminRevenue() {
           .order('created_at', { ascending: false });
 
         if (data && data.length > 0) {
-          const now = new Date();
-          const processed = data.map((tx, idx) => {
-            let txDate = tx.created_at ? new Date(tx.created_at) : new Date();
-            if (isNaN(txDate.getTime())) txDate = new Date();
-
-            const ageDays = (now.getTime() - txDate.getTime()) / (1000 * 3600 * 24);
-            // If all DB data was created in the last 3 days, distribute across periods for real filter testing
-            if (ageDays <= 3) {
-              if (idx < 2) {
-                txDate = new Date(now.getTime() - (idx + 1) * 24 * 3600 * 1000); // 1-2 days ago (7d)
-              } else if (idx < 4) {
-                txDate = new Date(now.getTime() - (idx * 6) * 24 * 3600 * 1000); // 12-18 days ago (30d)
-              } else if (idx < 6) {
-                txDate = new Date(now.getTime() - (idx * 10) * 24 * 3600 * 1000); // 40-50 days ago (90d)
-              } else {
-                txDate = new Date(now.getFullYear() - 1, 10, 15 - idx); // Previous Year (All Time)
-              }
-            }
-            return {
-              ...tx,
-              created_at: txDate.toISOString()
-            };
-          });
-          setRawTransactions(processed);
+          setRawTransactions(data);
         } else {
-          setRawTransactions(mockTransactions);
+          setRawTransactions([]);
         }
       } catch (err) {
         console.warn("Failed to load transactions from DB:", err);
-        setRawTransactions(mockTransactions);
+        setRawTransactions([]);
       } finally {
         setLoading(false);
       }
     }
     loadTransactions();
-  }, [mockTransactions]);
+  }, []);
 
   // Filter transactions dynamically by filterPeriod
   const filteredTransactions = useMemo(() => {
-    const list = rawTransactions.length > 0 ? rawTransactions : mockTransactions;
+    const list = rawTransactions;
     const now = new Date();
     return list.filter(tx => {
       const dStr = tx.created_at || tx.date;
@@ -112,7 +70,7 @@ export default function AdminRevenue() {
       }
       return true; // 'all'
     });
-  }, [rawTransactions, mockTransactions, filterPeriod]);
+  }, [rawTransactions, filterPeriod]);
 
   const [chartCategory, setChartCategory] = useState('all'); // 'all', 'subscriptions', 'courses'
 

@@ -1059,6 +1059,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
   const handleMarkAllInboxAsRead = async () => {
     setInboxNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+    window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount: 0 } }));
     try {
       await markAllNotificationsRead(currentUser?.id);
     } catch (err) {
@@ -1068,18 +1069,22 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   };
 
   const handleToggleInboxRead = async (id) => {
-    const target = inboxNotifications.find(n => n.id === id);
-    const nextUnread = !target?.unread;
-    setInboxNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: nextUnread } : n));
+    const updated = inboxNotifications.map(n => n.id === id ? { ...n, unread: false } : n);
+    setInboxNotifications(updated);
+    const unreadCount = updated.filter(n => n.unread).length;
+    window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount } }));
     try {
-      await markNotificationRead(id, nextUnread);
+      await markNotificationRead(id, false);
     } catch (err) {
       console.warn("Error toggling notification read:", err);
     }
   };
 
   const handleDeleteInboxNotification = async (id) => {
-    setInboxNotifications(prev => prev.filter(n => n.id !== id));
+    const updated = inboxNotifications.filter(n => n.id !== id);
+    setInboxNotifications(updated);
+    const unreadCount = updated.filter(n => n.unread).length;
+    window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount } }));
     try {
       await deleteNotificationRecord(id);
     } catch (err) {
@@ -1106,12 +1111,16 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             companyId: n.company_id,
           }));
           setInboxNotifications(formatted);
+          const unreadCount = formatted.filter(n => n.unread).length;
+          window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount } }));
         } else {
           setInboxNotifications([]);
+          window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount: 0 } }));
         }
       } catch (err) {
         console.warn("Could not load inbox notifications from Supabase:", err);
         setInboxNotifications([]);
+        window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount: 0 } }));
       } finally {
         setLoadingInbox(false);
       }
@@ -1549,7 +1558,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
               }`}
           >
             <Inbox className="w-4 h-4" />
-            <span>Inbox ({inboxNotifications.length})</span>
+            <span>Inbox ({inboxNotifications.filter(n => n.unread).length})</span>
             {inboxNotifications.some(n => n.unread) && (
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             )}
@@ -1928,9 +1937,9 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                     type="button"
                     onClick={handleMarkAllInboxAsRead}
                     disabled={!inboxNotifications.some(n => n.unread)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100 disabled:text-slate-400 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
                   >
-                    <CheckCheck className="w-4 h-4 text-emerald-600" />
+                    <CheckCheck className={`w-4 h-4 ${inboxNotifications.some(n => n.unread) ? 'text-emerald-600' : 'text-slate-400'}`} />
                     <span>Mark All as Read</span>
                   </button>
                 </div>
@@ -2095,17 +2104,16 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                           </div>
 
                           <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleInboxRead(msg.id)}
-                              title={msg.unread ? "Mark as Read" : "Mark as Unread"}
-                              className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${msg.unread
-                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
-                                }`}
-                            >
-                              {msg.unread ? <CheckCircle2 className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
-                            </button>
+                            {msg.unread && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleInboxRead(msg.id)}
+                                title="Mark as Read"
+                                className="p-1.5 rounded-lg border text-xs transition-colors cursor-pointer bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 shadow-2xs"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                              </button>
+                            )}
 
                             <button
                               type="button"

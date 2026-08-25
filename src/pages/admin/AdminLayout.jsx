@@ -117,6 +117,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
   const [companies, setCompanies] = useState([]);
   const [driversCount, setDriversCount] = useState(0);
   const [companiesCount, setCompaniesCount] = useState(0);
+  const [customersCount, setCustomersCount] = useState(0);
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -140,11 +141,17 @@ export default function AdminLayout({ currentUser, onLogout }) {
     }
   }, [activeSection]);
 
+  // ── Reset search query when active section changes ──
+  useEffect(() => {
+    setSearchQuery('');
+  }, [activeSection]);
+
   const handleSectionChange = (key) => {
     if (!validateAdminToken()) {
       setIsAdminAuth(false);
       return;
     }
+    setSearchQuery('');
     setActiveSection(key);
     setSearchParams({ section: key }, { replace: true });
     setMobileSidebarOpen(false);
@@ -176,24 +183,30 @@ export default function AdminLayout({ currentUser, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch lightweight profile metadata for total counts and user lists
       let driverCount = 295;
       let companyCount = 64;
+      let custCount = 0;
+
+      // Use fast head-count queries without downloading rows
       try {
-        const { data: profData, error: cErr } = await supabase
-          .from('profiles')
-          .select('id, role, full_name, email, city, state_code, created_at, status, is_active, vehicle');
-        if (!cErr && profData && Array.isArray(profData)) {
-          const driversList = profData.filter(u => {
-            const r = String(u.role || '').toLowerCase();
-            return r === 'driver' || !r || r === 'user';
-          });
-          const companiesList = profData.filter(u => String(u.role || '').toLowerCase() === 'company');
-          driverCount = driversList.length;
-          companyCount = companiesList.length;
-          setDrivers(driversList);
-          setCompanies(companiesList);
-          setAllUsers(profData);
+        const [dRes, cRes, cpRes, ordRes] = await Promise.allSettled([
+          supabase.from('profiles').select('id', { count: 'exact', head: true }).or('role.eq.driver,role.is.null'),
+          supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'company'),
+          supabase.from('customer_profiles').select('id', { count: 'exact', head: true }),
+          supabase.from('customer_orders').select('id', { count: 'exact', head: true })
+        ]);
+
+        if (dRes.status === 'fulfilled' && typeof dRes.value?.count === 'number') {
+          driverCount = dRes.value.count;
+        }
+        if (cRes.status === 'fulfilled' && typeof cRes.value?.count === 'number') {
+          companyCount = cRes.value.count;
+        }
+        if (cpRes.status === 'fulfilled' && typeof cpRes.value?.count === 'number') {
+          custCount = cpRes.value.count;
+        }
+        if (custCount === 0 && ordRes.status === 'fulfilled' && typeof ordRes.value?.count === 'number') {
+          custCount = ordRes.value.count;
         }
       } catch (cErr) {
         console.warn("AdminLayout count notice:", cErr);
@@ -201,6 +214,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
 
       setDriversCount(driverCount);
       setCompaniesCount(companyCount);
+      setCustomersCount(custCount);
     } catch (err) {
       console.error('Admin: Error fetching data:', err);
       setError(err.message || 'Failed to fetch data from Supabase.');
@@ -334,6 +348,7 @@ export default function AdminLayout({ currentUser, onLogout }) {
             allUsers={allUsers}
             driversCount={driversCount}
             companiesCount={companiesCount}
+            customersCount={customersCount}
             loading={loading}
             error={error}
             onNavigate={handleSectionChange}

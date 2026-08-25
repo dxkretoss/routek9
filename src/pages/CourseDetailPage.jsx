@@ -85,13 +85,13 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4 relative z-10">
 
-          <Link
+          {/* <Link
             to="/training"
             className="text-xs font-bold text-rose-300 hover:text-white inline-flex items-center gap-1.5 transition-colors uppercase tracking-wider bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/10"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Back to training library</span>
-          </Link>
+          </Link> */}
 
           <div className="flex items-center gap-3">
             <span className="px-3 py-1 rounded-xl bg-rose-600 text-white font-extrabold text-xs font-serif-heading">

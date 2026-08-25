@@ -30,14 +30,26 @@ export async function createCertificationCheckout({ data }) {
     const accountId = stripeSecretKey?.startsWith("acct_") ? stripeSecretKey : "acct_1TtzfQIKKpSWYo2f";
 
     const isSubscription = priceId.includes("pro") || priceId.includes("yearly") || priceId.includes("monthly");
-    
+
     // Determine dynamic amount in cents from priceAmount if provided, or fallback to priceId rules
+    let parsedPrice = null;
+    if (typeof priceAmount === "string") {
+      const cleaned = priceAmount.replace(/[^0-9.]/g, "");
+      if (cleaned) parsedPrice = parseFloat(cleaned);
+    } else if (typeof priceAmount === "number") {
+      parsedPrice = priceAmount;
+    }
+
     let amountInCents = 4900;
-    if (priceAmount != null && !isNaN(Number(priceAmount)) && Number(priceAmount) > 0) {
-      const pNum = Number(priceAmount);
-      amountInCents = pNum < 1000 ? Math.round(pNum * 100) : Math.round(pNum);
-    } else {
+    if (parsedPrice != null && !isNaN(parsedPrice) && parsedPrice >= 0.50) {
+      amountInCents = parsedPrice < 1000 ? Math.round(parsedPrice * 100) : Math.round(parsedPrice);
+    } else if (priceId) {
       amountInCents = priceId.includes("yearly") ? 29900 : priceId.includes("pro") ? 2900 : 4900;
+    }
+
+    // Stripe USD minimum charge threshold is $0.50 (50 cents)
+    if (isNaN(amountInCents) || amountInCents < 50) {
+      amountInCents = 50;
     }
 
     const productName = customProductName || (priceId.includes("pro") ? "Route K9 PRO Membership" : "Route K9 Certification Course");

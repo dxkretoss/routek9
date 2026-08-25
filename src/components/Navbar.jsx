@@ -33,6 +33,19 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
     }
 
     loadUnreadCount();
+
+    const handleUpdate = (e) => {
+      if (typeof e?.detail?.unreadCount === 'number') {
+        setUnreadCount(e.detail.unreadCount);
+      } else {
+        loadUnreadCount();
+      }
+    };
+
+    window.addEventListener('rk9_notifications_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('rk9_notifications_updated', handleUpdate);
+    };
   }, [currentUser]);
 
   // Controls visibility of optional nav links (set to false/hidden)

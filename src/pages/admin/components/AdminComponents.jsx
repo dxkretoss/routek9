@@ -306,15 +306,6 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
     fetchTxAndProfiles();
   }, []);
 
-  const mockTransactions = [
-    { id: 'tx_101', email: 'john.driver@gmail.com', description: 'Route K9 PRO Membership (Monthly)', amount: '$29.00', created_at: '2026-07-31T12:00:00Z', status: 'Succeeded' },
-    { id: 'tx_102', email: 'sarah.courier@yahoo.com', description: 'HIPAA Medical Courier Certification', amount: '$49.00', created_at: '2026-07-30T12:00:00Z', status: 'Succeeded' },
-    { id: 'tx_103', email: 'mike.fleet@logistics.com', description: 'TSA Airport Security Clearance Course', amount: '$99.00', created_at: '2026-07-29T12:00:00Z', status: 'Succeeded' },
-    { id: 'tx_104', email: 'alex.trans@gmail.com', description: 'Route K9 PRO Membership (Yearly)', amount: '$299.00', created_at: '2026-07-28T12:00:00Z', status: 'Succeeded' },
-    { id: 'tx_105', email: 'routek9company@yopmail.com', description: 'Route K9 PRO Membership (Monthly)', amount: '$29.00', created_at: '2026-08-05T09:00:00Z', status: 'Succeeded' },
-    { id: 'tx_106', email: 'routetestdriver@yopmail.com', description: 'Master Contractor Training', amount: '$49.00', created_at: '2026-08-03T11:00:00Z', status: 'Succeeded' }
-  ];
-
   let rawList = transactionsList || dbTransactions;
 
   if (searchQuery.trim().length > 0) {

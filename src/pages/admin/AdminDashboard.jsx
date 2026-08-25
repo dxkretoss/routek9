@@ -24,123 +24,128 @@ import {
   formatPhoneNumber
 } from './components/AdminComponents';
 
-export default function AdminDashboard({ drivers = [], companies = [], allUsers = [], driversCount = 0, companiesCount = 0, loading, error, onNavigate }) {
+export default function AdminDashboard({ drivers = [], companies = [], allUsers = [], driversCount = 0, companiesCount = 0, customersCount = 0, loading, error, onNavigate }) {
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
-  const [adminSavedRoutes, setAdminSavedRoutes] = useState([]);
   const [totalRevenue, setTotalRevenue] = useState(0);
 
   // Counts
   const [driverCount, setDriverCount] = useState(driversCount || drivers.length || 0);
   const [companyCount, setCompanyCount] = useState(companiesCount || companies.length || 0);
-  const [customerCount, setCustomerCount] = useState(0);
+  const [customerCount, setCustomerCount] = useState(customersCount || 0);
 
-  // Top 5 lists
-  const [recentDrivers, setRecentDrivers] = useState([]);
-  const [recentCompanies, setRecentCompanies] = useState([]);
+  // Top 5 lists initialized from incoming props
+  const [recentDrivers, setRecentDrivers] = useState(() => (drivers && drivers.length > 0 ? drivers.slice(0, 5) : []));
+  const [recentCompanies, setRecentCompanies] = useState(() => (companies && companies.length > 0 ? companies.slice(0, 5) : []));
   const [recentCustomers, setRecentCustomers] = useState([]);
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(() => !(drivers && drivers.length > 0));
+
+  // Sync with incoming props if they arrive later
+  useEffect(() => {
+    if (driversCount && !driverCount) setDriverCount(driversCount);
+    if (companiesCount && !companyCount) setCompanyCount(companiesCount);
+    if (customersCount && !customerCount) setCustomerCount(customersCount);
+    if (drivers && drivers.length > 0 && recentDrivers.length === 0) {
+      setRecentDrivers(drivers.slice(0, 5));
+    }
+    if (companies && companies.length > 0 && recentCompanies.length === 0) {
+      setRecentCompanies(companies.slice(0, 5));
+    }
+  }, [drivers, companies, driversCount, companiesCount, customersCount]);
 
   useEffect(() => {
-    async function loadDashboardData() {
+    let isMounted = true;
+
+    async function loadAllDashboardData() {
       try {
-        setLoadingStats(true);
+        setLoadingStats(recentDrivers.length === 0);
 
-        // 1. Load Drivers (exact query as AdminDriverList)
-        try {
-          const { data: dData, count: dCount } = await supabase
-            .from('profiles')
-            .select('*', { count: 'exact' })
-            .or('role.eq.driver,role.is.null')
-            .order('created_at', { ascending: false })
-            .range(0, 4);
+        // 1. Prepare fast 5-item parallel queries (without slow exact count table scans)
+        const driversPromise = supabase
+          .from('profiles')
+          .select('id, email, role, full_name, city, state_code, vehicle, is_active, status, created_at, avatar_url')
+          .or('role.eq.driver,role.is.null')
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-          if (dData && dData.length > 0) {
-            setRecentDrivers(dData);
-          } else if (drivers && drivers.length > 0) {
-            setRecentDrivers(drivers.slice(0, 5));
-          }
+        const companiesPromise = supabase
+          .from('profiles')
+          .select('id, email, role, full_name, city, state_code, is_active, status, created_at, avatar_url')
+          .eq('role', 'company')
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-          if (typeof dCount === 'number') {
-            setDriverCount(dCount);
-          } else if (driversCount) {
-            setDriverCount(driversCount);
-          }
-        } catch (dErr) {
-          console.warn("Drivers query error:", dErr);
-          if (drivers && drivers.length > 0) {
-            setRecentDrivers(drivers.slice(0, 5));
-          }
+        const companyMetaPromise = supabase
+          .from('company_profiles')
+          .select('user_id, company_name, contact_email, city, state')
+          .limit(5);
+
+        const customersPromise = supabase
+          .from('customer_profiles')
+          .select('id, full_name, email, phone, created_at, avatar_url', { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        const revenuePromise = supabase
+          .from('transactions')
+          .select('amount, status')
+          .eq('status', 'Succeeded')
+          .limit(5);
+
+        const coursesPromise = getCourses();
+
+        // 2. Execute ALL requests simultaneously in parallel
+        const [dRes, cRes, cmRes, custRes, revRes, coursesRes] = await Promise.allSettled([
+          driversPromise,
+          companiesPromise,
+          companyMetaPromise,
+          customersPromise,
+          revenuePromise,
+          coursesPromise
+        ]);
+
+        if (!isMounted) return;
+
+        // ── Process Drivers ──
+        if (dRes.status === 'fulfilled' && dRes.value?.data && dRes.value.data.length > 0) {
+          setRecentDrivers(dRes.value.data);
         }
 
-        // 2. Load Companies & company_profiles metadata (exact query as AdminCompanyList)
-        try {
-          let companyMeta = [];
-          try {
-            const { data: cData } = await supabase.from('company_profiles').select('*');
-            if (cData) companyMeta = cData;
-          } catch (cmErr) {
-            console.warn("company_profiles notice:", cmErr);
-          }
-
-          const metaMap = (companyMeta || []).reduce((acc, curr) => {
+        // ── Process Companies & Enriched Metadata ──
+        if (cRes.status === 'fulfilled' && cRes.value?.data && cRes.value.data.length > 0) {
+          const metaList = (cmRes.status === 'fulfilled' && cmRes.value?.data) ? cmRes.value.data : [];
+          const metaMap = metaList.reduce((acc, curr) => {
             const key = curr.user_id || curr.id;
             if (key) acc[key] = curr;
             return acc;
           }, {});
 
-          const { data: cProfiles, count: cCount } = await supabase
-            .from('profiles')
-            .select('*', { count: 'exact' })
-            .eq('role', 'company')
-            .order('created_at', { ascending: false })
-            .range(0, 4);
-
-          if (cProfiles && cProfiles.length > 0) {
-            const enriched = cProfiles.map(p => {
-              const meta = metaMap[p.id] || {};
-              const isDeactivated = p.status === 'INACTIVE' || p.is_active === false;
-              return {
-                ...p,
-                full_name: meta.company_name || p.full_name || p.company_name || p.email?.split('@')[0] || 'Company',
-                email: meta.contact_email || p.email || '',
-                city: p.city || meta.city || 'Houston',
-                state_code: p.state_code || meta.state || 'TX',
-                member: meta.member || p.member || 'FREE',
-                status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
-                created_at: p.created_at
-              };
-            });
-            setRecentCompanies(enriched);
-          } else if (companies && companies.length > 0) {
-            setRecentCompanies(companies.slice(0, 5));
-          }
-
-          if (typeof cCount === 'number') {
-            setCompanyCount(cCount);
-          } else if (companiesCount) {
-            setCompanyCount(companiesCount);
-          }
-        } catch (cErr) {
-          console.warn("Companies query error:", cErr);
-          if (companies && companies.length > 0) {
-            setRecentCompanies(companies.slice(0, 5));
-          }
+          const enriched = cRes.value.data.map(p => {
+            const meta = metaMap[p.id] || {};
+            const isDeactivated = p.status === 'INACTIVE' || p.is_active === false;
+            return {
+              ...p,
+              full_name: meta.company_name || p.full_name || p.company_name || p.email?.split('@')[0] || 'Company',
+              email: meta.contact_email || p.email || '',
+              city: p.city || meta.city || 'Houston',
+              state_code: p.state_code || meta.state || 'TX',
+              member: 'FREE',
+              status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
+              created_at: p.created_at
+            };
+          });
+          setRecentCompanies(enriched);
         }
 
-        // 3. Load Customers (exact query as AdminCustomerList)
-        try {
-          let customerList = [];
-          let custTotal = 0;
-
-          const { data: cpData, count: cpCount } = await supabase
-            .from('customer_profiles')
-            .select('*', { count: 'exact' })
-            .order('created_at', { ascending: false })
-            .range(0, 4);
-
+        // ── Process Customers ──
+        if (custRes.status === 'fulfilled') {
+          const cpData = custRes.value?.data;
+          const cpCount = custRes.value?.count;
+          if (typeof cpCount === 'number' && cpCount > 0) {
+            setCustomerCount(cpCount);
+          }
           if (cpData && cpData.length > 0) {
-            customerList = cpData.map(c => ({
+            setRecentCustomers(cpData.map(c => ({
               ...c,
               full_name: c.full_name || c.name || (c.first_name ? `${c.first_name} ${c.last_name || ''}`.trim() : null) || c.email?.split('@')[0] || 'Customer',
               email: c.email || '',
@@ -148,104 +153,69 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
               total_deliveries: c.total_deliveries || c.total_orders || 0,
               total_saved: c.total_saved || c.total_spend || 0,
               created_at: c.created_at
-            }));
-            custTotal = typeof cpCount === 'number' ? cpCount : cpData.length;
+            })));
           } else {
-            // Fallback to profiles where role = 'customer'
-            const { data: pCustData, count: pCustCount } = await supabase
-              .from('profiles')
-              .select('*', { count: 'exact' })
-              .eq('role', 'customer')
-              .order('created_at', { ascending: false })
-              .range(0, 4);
+            // Fallback to customer_orders table
+            try {
+              const { data: ordData, count: ordCount } = await supabase
+                .from('customer_orders')
+                .select('id, customer_id, sender_name, sender_phone, created_at, price', { count: 'exact' })
+                .order('created_at', { ascending: false })
+                .limit(5);
 
-            if (pCustData && pCustData.length > 0) {
-              customerList = pCustData.map(c => ({
-                ...c,
-                full_name: c.full_name || c.email?.split('@')[0] || 'Customer',
-                email: c.email || '',
-                phone: c.phone || '',
-                total_deliveries: 0,
-                total_saved: 0,
-                created_at: c.created_at
-              }));
-              custTotal = typeof pCustCount === 'number' ? pCustCount : pCustData.length;
+              if (typeof ordCount === 'number' && ordCount > 0) {
+                setCustomerCount(ordCount);
+              }
+
+              if (ordData && ordData.length > 0 && isMounted) {
+                setRecentCustomers(ordData.map(o => ({
+                  id: o.id,
+                  full_name: o.sender_name || 'Customer',
+                  email: '—',
+                  phone: o.sender_phone || '',
+                  total_deliveries: 1,
+                  total_saved: Number(o.price || 0),
+                  created_at: o.created_at
+                })));
+              }
+            } catch (e) {
+              console.warn("Customer orders fallback notice:", e);
             }
           }
-
-          setRecentCustomers(customerList);
-          setCustomerCount(custTotal);
-        } catch (custErr) {
-          console.warn("Customers query error:", custErr);
         }
 
-      } catch (err) {
-        console.warn("Failed to load dashboard data:", err);
-      } finally {
-        setLoadingStats(false);
-      }
-    }
-
-    async function loadDashboardCourses() {
-      try {
-        const data = await getCourses();
-        setCourses(data || []);
-      } catch (err) {
-        console.error("Failed to load courses on admin dashboard:", err);
-      } finally {
-        setLoadingCourses(false);
-      }
-    }
-
-    async function loadSupabaseAdminRoutes() {
-      try {
-        const { data } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
-        if (data && data.length > 0) {
-          const formatted = data.map(r => ({
-            id: r.id,
-            title: r.title || 'Saved Courier Route',
-            driverName: r.driver_name || 'Driver',
-            vehicle: 'Cargo Van',
-            stopsCount: r.stops_count || (r.stops_data ? r.stops_data.length : 0),
-            distanceMiles: r.distance_miles || 0,
-            durationMinutes: r.duration_minutes || 0,
-            status: r.status || 'ACTIVE',
-            stops: r.stops_data || [],
-            createdAt: r.created_at
-          }));
-          setAdminSavedRoutes(formatted);
-        }
-      } catch (err) {
-        console.warn("Could not fetch Supabase admin routes:", err);
-      }
-    }
-
-    async function fetchRevenue() {
-      try {
-        const { data, error } = await supabase
-          .from('transactions')
-          .select('*');
-
-        if (data && !error && data.length > 0) {
-          const succeededTx = data.filter(tx => tx.status === 'Succeeded');
-          const sum = succeededTx.reduce((acc, tx) => {
+        // ── Process Revenue ──
+        if (revRes.status === 'fulfilled' && revRes.value?.data && revRes.value.data.length > 0) {
+          const sum = revRes.value.data.reduce((acc, tx) => {
             if (tx.amount) {
-              const num = parseFloat(tx.amount.replace(/[^0-9.]/g, ''));
+              const num = parseFloat(String(tx.amount).replace(/[^0-9.]/g, ''));
               return acc + (isNaN(num) ? 0 : num);
             }
             return acc;
           }, 0);
           setTotalRevenue(sum);
         }
+
+        // ── Process Courses ──
+        if (coursesRes.status === 'fulfilled') {
+          setCourses(coursesRes.value || []);
+        }
+
       } catch (err) {
-        console.warn("Failed to calculate total revenue:", err);
+        console.warn("Dashboard data load notice:", err);
+      } finally {
+        if (isMounted) {
+          setLoadingCourses(false);
+          setLoadingStats(false);
+        }
       }
     }
 
-    loadDashboardData();
-    loadDashboardCourses();
-    loadSupabaseAdminRoutes();
-    fetchRevenue();
+    loadAllDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const totalDrivers = driverCount || driversCount || drivers.length || 0;
@@ -623,75 +593,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
           </div>
         </div>
 
-        {/* ── 4. SAVED DRIVER ROUTES MONITOR ── */}
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden space-y-4 p-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-xl font-extrabold text-[#0b132b] font-serif-heading">Saved Driver Routes Monitor</h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Live routes optimized & saved by drivers in Route Planner</p>
-            </div>
-            <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold">
-              {adminSavedRoutes.length} Saved Routes
-            </span>
-          </div>
-
-          {adminSavedRoutes.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-400 font-medium">
-              No driver routes saved yet.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 uppercase font-extrabold text-[10px]">
-                    <th className="py-3 px-4">Route ID</th>
-                    <th className="py-3 px-4">Route Title/Zone</th>
-                    <th className="py-3 px-4">Driver Name</th>
-                    <th className="py-3 px-4">Vehicle</th>
-                    <th className="py-3 px-4">Stops</th>
-                    <th className="py-3 px-4">Distance</th>
-                    <th className="py-3 px-4">Drive Time</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Created Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {adminSavedRoutes.map(r => {
-                    const routeStops = r.stops || [];
-                    const completedCount = routeStops.filter(s => s.status === 'complete').length;
-                    const ongoingCount = routeStops.filter(s => s.status === 'ongoing').length;
-                    const allComplete = routeStops.length > 0 && completedCount === routeStops.length;
-                    const anyOngoing = ongoingCount > 0 || completedCount > 0;
-                    const overallStatus = allComplete ? 'complete' : anyOngoing ? 'ongoing' : 'pending';
-
-                    return (
-                      <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-mono font-bold text-rose-600">{r.id}</td>
-                        <td className="py-3 px-4 font-bold text-slate-900 truncate max-w-[200px]" title={r.title}>{r.title}</td>
-                        <td className="py-3 px-4 font-bold text-slate-900">{r.driverName}</td>
-                        <td className="py-3 px-4">{r.vehicle}</td>
-                        <td className="py-3 px-4 font-bold">{r.stopsCount} stops</td>
-                        <td className="py-3 px-4">{r.distanceMiles} mi</td>
-                        <td className="py-3 px-4">{r.durationMinutes} min</td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${overallStatus === 'complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              overallStatus === 'ongoing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                'bg-slate-100 text-slate-600 border-slate-200'
-                            }`}>
-                            {overallStatus}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-400">{new Date(r.createdAt).toLocaleDateString()}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* ── 5. AVAILABLE COURSES SECTION ── */}
+        {/* ── 4. AVAILABLE COURSES SECTION ── */}
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden space-y-4 p-6 sm:p-7">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div>

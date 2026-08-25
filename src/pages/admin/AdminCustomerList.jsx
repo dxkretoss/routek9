@@ -21,7 +21,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
-export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
+export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) {
   const [customers, setCustomers] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -34,6 +34,18 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
   const [directoryPage, setDirectoryPage] = useState(1);
   const [ordersPage, setOrdersPage] = useState(1);
   const itemsPerPage = 10;
+
+  // Reset search when active tab changes
+  useEffect(() => {
+    if (setSearchQuery) setSearchQuery('');
+  }, [activeTab]);
+
+  // Reset search when leaving/unmounting customer list page
+  useEffect(() => {
+    return () => {
+      if (setSearchQuery) setSearchQuery('');
+    };
+  }, []);
 
   function getCustomerInitials(name) {
     if (!name) return 'C';
@@ -100,94 +112,50 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
     };
   }
 
+  // In-memory cache for instant switching
+  const customersCacheRef = React.useRef(null);
+
   // Load Customer Profiles & Customer Orders from Supabase
-  const loadData = async () => {
+  const loadData = async (forceRefresh = false) => {
+    if (!forceRefresh && customersCacheRef.current) {
+      setCustomers(customersCacheRef.current.customers || []);
+      setOrders(customersCacheRef.current.orders || []);
+      setAllProfiles(customersCacheRef.current.allProfiles || []);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       let custData = [];
       let ordersList = [];
-      let allProfilesList = [];
       let customerProfilesList = [];
-      let generalProfilesList = [];
 
-      // 1. Query `customer_orders` table first
-      try {
-        const { data: ordersData, error: ordersErr } = await supabase
+      // Execute customer_orders and customer_profiles in parallel
+      const [ordersRes, cpRes] = await Promise.allSettled([
+        supabase
           .from('customer_orders')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (ordersErr) {
-          console.warn("customer_orders fetch warning:", ordersErr);
-        } else if (ordersData) {
-          ordersList = ordersData;
-          setOrders(ordersData);
-        }
-      } catch (oErr) {
-        console.warn("customer_orders fetch exception:", oErr);
-      }
-
-      // 2. Query dedicated `customer_profiles` table directly
-      try {
-        const { data: cpData, error: cpErr } = await supabase
+          .select('id, customer_id, sender_name, sender_phone, recipient_name, recipient_phone, pickup_address, dropoff_address, order_status, status, price, created_at')
+          .order('created_at', { ascending: false }),
+        supabase
           .from('customer_profiles')
-          .select('*');
+          .select('id, full_name, email, phone, avatar_url, created_at, updated_at')
+      ]);
 
-        if (!cpErr && cpData && Array.isArray(cpData)) {
-          customerProfilesList = cpData;
-        } else if (cpErr) {
-          console.warn("customer_profiles fetch warning:", cpErr.message || cpErr);
-        }
-      } catch (cpErr) {
-        console.warn("customer_profiles fetch exception:", cpErr);
+      if (ordersRes.status === 'fulfilled' && ordersRes.value?.data) {
+        ordersList = ordersRes.value.data;
+        setOrders(ordersList);
       }
 
-      // 3. Query general `profiles` table with confirmed columns (excluding heavy avatar blobs)
-      try {
-        const { data: profData, error: profErr } = await supabase
-          .from('profiles')
-          .select('id, email, role, full_name, phone, created_at, updated_at, city, state_code, is_active, status')
-          .order('created_at', { ascending: false });
-
-        if (!profErr && profData && Array.isArray(profData)) {
-          generalProfilesList = profData;
-        }
-      } catch (profErr) {
-        console.warn('profiles query notice:', profErr);
+      if (cpRes.status === 'fulfilled' && cpRes.value?.data) {
+        customerProfilesList = cpRes.value.data;
       }
 
-      // Merge all profiles (customer_profiles take precedence for customer resolution)
-      const combinedProfilesMap = new Map();
-      generalProfilesList.forEach(p => {
-        if (p.id) combinedProfilesMap.set(String(p.id).toLowerCase(), p);
-      });
-      customerProfilesList.forEach(p => {
-        if (p.id) {
-          const existing = combinedProfilesMap.get(String(p.id).toLowerCase()) || {};
-          combinedProfilesMap.set(String(p.id).toLowerCase(), {
-            ...existing,
-            ...p,
-            role: p.role || 'customer'
-          });
-        }
-      });
-      allProfilesList = Array.from(combinedProfilesMap.values());
-      setAllProfiles(allProfilesList);
-
-      // Build customer directory records from customer_profiles and relevant profiles
+      // Build customer directory records from customer_profiles
       const custDirMap = new Map();
       customerProfilesList.forEach(c => {
         const key = String(c.id || c.email || Math.random()).toLowerCase();
         custDirMap.set(key, c);
-      });
-      generalProfilesList.filter(p => {
-        const r = String(p.role || '').toLowerCase();
-        return r === 'company' || r === 'customer' || r === 'user' || r === 'client' || (!r && p.email) || (r !== 'driver' && r !== 'admin' && r !== 'superadmin');
-      }).forEach(c => {
-        const key = String(c.id || c.email || Math.random()).toLowerCase();
-        if (!custDirMap.has(key)) {
-          custDirMap.set(key, c);
-        }
       });
 
       // Also ensure all customers who placed orders are added to directory
@@ -221,26 +189,8 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
 
       custData = Array.from(custDirMap.values());
 
-      // 4. Check localStorage cache fallback for customer profiles
-      try {
-        const localSaved = JSON.parse(localStorage.getItem('rk9_admin_custom_customers') || '[]');
-        if (Array.isArray(localSaved) && localSaved.length > 0) {
-          const existingKeys = new Set(custData.map(c => (c.email ? c.email.toLowerCase() : c.id)));
-          localSaved.forEach(c => {
-            const key = c.email ? c.email.toLowerCase() : c.id;
-            if (key && !existingKeys.has(key)) {
-              custData.push(c);
-              existingKeys.add(key);
-            }
-          });
-        }
-      } catch (locErr) {
-        console.warn('localStorage customer query notice:', locErr);
-      }
-
       // Format customer records cleanly and compute delivery count and total saved/spend dynamically
       const finalList = custData.map((c) => {
-        // Calculate dynamic delivery stats for this customer profile
         const customerOrders = ordersList.filter(o => String(o.customer_id).toLowerCase() === String(c.id).toLowerCase());
         const completedOrders = customerOrders.filter(o => {
           const s = String(o.order_status || o.status || '').toLowerCase();
@@ -262,7 +212,15 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
         };
       });
 
+      // Save to cache for instant rendering
+      customersCacheRef.current = {
+        customers: finalList,
+        orders: ordersList,
+        allProfiles: customerProfilesList
+      };
+
       setCustomers(finalList);
+      setAllProfiles(customerProfilesList);
 
     } catch (err) {
       console.warn("Admin customer data load warning:", err);
@@ -407,7 +365,7 @@ export default function AdminCustomerList({ searchQuery, setSearchQuery }) {
           {loading ? (
             <div className="p-12 text-center space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
-              <p className="text-xs font-bold text-slate-500">Loading customer profiles...</p>
+              <p className="text-xs font-bold text-slate-500">Loading Customer Profiles...</p>
             </div>
           ) : filteredCustomers.length === 0 ? (
             <div className="p-16 text-center">

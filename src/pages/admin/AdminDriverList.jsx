@@ -27,7 +27,7 @@ import {
 import { supabase, updateDriverVerification, fetchAllRouteBids, updateBidStatus, fetchDriverCertifications } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
-export default function AdminDriverList({ users = [], driversCount = 0, searchQuery, setSearchQuery, onRefresh }) {
+export default function AdminDriverList({ users = [], driversCount = 0, searchQuery = '', setSearchQuery, onRefresh }) {
   const [drivers, setDrivers] = useState([]);
   const [bids, setBids] = useState([]);
   const [routes, setRoutes] = useState([]);
@@ -45,10 +45,24 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
   const [activeDriverModal, setActiveDriverModal] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [totalDriversCount, setTotalDriversCount] = useState(driversCount || 513);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, vehicleFilter]);
+
+  // Reset search when active tab changes
+  useEffect(() => {
+    if (setSearchQuery) setSearchQuery('');
+  }, [activeTab]);
+
+  // Reset search when leaving/unmounting driver list page
+  useEffect(() => {
+    return () => {
+      if (setSearchQuery) setSearchQuery('');
+    };
+  }, []);
+
   function getFriendlyZoneName(stop, stopsList = []) {
     if (!stop) return '';
     if (stop.zoneName) return stop.zoneName;
@@ -119,10 +133,62 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
     return index >= 0 ? `Zone ${index + 1}` : 'Zone';
   }
 
-  const [totalDriversCount, setTotalDriversCount] = useState(driversCount || 295);
+  const pageCacheRef = React.useRef({});
 
-  // Load Driver Profiles (10 items per page range)
+  // Background hydration for routes & bids (runs once on mount, non-blocking)
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const [bidsData, routesRes] = await Promise.allSettled([
+          fetchAllRouteBids(),
+          supabase.from('routes').select('id, user_id, title, driver_name, stops_count, distance_miles, duration_minutes, status, created_at').limit(50)
+        ]);
+
+        if (!isMounted) return;
+
+        if (bidsData.status === 'fulfilled' && bidsData.value) {
+          setBids(bidsData.value || []);
+        }
+
+        if (routesRes.status === 'fulfilled' && routesRes.value?.data) {
+          setRoutes(routesRes.value.data.map(r => ({
+            id: r.id,
+            user_id: r.user_id,
+            title: r.title || 'Saved Courier Route',
+            driverName: r.driver_name || 'Solo Driver',
+            vehicle: 'Cargo Van',
+            stopsCount: r.stops_count || 0,
+            distanceMiles: r.distance_miles || 0,
+            durationMinutes: r.duration_minutes || 0,
+            status: r.status || 'ACTIVE',
+            createdAt: r.created_at
+          })));
+        }
+      } catch (subErr) {
+        console.warn("Background hydration notice:", subErr);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Fast Driver Profiles Loader (10 items per page range without blocking count scans)
   const loadData = async (targetPage = currentPage) => {
+    const cacheKey = `${targetPage}_${(searchQuery || '').trim().toLowerCase()}_${vehicleFilter || 'all'}`;
+
+    // Instant cache hit
+    if (pageCacheRef.current[cacheKey]) {
+      setDrivers(pageCacheRef.current[cacheKey].data);
+      if (typeof pageCacheRef.current[cacheKey].count === 'number') {
+        setTotalDriversCount(pageCacheRef.current[cacheKey].count);
+      }
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setFetchError(null);
     try {
@@ -131,7 +197,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
 
       let query = supabase
         .from('profiles')
-        .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, ready_to_work, website_url', { count: 'exact' })
+        .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, ready_to_work, website_url, avatar_url')
         .or('role.eq.driver,role.is.null')
         .order('created_at', { ascending: false });
 
@@ -144,23 +210,22 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
         query = query.ilike('vehicle', `%${vehicleFilter}%`);
       }
 
-      const { data: pageProfiles, count: fetchedCount, error: pErr } = await query.range(from, to);
+      const { data: pageProfiles, error: pErr } = await query.range(from, to);
 
       if (pErr) throw pErr;
-
-      if (fetchedCount !== null) {
-        setTotalDriversCount(fetchedCount);
-      }
 
       const pageItems = pageProfiles || [];
 
       // Format drivers for display
       const rawDrivers = pageItems.map((p) => {
         const isDeactivated = p.status === 'INACTIVE' || p.is_active === false;
+        const avatarImage = p.avatar_url || null;
 
         return {
           ...p,
           full_name: p.full_name || (p.email ? p.email.split('@')[0] : 'Driver'),
+          avatar_url: avatarImage,
+          avatar: avatarImage,
           vehicle: p.vehicle || 'Cargo Van',
           city: p.city || 'Houston',
           state_code: p.state_code || 'TX',
@@ -178,41 +243,41 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
         };
       });
 
+      // Save to cache
+      pageCacheRef.current[cacheKey] = {
+        data: rawDrivers,
+        count: totalDriversCount
+      };
+
       setDrivers(rawDrivers);
       setLoading(false);
 
-      // Secondary non-blocking background hydration (Routes & Bids)
-      (async () => {
-        try {
-          // Route Bids
-          const bidsData = await fetchAllRouteBids();
-          setBids(bidsData || []);
+      // Async background count update when searching or filtering
+      if (searchQuery || vehicleFilter !== 'all') {
+        (async () => {
+          try {
+            let countQ = supabase
+              .from('profiles')
+              .select('id', { count: 'exact', head: true })
+              .or('role.eq.driver,role.is.null');
 
-          // Saved Routes
-          const { data: routesData } = await supabase.from('routes').select('*').limit(50);
-          if (routesData) {
-            const driverIdsSet = new Set(rawDrivers.map(d => d.id));
-            const driverOnlyRoutes = routesData.filter(r =>
-              !r.company_id || driverIdsSet.has(r.user_id) || driverIdsSet.has(r.company_id)
-            );
-            setRoutes(driverOnlyRoutes.map(r => ({
-              id: r.id,
-              user_id: r.user_id,
-              title: r.title || 'Saved Courier Route',
-              driverName: r.driver_name || 'Solo Driver',
-              vehicle: 'Cargo Van',
-              stopsCount: r.stops_count || 0,
-              distanceMiles: r.distance_miles || 0,
-              durationMinutes: r.duration_minutes || 0,
-              status: r.status || 'ACTIVE',
-              stops: r.stops_data || [],
-              createdAt: r.created_at
-            })));
-          }
-        } catch (subErr) {
-          console.warn("Background hydration notice:", subErr);
-        }
-      })();
+            if (searchQuery) {
+              const q = searchQuery.trim();
+              countQ = countQ.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,city.ilike.%${q}%,state_code.ilike.%${q}%`);
+            }
+            if (vehicleFilter && vehicleFilter !== 'all') {
+              countQ = countQ.ilike('vehicle', `%${vehicleFilter}%`);
+            }
+            const { count } = await countQ;
+            if (typeof count === 'number') {
+              setTotalDriversCount(count);
+              if (pageCacheRef.current[cacheKey]) {
+                pageCacheRef.current[cacheKey].count = count;
+              }
+            }
+          } catch (e) { }
+        })();
+      }
 
     } catch (err) {
       console.warn("Admin data load warning:", err);
@@ -381,7 +446,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
       {loading ? (
         <div className="bg-white rounded-3xl p-12 text-center space-y-3 border border-slate-200">
           <Loader2 className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Syncing Supabase Database...</p>
+          <p className="text-xs font-bold text-slate-500 tracking-wider">Loading Driver Profiles...</p>
         </div>
       ) : activeTab === 'drivers' ? (
 
@@ -921,9 +986,17 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
             {/* Modal Header */}
             <div className="p-6 bg-slate-900 text-white flex justify-between items-start text-left">
               <div className="flex items-center gap-3.5 flex-1">
-                <div className={`w-12 h-12 bg-rose-600 rounded-2xl font-black text-lg flex items-center justify-center shadow-md shrink-0 ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600' : 'bg-[#0b132b]'}`}>
-                  {(selectedDriverModal.full_name || selectedDriverModal.email || 'D').charAt(0).toUpperCase()}
-                </div>
+                {selectedDriverModal.avatar_url || selectedDriverModal.avatar ? (
+                  <img
+                    src={selectedDriverModal.avatar_url || selectedDriverModal.avatar}
+                    alt={selectedDriverModal.full_name || 'Driver'}
+                    className="w-12 h-12 rounded-2xl object-cover border border-white/20 shadow-md shrink-0"
+                  />
+                ) : (
+                  <div className={`w-12 h-12 rounded-2xl font-black text-lg flex items-center justify-center shadow-md shrink-0 ${selectedDriverModal.status === 'INACTIVE' ? 'bg-rose-600 text-white' : 'bg-[#0b132b] text-white'}`}>
+                    {(selectedDriverModal.full_name || selectedDriverModal.email || 'D').charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-lg font-extrabold text-white font-serif-heading truncate max-w-[250px]">

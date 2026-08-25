@@ -22,6 +22,7 @@ export default function AdminCourses() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
+  const [formError, setFormError] = useState(null);
 
   // Custom Delete Confirm Modal State
   const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, courseId: null, title: '' });
@@ -235,6 +236,13 @@ export default function AdminCourses() {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
+    const parsedPrice = parseFloat(newPrice);
+    if (isNaN(parsedPrice) || parsedPrice < 0.50) {
+      setFormError("Course price / rate must be at least $0.50 USD.");
+      setTimeout(() => setFormError(null), 4000);
+      return;
+    }
+
     setSubmitting(true);
     const outcomes = newOutcomes.filter(o => o.trim() !== '');
 
@@ -243,7 +251,7 @@ export default function AdminCourses() {
       title: newTitle.trim(),
       subtitle: newSubtitle.trim() || 'Professional training course for route couriers.',
       description: newSubtitle.trim() || 'Professional training course for route couriers.',
-      price: !isNaN(parseFloat(newPrice)) ? parseFloat(newPrice) : 49,
+      price: parsedPrice,
       projectedPay: newProjectedPay.trim() || '$50,000 – $150,000+ / year',
       access: 'One-time • Lifetime access • Certificate on completion',
       image: newImageUrl.trim() || PRESET_IMAGES[0].url,
@@ -282,14 +290,14 @@ export default function AdminCourses() {
     setEditProjectedPay(course.projectedPay || '');
     setEditImageUrl(course.image_url || course.image || DEFAULT_COURSE_IMAGES[course.id] || '');
     setEditOutcomes(course.outcomes && course.outcomes.length ? [...course.outcomes] : ['', '', '']);
-    
+
     const rawOutline = course.outline || course.lessons || [];
     const normalizedOutline = rawOutline.map((mod, idx) => {
       if (typeof mod === 'string') {
         return { moduleNumber: idx + 1, moduleTitle: mod, lessons: [mod] };
       }
-      const lessonsList = Array.isArray(mod?.lessons) 
-        ? mod.lessons 
+      const lessonsList = Array.isArray(mod?.lessons)
+        ? mod.lessons
         : (Array.isArray(mod?.steps) ? mod.steps : [mod?.body || mod?.title || 'Lesson 1']);
 
       return {
@@ -311,6 +319,13 @@ export default function AdminCourses() {
     e.preventDefault();
     if (!editTitle.trim() || !editingCourseId) return;
 
+    const parsedPrice = parseFloat(editPrice);
+    if (isNaN(parsedPrice) || parsedPrice < 0.50) {
+      setFormError("Course price / rate must be at least $0.50 USD.");
+      setTimeout(() => setFormError(null), 4000);
+      return;
+    }
+
     setUpdating(true);
     const outcomes = editOutcomes.filter(o => o.trim() !== '');
 
@@ -318,7 +333,7 @@ export default function AdminCourses() {
       title: editTitle.trim(),
       subtitle: editSubtitle.trim(),
       description: editSubtitle.trim(),
-      price: !isNaN(parseFloat(editPrice)) ? parseFloat(editPrice) : 49,
+      price: parsedPrice,
       projectedPay: editProjectedPay.trim(),
       image: editImageUrl.trim(),
       image_url: editImageUrl.trim(),
@@ -400,7 +415,7 @@ export default function AdminCourses() {
 
             return (
               <div key={course.id} className="bg-white rounded-3xl border border-slate-200/90 shadow-lg overflow-hidden flex flex-col justify-between group">
-                
+
                 {/* Course Image Header Preview */}
                 <div className="relative h-36 w-full overflow-hidden bg-slate-900">
                   <img
@@ -437,11 +452,10 @@ export default function AdminCourses() {
                         <select
                           value={course.status || 'ACTIVE'}
                           onChange={(e) => handleCourseStatusChange(course.id, e.target.value, course)}
-                          className={`appearance-none pl-3 pr-7 py-0.5 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${
-                            course.status === 'INACTIVE'
+                          className={`appearance-none pl-3 pr-7 py-0.5 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none transition-all ${course.status === 'INACTIVE'
                               ? 'bg-rose-50 text-rose-700 border-rose-300'
                               : 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                          }`}
+                            }`}
                         >
                           <option value="ACTIVE">ACTIVE</option>
                           <option value="INACTIVE">INACTIVE</option>
@@ -497,6 +511,12 @@ export default function AdminCourses() {
             </div>
 
             <form onSubmit={handleCreateCourse} className="space-y-4">
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold animate-fadeIn">
+                  ⚠️ {formError}
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-slate-700">Course Title *</label>
                 <input
@@ -553,11 +573,10 @@ export default function AdminCourses() {
                     <button
                       type="button"
                       onClick={() => setNewImageUrl('')}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                        !newImageUrl
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${!newImageUrl
                           ? 'bg-slate-800 text-white border-slate-800'
                           : 'bg-white hover:bg-slate-100 text-slate-500 border-slate-200'
-                      }`}
+                        }`}
                     >
                       Clear Selection
                     </button>
@@ -566,11 +585,10 @@ export default function AdminCourses() {
                         key={idx}
                         type="button"
                         onClick={() => setNewImageUrl(newImageUrl === img.url ? '' : img.url)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                          newImageUrl === img.url
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${newImageUrl === img.url
                             ? 'bg-rose-600 text-white border-rose-600'
                             : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
+                          }`}
                       >
                         {img.label}
                       </button>
@@ -603,8 +621,8 @@ export default function AdminCourses() {
                   <input
                     type="number"
                     required
-                    min="0"
-                    step="any"
+                    min="0.50"
+                    step="0.01"
                     placeholder="49"
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
@@ -807,6 +825,12 @@ export default function AdminCourses() {
             </div>
 
             <form onSubmit={handleUpdateCourse} className="space-y-4">
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold animate-fadeIn">
+                  ⚠️ {formError}
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-slate-700">Course Title *</label>
                 <input
@@ -862,11 +886,10 @@ export default function AdminCourses() {
                     <button
                       type="button"
                       onClick={() => setEditImageUrl('')}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                        !editImageUrl
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${!editImageUrl
                           ? 'bg-slate-800 text-white border-slate-800'
                           : 'bg-white hover:bg-slate-100 text-slate-500 border-slate-200'
-                      }`}
+                        }`}
                     >
                       Clear Selection
                     </button>
@@ -875,11 +898,10 @@ export default function AdminCourses() {
                         key={idx}
                         type="button"
                         onClick={() => setEditImageUrl(editImageUrl === img.url ? '' : img.url)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                          editImageUrl === img.url
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${editImageUrl === img.url
                             ? 'bg-indigo-600 text-white border-indigo-600'
                             : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
+                          }`}
                       >
                         {img.label}
                       </button>
@@ -912,8 +934,8 @@ export default function AdminCourses() {
                   <input
                     type="number"
                     required
-                    min="0"
-                    step="any"
+                    min="0.50"
+                    step="0.01"
                     value={editPrice}
                     onChange={(e) => setEditPrice(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
