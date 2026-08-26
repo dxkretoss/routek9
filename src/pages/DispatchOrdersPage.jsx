@@ -21,7 +21,6 @@ import {
   ChevronRight,
   Info,
   Car,
-  Navigation,
   Loader2,
   RefreshCw,
   Eye,
@@ -32,7 +31,8 @@ import {
   ExternalLink,
   Compass,
   Map as MapIcon,
-  Globe
+  Globe,
+  Bell
 } from 'lucide-react';
 import {
   supabase,
@@ -41,8 +41,46 @@ import {
   updateCustomerStatusColumnInDb,
   acceptPackageOrder,
   startPackageDelivery,
-  completePackageDelivery
+  completePackageDelivery,
+  notifyNearbyDriversOnNewOrder
 } from '../lib/supabase';
+import { showBrowserDesktopNotification, playNotificationSound } from '../lib/firebase';
+
+// Configurable default nearest dispatch radius in miles
+const DEFAULT_DISPATCH_RADIUS_MILES = 25;
+
+// Configurable Test GPS Coordinates for testing US-based orders from anywhere (e.g. India)
+// Set to null to use live browser GPS, or set to target US city coordinates:
+// e.g. Los Angeles, CA: { lat: 34.0522, lng: -118.2437 }
+// e.g. Houston, TX:     { lat: 29.7604, lng: -95.3698 }
+// e.g. Boston, MA:      { lat: 42.3601, lng: -71.0589 }
+const TEST_OVERRIDE_COORDS = {
+  lat: 34.0522,
+  lng: -118.2437
+};
+
+// Haversine formula to compute great-circle distance between two GPS coordinates in miles
+function calculateDistanceMiles(lat1, lon1, lat2, lon2) {
+  if (lat1 === null || lat1 === undefined || lon1 === null || lon1 === undefined) return null;
+  if (lat2 === null || lat2 === undefined || lon2 === null || lon2 === undefined) return null;
+  const pLat1 = typeof lat1 === 'number' ? lat1 : parseFloat(String(lat1));
+  const pLon1 = typeof lon1 === 'number' ? lon1 : parseFloat(String(lon1));
+  const pLat2 = typeof lat2 === 'number' ? lat2 : parseFloat(String(lat2));
+  const pLon2 = typeof lon2 === 'number' ? lon2 : parseFloat(String(lon2));
+  if (isNaN(pLat1) || isNaN(pLon1) || isNaN(pLat2) || isNaN(pLon2)) return null;
+
+  const R = 3958.8; // Earth's radius in miles
+  const dLat = (pLat2 - pLat1) * (Math.PI / 180);
+  const dLon = (pLon2 - pLon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(pLat1 * (Math.PI / 180)) *
+    Math.cos(pLat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const [orders, setOrders] = useState([]);
@@ -51,6 +89,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const [categoryFilterTab, setCategoryFilterTab] = useState('ALL'); // 'ALL' | 'package' | 'food_grocery'
   const [searchTerm, setSearchTerm] = useState('');
   const [vehicleFilter, setVehicleFilter] = useState('ALL');
+  const [showAllNationwide, setShowAllNationwide] = useState(false);
   const [notification, setNotification] = useState(null);
   const [acceptedModalState, setAcceptedModalState] = useState({ isOpen: false, order: null });
   const [claimFailedModalState, setClaimFailedModalState] = useState({ isOpen: false, order: null });
@@ -59,6 +98,68 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   const [acceptingOrderId, setAcceptingOrderId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
+
+  // Browser Desktop Notification Permission State
+  const [notifPermission, setNotifPermission] = useState(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'granted';
+  });
+
+  const handleEnableNotifications = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const perm = await Notification.requestPermission();
+        setNotifPermission(perm);
+        if (perm === 'granted') {
+          playNotificationSound();
+          showBrowserDesktopNotification('🔔 RouteK9 Desktop Alerts Enabled', {
+            body: 'You will now receive instant desktop alerts for all new nearby dispatch orders!'
+          });
+        }
+      } catch (err) {
+        console.warn("Notification request error:", err);
+      }
+    }
+  };
+
+  // Retrieve user latitude / longitude: Priority is TEST_OVERRIDE_COORDS -> currentUser -> live browser geolocation
+  const [driverCoords, setDriverCoords] = useState(() => {
+    if (TEST_OVERRIDE_COORDS && TEST_OVERRIDE_COORDS.lat !== null && TEST_OVERRIDE_COORDS.lng !== null) {
+      return { lat: TEST_OVERRIDE_COORDS.lat, lng: TEST_OVERRIDE_COORDS.lng };
+    }
+    const lat = currentUser?.latitude ? (typeof currentUser.latitude === 'number' ? currentUser.latitude : parseFloat(String(currentUser.latitude))) : null;
+    const lng = currentUser?.longitude ? (typeof currentUser.longitude === 'number' ? currentUser.longitude : parseFloat(String(currentUser.longitude))) : null;
+    return { lat, lng };
+  });
+
+  useEffect(() => {
+    if (TEST_OVERRIDE_COORDS && TEST_OVERRIDE_COORDS.lat !== null && TEST_OVERRIDE_COORDS.lng !== null) {
+      setDriverCoords({ lat: TEST_OVERRIDE_COORDS.lat, lng: TEST_OVERRIDE_COORDS.lng });
+      return;
+    }
+    if (currentUser?.latitude && currentUser?.longitude) {
+      setDriverCoords({
+        lat: typeof currentUser.latitude === 'number' ? currentUser.latitude : parseFloat(String(currentUser.latitude)),
+        lng: typeof currentUser.longitude === 'number' ? currentUser.longitude : parseFloat(String(currentUser.longitude))
+      });
+    } else if (typeof window !== 'undefined' && navigator?.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setDriverCoords({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          });
+        },
+        (err) => {
+          console.warn("Location permission notice:", err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  }, [currentUser]);
+
+  const userLat = driverCoords.lat;
+  const userLng = driverCoords.lng;
+  const hasUserLocation = userLat !== null && userLng !== null && !isNaN(userLat) && !isNaN(userLng);
 
   // Helper function to safely format dynamic values with '-' fallback
   const getDynamicVal = (val, formatter = null) => {
@@ -178,6 +279,15 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
       ? String(row.order_ref).trim()
       : (row.id ? `ORD-${String(row.id).substring(0, 6).toUpperCase()}` : '-');
 
+    // Deadhead Distance (Distance from driver's live GPS to pickup location)
+    let deadheadMiles = null;
+    if (hasUserLocation && (row.pickup_lat !== null && row.pickup_lat !== undefined && row.pickup_lng !== null && row.pickup_lng !== undefined)) {
+      deadheadMiles = calculateDistanceMiles(userLat, userLng, row.pickup_lat, row.pickup_lng);
+    }
+    const deadheadDisplay = deadheadMiles !== null
+      ? `${deadheadMiles.toFixed(1)} mi away`
+      : null;
+
     return {
       rawId: row.id || '-',
       id: displayId,
@@ -186,6 +296,8 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
       dropoff: getDynamicVal(row.dropoff_address || row.dropoff),
       distanceMiles: numericDist,
       distanceDisplay: distanceDisplay,
+      deadheadMiles: deadheadMiles,
+      deadheadDisplay: deadheadDisplay,
       estTimeMinutes: getDynamicVal(row.estimated_time),
       category: (row.category || 'package').toLowerCase(),
       packageTypeName: packageTypeName,
@@ -237,12 +349,12 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
         const mappedList = dbRows.map(mapDbOrderToUiOrder);
         setOrders(mappedList);
         if (showToast) {
-          setNotification({ type: 'success', message: `Refreshed ${mappedList.length} order(s) from Supabase database!` });
+          setNotification({ type: 'success', message: `Live orders updated (${mappedList.length} available)` });
         }
       }
     } catch (err) {
-      console.warn('Error loading orders from Supabase DB:', err);
-      setNotification({ type: 'error', message: 'Failed to fetch customer orders from database.' });
+      console.warn('Notice loading orders:', err);
+      setNotification({ type: 'error', message: 'Unable to load live orders. Please try again.' });
     } finally {
       setLoading(false);
     }
@@ -251,6 +363,28 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   useEffect(() => {
     loadOrdersFromDb();
   }, []);
+
+  // Re-map deadhead distance whenever live driver GPS coordinates are detected or updated
+  useEffect(() => {
+    if (hasUserLocation) {
+      setOrders(prev => prev.map(o => {
+        const rawRow = o.rawRow;
+        if (!rawRow) return o;
+        let deadheadMiles = null;
+        if (rawRow.pickup_lat !== null && rawRow.pickup_lat !== undefined && rawRow.pickup_lng !== null && rawRow.pickup_lng !== undefined) {
+          deadheadMiles = calculateDistanceMiles(userLat, userLng, rawRow.pickup_lat, rawRow.pickup_lng);
+        }
+        const deadheadDisplay = deadheadMiles !== null
+          ? `${deadheadMiles.toFixed(1)} mi away`
+          : null;
+        return {
+          ...o,
+          deadheadMiles,
+          deadheadDisplay
+        };
+      }));
+    }
+  }, [userLat, userLng, hasUserLocation]);
 
   // Live real-time subscription to database changes in customer_orders table
   useEffect(() => {
@@ -270,6 +404,31 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
               if (prev.some(o => o.rawId === payload.new.id)) return prev;
               return [newUiOrder, ...prev];
             });
+
+            // If order is within driver dispatch radius (e.g. 25 miles), show toast alert, sound & browser desktop notification immediately!
+            const isNearby = !newUiOrder.deadheadMiles || newUiOrder.deadheadMiles <= DEFAULT_DISPATCH_RADIUS_MILES;
+            if (isNearby) {
+              playNotificationSound();
+
+              setNotification({
+                type: 'info',
+                message: `⚡ New Nearby Dispatch Order Available (${newUiOrder.deadheadDisplay || 'Nearby'}) • Payout: ${newUiOrder.priceDisplay}`
+              });
+
+              showBrowserDesktopNotification(`⚡ New Nearby Order (${newUiOrder.deadheadDisplay || 'Nearby'})`, {
+                body: `A new dispatch order (${newUiOrder.id}) is available for pickup: ${newUiOrder.pickup} • Driver Payout: ${newUiOrder.priceDisplay}`,
+                tag: `dispatch-order-${newUiOrder.id}`,
+                url: '/dispatch-orders'
+              });
+            }
+
+            // Also broadcast to nearby driver accounts in database (within 25 miles = 40.2 km)
+            if (payload.new?.pickup_lat && payload.new?.pickup_lng) {
+              const radiusKm = DEFAULT_DISPATCH_RADIUS_MILES * 1.60934;
+              notifyNearbyDriversOnNewOrder(payload.new, radiusKm).catch(e => {
+                console.warn("Notice notifying nearby drivers:", e);
+              });
+            }
           } else if (payload.eventType === 'UPDATE') {
             const updatedUiOrder = mapDbOrderToUiOrder(payload.new);
             setOrders(prev => prev.map(o => o.rawId === payload.new.id ? updatedUiOrder : o));
@@ -306,35 +465,54 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
   );
 
   // Filtered Orders for Marketplace
-  const availableOrders = orders.filter(o => {
-    if (o.status !== 'AVAILABLE') return false;
-    if (o.rawRow?.driver_id && String(o.rawRow.driver_id).trim() !== '' && o.rawRow.driver_id !== 'null') return false;
-    if (declinedOrderIds.includes(o.rawId)) return false; // Exclude orders declined by this driver
+  // Filtered Orders for Marketplace
+  const availableOrders = orders
+    .filter(o => {
+      if (o.status !== 'AVAILABLE') return false;
+      if (o.rawRow?.driver_id && String(o.rawRow.driver_id).trim() !== '' && o.rawRow.driver_id !== 'null') return false;
+      if (declinedOrderIds.includes(o.rawId)) return false; // Exclude orders declined by this driver
 
-    // Check if order belongs to Package category dynamically
-    const isPackageOrder = o.category === 'package' || Boolean(o.packageTypeName && o.packageTypeName !== '-' && o.packageTypeName !== 'General Courier') || Boolean(o.rawRow?.package_type_id);
-    if (categoryFilterTab === 'package' && !isPackageOrder) return false;
-    if (categoryFilterTab === 'food_grocery' && o.category !== 'food' && o.category !== 'groceries') return false;
-    if (vehicleFilter !== 'ALL' && o.vehicle.toLowerCase() !== vehicleFilter.toLowerCase()) return false;
-    if (searchTerm.trim() !== '') {
-      const term = searchTerm.toLowerCase();
-      return (
-        o.id.toLowerCase().includes(term) ||
-        (o.orderRef && o.orderRef.toLowerCase().includes(term)) ||
-        o.pickup.toLowerCase().includes(term) ||
-        o.dropoff.toLowerCase().includes(term) ||
-        o.deliveryType.toLowerCase().includes(term) ||
-        (o.packageTypeName && o.packageTypeName.toLowerCase().includes(term)) ||
-        o.category.toLowerCase().includes(term)
-      );
-    }
-    return true;
-  });
+      // Check if order belongs to Package category dynamically
+      const isPackageOrder = o.category === 'package' || Boolean(o.packageTypeName && o.packageTypeName !== '-' && o.packageTypeName !== 'General Courier') || Boolean(o.rawRow?.package_type_id);
+      if (categoryFilterTab === 'package' && !isPackageOrder) return false;
+      if (categoryFilterTab === 'food_grocery' && o.category !== 'food' && o.category !== 'groceries') return false;
+      if (vehicleFilter !== 'ALL' && o.vehicle.toLowerCase() !== vehicleFilter.toLowerCase()) return false;
+      if (searchTerm.trim() !== '') {
+        const term = searchTerm.toLowerCase();
+        return (
+          o.id.toLowerCase().includes(term) ||
+          (o.orderRef && o.orderRef.toLowerCase().includes(term)) ||
+          o.pickup.toLowerCase().includes(term) ||
+          o.dropoff.toLowerCase().includes(term) ||
+          o.deliveryType.toLowerCase().includes(term) ||
+          (o.packageTypeName && o.packageTypeName.toLowerCase().includes(term)) ||
+          o.category.toLowerCase().includes(term)
+        );
+      }
+
+      // Default radius filter: only show orders within DEFAULT_DISPATCH_RADIUS_MILES if GPS is known and not toggled to nationwide
+      if (hasUserLocation && !showAllNationwide) {
+        if (o.deadheadMiles !== null && o.deadheadMiles > DEFAULT_DISPATCH_RADIUS_MILES) {
+          return false;
+        }
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      // Sort nearest pickup orders first when distance is available
+      if (a.deadheadMiles !== null && b.deadheadMiles !== null) {
+        return a.deadheadMiles - b.deadheadMiles;
+      }
+      if (a.deadheadMiles !== null) return -1;
+      if (b.deadheadMiles !== null) return 1;
+      return 0;
+    });
 
   // Reset pagination when any search or filter criteria changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [categoryFilterTab, vehicleFilter, searchTerm]);
+  }, [categoryFilterTab, vehicleFilter, searchTerm, showAllNationwide]);
 
   const totalPages = Math.ceil(availableOrders.length / itemsPerPage) || 1;
   const safePage = Math.min(Math.max(currentPage, 1), totalPages);
@@ -598,7 +776,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     if (res && !res.success) {
       setNotification({
         type: 'error',
-        message: `Failed to update status: ${res.error || 'Database error'}`
+        message: res.error && !res.error.toLowerCase().includes('database') ? res.error : 'Unable to update order status. Please try again.'
       });
       return;
     }
@@ -618,7 +796,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
 
     setNotification({
       type: 'success',
-      message: `Order ${order.id} status updated to IN PROGRESS!`
+      message: `Order ${order.id} is now in transit!`
     });
   };
 
@@ -633,7 +811,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     if (res && !res.success) {
       setNotification({
         type: 'error',
-        message: `Failed to complete delivery: ${res.error || 'Database error'}`
+        message: res.error && !res.error.toLowerCase().includes('database') ? res.error : 'Unable to mark delivery as completed. Please try again.'
       });
       return;
     }
@@ -804,198 +982,305 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
         {/* ─── TAB 1: AVAILABLE ORDERS MARKETPLACE ───────────────────────────── */}
         {!loading && activeTab === 'marketplace' && (
           <div className="space-y-6">
+            {/* Live Location Radius Info Banner */}
+            {hasUserLocation && (
+              !showAllNationwide ? (
+                <div className="bg-rose-50/70 border border-rose-200/80 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-rose-900">
+                        Nearby Orders Feed ({DEFAULT_DISPATCH_RADIUS_MILES} Mile Radius)
+                      </h4>
+                      <p className="text-[11px] text-rose-700/80 font-medium">
+                        Showing live orders closest to your current location sorted by nearest pickup point.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllNationwide(true)}
+                    className="px-3.5 py-1.5 bg-white border border-rose-300 hover:bg-rose-100/50 text-rose-700 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 shadow-2xs self-start sm:self-auto"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>View Nationwide Orders</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800">
+                        Nationwide Orders Feed (All Regions)
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Viewing all available loads nationwide.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllNationwide(false)}
+                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 shadow-xs self-start sm:self-auto"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>Filter Within {DEFAULT_DISPATCH_RADIUS_MILES} Mi</span>
+                  </button>
+                </div>
+              )
+            )}
+
+            {/* Desktop Push Notifications Permission Card */}
+            {notifPermission !== 'granted' && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50/80 border border-amber-200/80 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-amber-950">
+                      Enable Native Desktop Push Notifications
+                    </h4>
+                    <p className="text-[11px] text-amber-800/80 font-medium">
+                      Get instant sound and Windows/Mac desktop popup alerts when a new load is posted near you.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleEnableNotifications}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer flex items-center gap-1.5 shadow-sm self-start sm:self-auto"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>Allow Desktop Alerts</span>
+                </button>
+              </div>
+            )}
+
             {availableOrders.length === 0 ? (
               <div className="bg-white border border-slate-200/90 rounded-3xl p-16 text-center space-y-4 shadow-sm">
                 <Package className="w-12 h-12 text-slate-400 mx-auto" />
-                <h3 className="text-lg font-bold text-[#0b132b]">No available package orders match your filter</h3>
+                <h3 className="text-lg font-bold text-[#0b132b]">
+                  {hasUserLocation && !showAllNationwide
+                    ? `No available orders found within ${DEFAULT_DISPATCH_RADIUS_MILES} miles of your location`
+                    : 'No available package orders match your filter'}
+                </h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto font-medium">
-                  Try adjusting your category tabs or search criteria.
+                  {hasUserLocation && !showAllNationwide
+                    ? `Try expanding your search to view nationwide orders across all states.`
+                    : 'Try adjusting your category tabs or search criteria.'}
                 </p>
-                <button
-                  onClick={() => loadOrdersFromDb(true)}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Refresh Database</span>
-                </button>
+                <div className="flex items-center justify-center gap-3">
+                  {hasUserLocation && !showAllNationwide && (
+                    <button
+                      onClick={() => setShowAllNationwide(true)}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>View All Nationwide Orders</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => loadOrdersFromDb(true)}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Refresh Orders</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {paginatedAvailableOrders.map(order => (
-                  <div
-                    key={order.rawId || order.id}
-                    className="bg-white rounded-3xl border border-slate-200/90 hover:border-slate-300 shadow-lg overflow-hidden flex flex-col justify-between transition-all group hover:-translate-y-0.5"
-                  >
-                    {/* Top Header Row */}
-                    <div className="p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-mono font-extrabold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0">
-                            {order.id}
-                          </span>
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase text-rose-700 bg-rose-100/80 px-2.5 py-0.5 rounded-md border border-rose-200">
-                            <Box className="w-3 h-3 text-rose-600" />
-                            <span>PACKAGE</span>
-                            {order.packageTypeName && (
-                              <span className="font-bold text-slate-800 border-l border-rose-300 pl-1.5">
-                                {order.packageTypeName}
+                    <div
+                      key={order.rawId || order.id}
+                      className="bg-white rounded-3xl border border-slate-200/90 hover:border-slate-300 shadow-lg overflow-hidden flex flex-col justify-between transition-all group hover:-translate-y-0.5"
+                    >
+                      {/* Top Header Row */}
+                      <div className="p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-mono font-extrabold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 shrink-0">
+                              {order.id}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase text-rose-700 bg-rose-100/80 px-2.5 py-0.5 rounded-md border border-rose-200">
+                              <Box className="w-3 h-3 text-rose-600" />
+                              <span>PACKAGE</span>
+                              {order.packageTypeName && (
+                                <span className="font-bold text-slate-800 border-l border-rose-300 pl-1.5">
+                                  {order.packageTypeName}
+                                </span>
+                              )}
+                            </span>
+                            {order.deadheadDisplay && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                <MapPin className="w-3 h-3 text-emerald-600" />
+                                <span>{order.deadheadDisplay}</span>
                               </span>
                             )}
+                          </div>
+                          {order.scheduledAt && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-amber-700 font-extrabold mt-0.5">
+                              <Clock className="w-3.5 h-3.5 shrink-0" />
+                              <span>{order.scheduledAt}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-2xl font-extrabold text-emerald-600 tracking-tight">
+                            {order.priceDisplay !== '-' ? order.priceDisplay : `$${order.price.toFixed(2)}`}
                           </span>
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase">Driver Payout</span>
                         </div>
-                        {order.scheduledAt && (
-                          <div className="flex items-center gap-1.5 text-[10px] text-amber-700 font-extrabold mt-0.5">
-                            <Clock className="w-3.5 h-3.5 shrink-0" />
-                            <span>{order.scheduledAt}</span>
-                          </div>
-                        )}
                       </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-2xl font-extrabold text-emerald-600 tracking-tight">
-                          {order.priceDisplay !== '-' ? order.priceDisplay : `$${order.price.toFixed(2)}`}
-                        </span>
-                        <span className="block text-[10px] text-slate-400 font-bold uppercase">Driver Payout</span>
-                      </div>
-                    </div>
 
-                    {/* Order Body Details */}
-                    <div className="p-5 space-y-3.5 flex-1">
+                      {/* Order Body Details */}
+                      <div className="p-5 space-y-3.5 flex-1">
 
-                      {/* Pickup & Dropoff Route Card */}
-                      <div className="bg-slate-50/60 hover:bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60 relative transition-colors space-y-3">
-                        {/* Connecting Line */}
-                        <div className="absolute left-[25px] top-8 bottom-8 w-px border-l border-dashed border-slate-300" />
-
-                        {/* Pickup Point */}
-                        <div className="flex items-start gap-4">
-                          <div className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-4 ring-rose-100 shrink-0 mt-1.5 ml-1 relative z-10" />
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Pickup Location</span>
-                            <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.pickup}>{order.pickup}</p>
+                        {/* Pickup & Dropoff Route Card */}
+                        <div className="bg-slate-50/60 hover:bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60 transition-colors flex items-stretch gap-3">
+                          {/* Left vertical timeline track (Dots & perfectly centered dashed line) */}
+                          <div className="flex flex-col items-center pt-1.5 pb-1 shrink-0 w-3.5">
+                            {/* Pickup Point Dot */}
+                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-4 ring-rose-100 shrink-0 z-10" />
+                            {/* Perfectly Centered Connecting Dashed Line */}
+                            <div className="w-px flex-1 border-l border-dashed border-slate-300 my-1 min-h-[22px]" />
+                            {/* Drop-off Point Dot */}
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 shrink-0 z-10" />
                           </div>
-                        </div>
 
-                        {/* Drop-off Point */}
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-4 min-w-0 flex-1">
-                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 shrink-0 mt-1.5 ml-1 relative z-10" />
-                            <div className="min-w-0 flex-1">
-                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Drop-off Location</span>
-                              <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.dropoff}>{order.dropoff}</p>
+                          {/* Right Content Column */}
+                          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3">
+                            {/* Pickup Location */}
+                            <div>
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Pickup Location</span>
+                              <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.pickup}>{order.pickup}</p>
+                            </div>
+
+                            {/* Drop-off Location */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Drop-off Location</span>
+                                <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.dropoff}>{order.dropoff}</p>
+                              </div>
+
+                              {/* Show in map text link */}
+                              <a
+                                href={getGoogleMapsDirectionsUrl(order)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-extrabold text-rose-600 hover:text-rose-700 hover:underline transition-all cursor-pointer shrink-0 self-end"
+                                title="Open live Google Maps driving directions in new tab"
+                              >
+                                <MapPin className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Show in map</span>
+                              </a>
                             </div>
                           </div>
+                        </div>
 
-                          {/* Show in map text link */}
-                          <a
-                            href={getGoogleMapsDirectionsUrl(order)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-extrabold text-rose-600 hover:text-rose-700 hover:underline transition-all cursor-pointer shrink-0 self-end"
-                            title="Open live Google Maps driving directions in new tab"
-                          >
-                            <MapPin className="w-3.5 h-3.5 text-rose-600" />
-                            <span>Show in map</span>
-                          </a>
-                        </div>
-                      </div>
-
-                      {/* Specs Badge Grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
-                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Vehicle</span>
-                          <span className="font-extrabold text-[#0b132b] text-[11px] truncate block max-w-full leading-tight px-0.5" title={order.vehicle}>
-                            {order.vehicle.replace(' VEHICLE', '')}
-                          </span>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
-                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Distance</span>
-                          <span className="font-extrabold text-[#0b132b] text-[11px] truncate block max-w-full leading-tight">
-                            {order.distanceDisplay !== '-' ? order.distanceDisplay : (order.distanceMiles > 0 ? `${order.distanceMiles} mi` : '-')}
-                          </span>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
-                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Category</span>
-                          <span className="font-extrabold text-rose-600 text-[11px] truncate block max-w-full uppercase leading-tight" title={order.category}>
-                            {order.category}
-                          </span>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
-                          <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Package Tier</span>
-                          <span className="font-extrabold text-slate-800 text-[11px] truncate block max-w-full capitalize leading-tight" title={order.packageTypeName}>
-                            {order.packageTypeName}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Compact Notes & Extras Tags Row */}
-                      {((order.extras && order.extras.length > 0) || order.info) && (
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          {order.info && (
-                            <span
-                              className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200/80 px-2.5 py-1 rounded-xl shadow-2xs max-w-full"
-                              title={order.info}
-                            >
-                              <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span className="truncate max-w-[280px]"><strong>Note:</strong> {order.info}</span>
+                        {/* Specs Badge Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                            <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Vehicle</span>
+                            <span className="font-extrabold text-[#0b132b] text-[11px] truncate block max-w-full leading-tight px-0.5" title={order.vehicle}>
+                              {order.vehicle.replace(' VEHICLE', '')}
                             </span>
-                          )}
-
-                          {order.extras && order.extras.map((extra, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-slate-100/90 text-slate-700 border border-slate-200/90 px-2.5 py-1 rounded-xl shadow-2xs"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                              <span>{extra.startsWith('+ ') ? extra.slice(2) : extra}</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                            <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Distance</span>
+                            <span className="font-extrabold text-[#0b132b] text-[11px] truncate block max-w-full leading-tight">
+                              {order.distanceDisplay !== '-' ? order.distanceDisplay : (order.distanceMiles > 0 ? `${order.distanceMiles} mi` : '-')}
                             </span>
-                          ))}
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                            <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Category</span>
+                            <span className="font-extrabold text-rose-600 text-[11px] truncate block max-w-full uppercase leading-tight" title={order.category}>
+                              {order.category}
+                            </span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/70 flex flex-col items-center justify-center min-h-[46px]">
+                            <span className="text-[9.5px] text-slate-400 block uppercase font-bold tracking-wider mb-0.5">Package Tier</span>
+                            <span className="font-extrabold text-slate-800 text-[11px] truncate block max-w-full capitalize leading-tight" title={order.packageTypeName}>
+                              {order.packageTypeName}
+                            </span>
+                          </div>
                         </div>
-                      )}
 
-                    </div>
+                        {/* Compact Notes & Extras Tags Row */}
+                        {((order.extras && order.extras.length > 0) || order.info) && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            {order.info && (
+                              <span
+                                className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200/80 px-2.5 py-1 rounded-xl shadow-2xs max-w-full"
+                                title={order.info}
+                              >
+                                <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                <span className="truncate max-w-[280px]"><strong>Note:</strong> {order.info}</span>
+                              </span>
+                            )}
 
-                    {/* Action Buttons Footer */}
-                    <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => setSelectedOrderDetailModal(order)}
-                        className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-                        title="View full order details"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Details</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleRejectOrder(order.rawId || order.id)}
-                        className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-                      >
-                        <XCircle className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Decline</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleAcceptOrder(order)}
-                        disabled={acceptingOrderId === (order.rawId || order.id)}
-                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer min-w-0 disabled:opacity-75 disabled:cursor-wait"
-                      >
-                        {acceptingOrderId === (order.rawId || order.id) ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                            <span className="truncate">Accepting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="w-4 h-4 shrink-0" />
-                            <span className="truncate">Accept Order</span>
-                          </>
+                            {order.extras && order.extras.map((extra, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-slate-100/90 text-slate-700 border border-slate-200/90 px-2.5 py-1 rounded-xl shadow-2xs"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                <span>{extra.startsWith('+ ') ? extra.slice(2) : extra}</span>
+                              </span>
+                            ))}
+                          </div>
                         )}
-                      </button>
-                    </div>
 
-                  </div>
-                ))}
-              </div>
+                      </div>
+
+                      {/* Action Buttons Footer */}
+                      <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => setSelectedOrderDetailModal(order)}
+                          className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                          title="View full order details"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Details</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleRejectOrder(order.rawId || order.id)}
+                          className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Decline</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleAcceptOrder(order)}
+                          disabled={acceptingOrderId === (order.rawId || order.id)}
+                          className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer min-w-0 disabled:opacity-75 disabled:cursor-wait"
+                        >
+                          {acceptingOrderId === (order.rawId || order.id) ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                              <span className="truncate">Accepting...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 shrink-0" />
+                              <span className="truncate">Accept Order</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                    </div>
+                  ))}
+                </div>
 
                 {/* Pagination Controls */}
                 {availableOrders.length > itemsPerPage && (
@@ -1040,11 +1325,10 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                                 setCurrentPage(pageNum);
                                 window.scrollTo({ top: 400, behavior: 'smooth' });
                               }}
-                              className={`w-8 h-8 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${
-                                currentPage === pageNum
-                                  ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
-                                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                              }`}
+                              className={`w-8 h-8 rounded-xl font-extrabold text-xs transition-all cursor-pointer ${currentPage === pageNum
+                                ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                                }`}
                             >
                               {pageNum}
                             </button>
@@ -1123,16 +1407,31 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                           <span>Package Tier: <strong className="text-slate-900 font-extrabold">{order.packageTypeName}</strong></span>
                         </div>
 
-                        {/* Route Locations */}
-                        <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                          <div>
-                            <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest block">Pickup Address:</span>
-                            <p className="text-xs font-extrabold text-slate-900 mt-0.5">{order.pickup}</p>
+                        {/* Route Locations Timeline */}
+                        <div className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/70 transition-colors flex items-stretch gap-3">
+                          {/* Left vertical timeline track */}
+                          <div className="flex flex-col items-center pt-1.5 pb-1 shrink-0 w-3.5">
+                            {/* Pickup Point Dot */}
+                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-4 ring-rose-100 shrink-0 z-10" />
+                            {/* Perfectly Centered Connecting Dashed Line */}
+                            <div className="w-px flex-1 border-l border-dashed border-slate-300 my-1 min-h-[22px]" />
+                            {/* Drop-off Point Dot */}
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 shrink-0 z-10" />
                           </div>
 
-                          <div>
-                            <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block">Drop-off Address:</span>
-                            <p className="text-xs font-extrabold text-slate-900 mt-0.5">{order.dropoff}</p>
+                          {/* Right Content Column */}
+                          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3">
+                            {/* Pickup Location */}
+                            <div>
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Pickup Location</span>
+                              <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.pickup}>{order.pickup}</p>
+                            </div>
+
+                            {/* Drop-off Location */}
+                            <div>
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Drop-off Location</span>
+                              <p className="text-xs font-bold text-slate-800 line-clamp-2" title={order.dropoff}>{order.dropoff}</p>
+                            </div>
                           </div>
                         </div>
 
@@ -1151,7 +1450,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                           rel="noopener noreferrer"
                           className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
                         >
-                          <Navigation className="w-3.5 h-3.5 text-rose-600" />
+                          <MapPin className="w-3.5 h-3.5 text-rose-600" />
                           <span>{isInProgress ? 'Dropoff Map' : 'Pickup Map'}</span>
                         </a>
 
@@ -1259,7 +1558,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                   Order Successfully Accepted!
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-1">
-                  This dispatch job has been assigned to your driver account and saved in database.
+                  This dispatch job has been assigned to your driver account. You can now begin delivery.
                 </p>
               </div>
             </div>
@@ -1277,14 +1576,21 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div>
-                  <span className="text-[10px] font-bold text-rose-600 uppercase">Pickup Location:</span>
-                  <p className="font-bold text-slate-900">{acceptedModalState.order.pickup}</p>
+              <div className="bg-white/80 p-3 rounded-xl border border-slate-200/60 flex items-stretch gap-3">
+                <div className="flex flex-col items-center pt-1.5 pb-1 shrink-0 w-3.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-4 ring-rose-100 shrink-0 z-10" />
+                  <div className="w-px flex-1 border-l border-dashed border-slate-300 my-1 min-h-[18px]" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 shrink-0 z-10" />
                 </div>
-                <div>
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase">Drop-off Location:</span>
-                  <p className="font-bold text-slate-900">{acceptedModalState.order.dropoff}</p>
+                <div className="flex-1 min-w-0 flex flex-col justify-between gap-2.5 text-xs">
+                  <div>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Pickup Location</span>
+                    <p className="font-bold text-slate-900 line-clamp-2">{acceptedModalState.order.pickup}</p>
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Drop-off Location</span>
+                    <p className="font-bold text-slate-900 line-clamp-2">{acceptedModalState.order.dropoff}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1397,7 +1703,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                     rel="noopener noreferrer"
                     className="px-3 py-1.5 rounded-lg bg-[#0b132b] hover:bg-slate-800 text-white text-[10px] font-extrabold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
                   >
-                    <Navigation className="w-3 h-3 text-rose-400" />
+                    <MapPin className="w-3 h-3 text-rose-400" />
                     <span>View Map & Directions</span>
                   </a>
                 </div>
@@ -1417,7 +1723,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
 
                   <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
                     <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-600 flex items-center gap-1">
-                      <Navigation className="w-3 h-3 text-emerald-600" /> Dropoff Location
+                      <MapPin className="w-3 h-3 text-emerald-600" /> Dropoff Location
                     </span>
                     <div className="font-bold text-slate-900">{selectedOrderDetailModal.dropoff}</div>
                     <div className="text-[10px] font-mono text-slate-400">

@@ -146,7 +146,7 @@ export default function NotificationsPage({ currentUser, onLogout }) {
         isDbRecord: true
       }));
       setNotifications(mappedDb);
-      showToast('Notifications refreshed from database');
+      showToast('Notifications updated');
     } catch (err) {
       console.warn("Could not reload database notifications:", err);
       setNotifications([]);

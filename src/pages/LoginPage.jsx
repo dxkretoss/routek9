@@ -368,7 +368,7 @@ export default function LoginPage({ onLogin }) {
       if (googleError) {
         window.removeEventListener('focus', resetOnFocus);
         if (googleError.message?.includes('OAuth secret') || googleError.message?.includes('provider') || googleError.status === 400) {
-          throw new Error("Google Login is not enabled in your Supabase Dashboard yet. Please configure Google OAuth in Supabase or log in with Email & Password below.");
+          throw new Error("Google sign-in is currently unavailable. Please log in with your Email and Password below.");
         }
         throw googleError;
       }

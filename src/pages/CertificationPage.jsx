@@ -531,7 +531,7 @@ export default function CertificationPage({ currentUser, onLogout }) {
             <FileText className="w-10 h-10 text-slate-300 mx-auto" />
             <h3 className="text-base font-bold text-slate-800">No exam questions available</h3>
             <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
-              Exam questions have not been added to the database yet. Please add questions in the Admin Panel.
+              This certification module is currently being updated with new questions. Please check back shortly.
             </p>
           </div>
         ) : (

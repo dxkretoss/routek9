@@ -264,7 +264,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
 
       let query = supabase
         .from('profiles')
-        .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, ready_to_work, website_url, avatar_url')
+        .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, ready_to_work, bio, insurance_policy, avatar_url')
         .or('role.eq.driver,role.is.null')
         .order('created_at', { ascending: false });
 
@@ -300,12 +300,12 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
           verified: Boolean(p.verified || false),
           status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
           ready_to_work: p.ready_to_work !== false,
-          website_url: p.website_url || '',
           experience: p.experience || '1-3 Years',
           availability: p.availability || 'Immediate',
           has_cdl: Boolean(p.has_cdl || false),
           bio: p.bio || '',
           dot_number: p.dot_number || '',
+          insurance_policy: p.insurance_policy || '',
           membership: p.membership || 'Free'
         };
       });
@@ -1210,26 +1210,16 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                   </div>
 
                   <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1 col-span-2">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Company Website URL</span>
-                    <span className="font-extrabold text-slate-800 truncate block">
-                      {selectedDriverModal.website_url ? (
-                        <a
-                          href={selectedDriverModal.website_url.startsWith('http') ? selectedDriverModal.website_url : `https://${selectedDriverModal.website_url}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-rose-600 hover:underline flex items-center gap-1"
-                        >
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>{selectedDriverModal.website_url}</span>
-                        </a>
-                      ) : 'Not Provided'}
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Insurance & Compliance Policy</span>
+                    <span className="font-extrabold text-slate-800 text-xs block">
+                      {selectedDriverModal.insurance_policy || 'Not Provided / Self-Insured'}
                     </span>
                   </div>
                 </div>
 
                 {selectedDriverModal.bio ? (
                   <div className="pt-2 border-t border-rose-100">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Driver Bio & Directory Listing Pitch</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Driver Bio & Equipment Summary (Directory Pitch)</span>
                     <p className="text-xs text-slate-700 font-medium leading-relaxed bg-white p-3 rounded-xl border border-slate-100 whitespace-pre-line">
                       {selectedDriverModal.bio}
                     </p>

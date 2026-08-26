@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { vehicleTypes } from '../data/mockRoutes';
+import CustomSelect from '../components/CustomSelect';
 import {
   Users,
   Search,
@@ -93,8 +94,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
           .from('profiles')
           .select('id, email, role, full_name, city, state_code, vehicle, experience, availability, has_cdl, status, is_active, created_at')
           .or('role.eq.driver,role.is.null')
-          .order('created_at', { ascending: false })
-          .limit(100);
+          .order('created_at', { ascending: false });
 
         if (!error && Array.isArray(data)) {
           // Filter active drivers (role is driver or null, not deactivated)
@@ -432,18 +432,16 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
               </div>
 
               {/* Vehicle Select */}
-              <div className="relative">
-                <Truck className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
-                <select
+              <div className="w-full">
+                <CustomSelect
+                  options={['All Vehicles', ...vehicleTypes]}
                   value={vehicleFilter}
-                  onChange={(e) => setVehicleFilter(e.target.value)}
-                  className="w-full pl-10 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all appearance-none cursor-pointer"
-                >
-                  <option value="All Vehicles">All Vehicle Classes</option>
-                  {vehicleTypes.map((type) => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setVehicleFilter(val)}
+                  placeholder="All Vehicle Classes"
+                  icon={Truck}
+                  searchable={false}
+                  buttonClassName="py-2.5"
+                />
               </div>
             </div>
 
@@ -477,7 +475,7 @@ export default function DriversPage({ currentUser, onLogout, onOpenPricing, onTr
               </h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                 {drivers.length === 0
-                  ? "No driver profiles are available in the database right now. When contract drivers register and complete their profile details, they will appear here dynamically."
+                  ? "No driver profiles are listed yet. As new contract drivers join and complete their profile, they will appear here automatically."
                   : "Try widening your filters or clearing search criteria to view nationwide contractors."}
               </p>
               {drivers.length > 0 && (

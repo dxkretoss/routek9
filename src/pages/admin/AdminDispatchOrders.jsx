@@ -25,7 +25,6 @@ import {
   Scale,
   Phone,
   Mail,
-  Navigation,
   Image as ImageIcon,
   Zap,
   Layers,

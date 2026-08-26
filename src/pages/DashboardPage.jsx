@@ -5,6 +5,8 @@ import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 import { US_STATES_LIST } from '../data/statesData';
 import { useVehicleClasses, COMPANY_FLEET_OPTION } from '../data/vehicleTypes';
+import CustomSelect from '../components/CustomSelect';
+import CitySelect from '../components/CitySelect';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 import { getCourses, getCourseLessonsFromDB } from '../lib/courses';
@@ -279,6 +281,20 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState(null);
+  const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
+  const [stateSearch, setStateSearch] = useState('');
+  const stateDropdownRef = React.useRef(null);
+
+  // Close state dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (stateDropdownRef.current && !stateDropdownRef.current.contains(e.target)) {
+        setIsStateDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleAvatarUpload = (e) => {
     const file = e.target.files?.[0];
@@ -1449,14 +1465,14 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
             </button>
 
             <button
-              onClick={onOpenPricing}
-              className="bg-white/10 hover:bg-white/15 border border-white/20 p-3.5 rounded-2xl text-center transition-all cursor-pointer group text-left sm:text-center"
+
+              className="bg-white/10 hover:bg-white/15 border border-white/20 p-3.5 rounded-2xl text-center transition-all  group text-left sm:text-center"
             >
               <div className="text-xl font-extrabold text-amber-400 flex items-center justify-center gap-1">
                 <Crown className="w-4 h-4 text-amber-400" />
                 <span>{currentUser?.isPro ? 'PRO Member' : 'Free Member'}</span>
               </div>
-              <div className="text-[10px] text-slate-300 font-semibold uppercase mt-0.5 underline group-hover:text-amber-300">
+              <div onClick={onOpenPricing} className="text-[10px] text-slate-300 font-semibold uppercase mt-0.5 cursor-pointer underline group-hover:text-amber-300">
                 {currentUser?.isPro ? 'Manage Plan →' : 'Upgrade to PRO ($29) →'}
               </div>
             </button>
@@ -1898,8 +1914,8 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                             to={`/planner?load=${route.id}`}
                             className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-colors flex items-center gap-1.5"
                           >
-                            <MapPin className="w-3.5 h-3.5" />
-                            <span>View in Planner</span>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View in Route</span>
                           </Link>
                           <a
                             href={`https://www.google.com/maps/dir/${route.stops ? route.stops.map(s => encodeURIComponent(s.label)).join('/') : ''}`}
@@ -1993,7 +2009,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                   return (
                     <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 flex flex-col items-center justify-center">
                       <Loader2 className="w-8 h-8 text-rose-600 animate-spin" />
-                      <p className="text-xs font-bold text-slate-600">Loading inbox messages from database...</p>
+                      <p className="text-xs font-bold text-slate-600">Loading inbox messages...</p>
                     </div>
                   );
                 }
@@ -2401,7 +2417,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                         {accountRole === 'company' ? 'Company Logo / Profile Photo' : 'Driver Profile Photo'}
                       </h4>
                       <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-                        Upload a photo or company logo. Saved directly to your database profile and shown on the directory.
+                        Upload a photo or company logo to showcase on your public directory profile.
                       </p>
 
                       <div className="flex items-center gap-3 pt-1.5 justify-center sm:justify-start">
@@ -2527,16 +2543,14 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                         />
                       ) : (
-                        <select
+                        <CustomSelect
+                          options={[...PRIMARY_VEHICLE_CLASSES, 'Company Fleet / Multi-Vehicle']}
                           value={vehicleClass}
-                          onChange={(e) => setVehicleClass(e.target.value)}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
-                        >
-                          {PRIMARY_VEHICLE_CLASSES.map((vc) => (
-                            <option key={vc} value={vc}>{vc}</option>
-                          ))}
-                          <option value="Company Fleet">Company Fleet / Multi-Vehicle</option>
-                        </select>
+                          onChange={(val) => setVehicleClass(val)}
+                          placeholder="Select Vehicle Class"
+                          icon={Truck}
+                          searchable={false}
+                        />
                       )}
                     </div>
 
@@ -2562,30 +2576,25 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                         Operating State Code
                       </label>
-                      <select
+                      <CustomSelect
+                        options={US_STATES_LIST}
                         value={stateCode}
-                        onChange={(e) => setStateCode(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none appearance-none cursor-pointer"
-                      >
-                        <option value="">Select State</option>
-                        {US_STATES_LIST.map((st) => (
-                          <option key={st.code} value={st.code}>
-                            {st.code} - {st.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => setStateCode(val)}
+                        placeholder="Select State"
+                        searchPlaceholder="Search states..."
+                        searchable={true}
+                      />
                     </div>
 
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                         Operating Metro / City
                       </label>
-                      <input
-                        type="text"
+                      <CitySelect
                         value={cityName}
-                        onChange={(e) => setCityName(e.target.value)}
+                        onChange={(val) => setCityName(val)}
+                        stateCode={stateCode}
                         placeholder="e.g. Houston"
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -2861,7 +2870,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                     onClick={() => handleTabChange('inbox')}
                     className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer"
                   >
-                    Check Inbox Messages →
+                    Check Inbox Messages
                   </button>
                 </div>
               ) : (

@@ -7,6 +7,7 @@ import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
 import { useVehicleClasses } from '../data/vehicleTypes';
+import CustomSelect from '../components/CustomSelect';
 
 export default function SignupPage({ onSignup }) {
   const PRIMARY_VEHICLE_CLASSES = useVehicleClasses();
@@ -268,7 +269,7 @@ export default function SignupPage({ onSignup }) {
       if (googleError) {
         window.removeEventListener('focus', resetOnFocus);
         if (googleError.message?.includes('OAuth secret') || googleError.message?.includes('provider') || googleError.status === 400) {
-          throw new Error("Google Login is not enabled in your Supabase Dashboard yet. Please configure Google OAuth in Supabase or sign up with Email & Password below.");
+          throw new Error("Google sign-in is currently unavailable. Please sign up with your Email and Password below.");
         }
         throw googleError;
       }
@@ -366,7 +367,7 @@ export default function SignupPage({ onSignup }) {
                 <span>Verification Steps:</span>
               </div>
               <ul className="list-disc list-inside space-y-1.5 text-slate-700 font-medium leading-relaxed">
-                <li>Open the email sent from <strong>RouteK9 / Supabase</strong></li>
+                <li>Open the verification email sent from <strong>RouteK9</strong></li>
                 <li>Click <strong>Confirm My Account</strong></li>
                 <li>After confirming, you will be logged in and redirected straight to your dashboard!</li>
               </ul>
@@ -568,15 +569,14 @@ export default function SignupPage({ onSignup }) {
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                       Primary Vehicle Class
                     </label>
-                    <select
+                    <CustomSelect
+                      options={PRIMARY_VEHICLE_CLASSES}
                       value={vehicleType}
-                      onChange={(e) => setVehicleType(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all cursor-pointer"
-                    >
-                      {PRIMARY_VEHICLE_CLASSES.map((vc) => (
-                        <option key={vc} value={vc}>{vc}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => setVehicleType(val)}
+                      placeholder="Select Vehicle Class"
+                      icon={Truck}
+                      searchable={false}
+                    />
                   </div>
                 </div>
               )}

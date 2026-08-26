@@ -42,10 +42,12 @@ import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
 import NotFoundPage from './pages/NotFoundPage';
 
+import { requestFcmToken, listenToForegroundMessages, showBrowserDesktopNotification, playNotificationSound } from './lib/firebase';
+
 import { US_STATES } from './data/statesData';
 import { mockRoutes as initialRoutes } from './data/mockRoutes';
-import { Truck, ShieldCheck, MapPin, DollarSign, Loader2 } from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { Truck, ShieldCheck, MapPin, DollarSign, Loader2, Bell, X } from 'lucide-react';
+import { supabase, updateDriverLocation, notifyNearbyDriversOnNewOrder } from './lib/supabase';
 
 // Cookie Helpers
 const SESSION_COOKIE_NAME = 'routek9_user_session';
@@ -478,6 +480,8 @@ export default function App() {
           websiteUrl: profile ? (profile.website_url || profile.website || '') : (isSameUser ? prev?.websiteUrl || '' : ''),
           avatarUrl: profile ? (profile.avatar_url || profile.avatarUrl || '') : (isSameUser ? prev?.avatarUrl || '' : ''),
           bio: profile ? (profile.bio || '') : (isSameUser ? prev?.bio || '' : ''),
+          latitude: profile?.latitude !== undefined && profile?.latitude !== null ? profile.latitude : (isSameUser ? prev?.latitude || null : null),
+          longitude: profile?.longitude !== undefined && profile?.longitude !== null ? profile.longitude : (isSameUser ? prev?.longitude || null : null),
           isPro: isPro || (isSameUser ? prev?.isPro || false : false),
           subscriptionPlan: subscriptionPlan || (isSameUser ? prev?.subscriptionPlan || 'free' : 'free'),
           subscribedAt: subscribedAt || (isSameUser ? prev?.subscribedAt || null : null),
@@ -506,6 +510,13 @@ export default function App() {
 
       const isAdminUser = dbRole === 'admin' || supabaseUser.user_metadata?.role === 'admin';
       const needsOnboarding = !isAdminUser && !isAlreadyOnboarded;
+
+      // Automatically capture GPS location and request FCM push token
+      if (supabaseUser?.id) {
+        captureUserLocation(supabaseUser.id);
+        requestFcmToken(supabaseUser.id);
+      }
+
       return { isActive: true, role: dbRole || userRole, needsOnboarding };
     } catch (err) {
       console.error("Error syncing Supabase user profile:", err);
@@ -521,6 +532,123 @@ export default function App() {
     });
   };
 
+  // Initialize Firebase Cloud Messaging push listeners on mount
+  useEffect(() => {
+    let unsubscribe = null;
+    listenToForegroundMessages((payload) => {
+      const title = payload.notification?.title || payload.data?.title || 'RouteK9 Notification';
+      const body = payload.notification?.body || payload.data?.body || 'You have a new update in RouteK9.';
+      const url = payload.data?.url || payload.data?.click_action || null;
+      playNotificationSound();
+      showBrowserDesktopNotification(title, { body, url });
+    }).then((unsub) => {
+      unsubscribe = unsub;
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
+  // Request FCM Push permission and register token when user session is active
+  useEffect(() => {
+    if (currentUser?.id) {
+      requestFcmToken(currentUser.id);
+    }
+  }, [currentUser?.id]);
+
+  // Real-time notifications listener for active logged-in user (triggers native browser desktop notification)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const notifChannel = supabase
+      .channel(`user-notifications-${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${currentUser.id}`
+        },
+        (payload) => {
+          if (payload.new) {
+            playNotificationSound();
+            const title = payload.new.title || 'RouteK9 Notification';
+            const body = payload.new.message || 'You have a new update in RouteK9.';
+            const url = payload.new.action_url || '/dashboard?tab=inbox';
+            showBrowserDesktopNotification(title, { body, url });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(notifChannel);
+    };
+  }, [currentUser?.id]);
+
+  // Global real-time listener for newly placed customer orders to notify nearby drivers
+  useEffect(() => {
+    const ordersChannel = supabase
+      .channel('global-customer-orders-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'customer_orders'
+        },
+        async (payload) => {
+          if (payload.new) {
+            console.log('[Orders] New customer order placed. Alerting nearby drivers within 25 miles...');
+            playNotificationSound();
+            const orderRef = payload.new.order_ref || (payload.new.id ? `ORD-${String(payload.new.id).substring(0, 6).toUpperCase()}` : 'New Order');
+            const payout = payload.new.total_amount ? `$${payload.new.total_amount}` : 'Available';
+            const pickup = payload.new.pickup_address || payload.new.pickup || 'Nearby Pickup';
+
+            showBrowserDesktopNotification(`⚡ New Nearby Order Available (${orderRef})`, {
+              body: `Pickup: ${pickup} • Payout: ${payout}`,
+              url: '/dispatch-orders'
+            });
+
+            await notifyNearbyDriversOnNewOrder(payload.new, 40.2);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersChannel);
+    };
+  }, []);
+
+  const captureUserLocation = (userId) => {
+    if (typeof window !== 'undefined' && navigator?.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+
+          setCurrentUser((prev) => {
+            if (!prev) return prev;
+            const updated = { ...prev, latitude: lat, longitude: lng };
+            setCookie(SESSION_COOKIE_NAME, updated, 30);
+            return updated;
+          });
+
+          if (userId) {
+            await updateDriverLocation(userId, lat, lng);
+          }
+        },
+        (error) => {
+          console.warn("Geolocation prompt notice:", error.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    }
+  };
+
   const handleLogin = (userObj) => {
     const session = userObj || {
       name: "Jane A. Driver",
@@ -533,6 +661,10 @@ export default function App() {
     };
     setCurrentUser(session);
     setCookie(SESSION_COOKIE_NAME, session, 30);
+    captureUserLocation(session?.id);
+    if (session?.id) {
+      requestFcmToken(session.id);
+    }
   };
 
   const handleLogout = async () => {

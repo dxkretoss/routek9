@@ -3,6 +3,7 @@ import adminLoginLogo from '../../assets/adminloginlogo.png';
 import footerLogo from '../../assets/footerlogo.png';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { requestFcmToken } from '../../lib/firebase';
 import {
   LayoutDashboard,
   Truck,
@@ -86,7 +87,6 @@ function validateAdminToken() {
   }
   return true;
 }
-
 // ─── MAIN ADMIN LAYOUT ────────────────────────────────────────
 export default function AdminLayout({ currentUser, onLogout }) {
   const navigate = useNavigate();
@@ -104,6 +104,22 @@ export default function AdminLayout({ currentUser, onLogout }) {
     }, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Request FCM Push permission and register token for Admin account
+  useEffect(() => {
+    if (isAdminAuth) {
+      const adminId = currentUser?.id;
+      if (adminId) {
+        requestFcmToken(adminId);
+      } else {
+        supabase.auth.getUser().then(({ data }) => {
+          if (data?.user?.id) {
+            requestFcmToken(data.user.id);
+          }
+        }).catch((e) => console.warn("Admin FCM registration notice:", e));
+      }
+    }
+  }, [isAdminAuth, currentUser?.id]);
 
   // ── Section/Sidebar State ────
   const getInitialSection = () => searchParams.get('section') || 'dashboard';
@@ -158,13 +174,16 @@ export default function AdminLayout({ currentUser, onLogout }) {
   };
 
   // ── Admin Login Handler ──────
-  const handleAdminLogin = () => {
+  const handleAdminLogin = (user) => {
     const token = 'rk9_adm_tok_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
     const exp = String(Date.now() + 8 * 3600 * 1000);
     sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
     sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
     sessionStorage.setItem(ADMIN_EXP_KEY, exp);
     setIsAdminAuth(true);
+    if (user?.id) {
+      requestFcmToken(user.id);
+    }
   };
 
   const handleAdminLogout = () => {

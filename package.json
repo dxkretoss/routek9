@@ -17,6 +17,7 @@
     "clsx": "^2.1.1",
     "d3-geo": "^3.1.1",
     "d3-scale": "^4.0.2",
+    "firebase": "^12.18.0",
     "framer-motion": "^12.42.2",
     "jodit": "^4.13.23",
     "jodit-react": "^5.4.72",

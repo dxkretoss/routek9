@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Navigation, Compass, ArrowLeft, Home, BookOpen } from 'lucide-react';
+import { MapPin, Compass, ArrowLeft, Home, BookOpen } from 'lucide-react';
 import heroBgPattern from '../assets/hero_bg_pattern.png';
 
 export default function NotFoundPage() {

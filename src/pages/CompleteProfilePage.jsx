@@ -23,6 +23,8 @@ import { supabase, createNotification } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
 import { useVehicleClasses } from '../data/vehicleTypes';
+import CustomSelect from '../components/CustomSelect';
+import CitySelect from '../components/CitySelect';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
@@ -31,8 +33,8 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
   const navigate = useNavigate();
   const hasLoadedRef = useRef(false);
 
-  // Role Selection: 'driver', 'company', or '' (unselected until user picks)
-  const [role, setRole] = useState('');
+  // Role Selection: 'driver' or 'company' (fixed from signup)
+  const [role, setRole] = useState(currentUser?.role || 'driver');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -343,18 +345,20 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5 text-left">
-            {/* ROLE SELECTOR: I'M SIGNING UP AS */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                I'M SIGNING UP AS
-              </label>
-              <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100/80 rounded-2xl border border-slate-200">
+            {/* FIXED ACCOUNT ROLE */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  ACCOUNT ROLE
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100/90 rounded-2xl border border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setRole('driver')}
-                  className={`py-3 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${role === 'driver'
+                  disabled
+                  className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-not-allowed ${role === 'driver'
                     ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
-                    : 'bg-transparent text-slate-600 hover:text-slate-900'
+                    : 'bg-transparent text-slate-400 opacity-50'
                     }`}
                 >
                   <Truck className="w-4 h-4" />
@@ -363,10 +367,10 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
 
                 <button
                   type="button"
-                  onClick={() => setRole('company')}
-                  className={`py-3 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${role === 'company'
+                  disabled
+                  className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-not-allowed ${role === 'company'
                     ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
-                    : 'bg-transparent text-slate-600 hover:text-slate-900'
+                    : 'bg-transparent text-slate-400 opacity-50'
                     }`}
                 >
                   <Building2 className="w-4 h-4" />
@@ -425,18 +429,14 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                   PRIMARY VEHICLE CLASS
                 </label>
-                <div className="relative">
-                  <Truck className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                  <select
-                    value={vehicleClass}
-                    onChange={(e) => setVehicleClass(e.target.value)}
-                    className="w-full pl-10 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all appearance-none cursor-pointer"
-                  >
-                    {PRIMARY_VEHICLE_CLASSES.map((vc) => (
-                      <option key={vc} value={vc}>{vc}</option>
-                    ))}
-                  </select>
-                </div>
+                <CustomSelect
+                  options={PRIMARY_VEHICLE_CLASSES}
+                  value={vehicleClass}
+                  onChange={(val) => setVehicleClass(val)}
+                  placeholder="Select Vehicle Class"
+                  icon={Truck}
+                  searchable={false}
+                />
               </div>
             )}
 
@@ -483,34 +483,27 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                   STATE CODE
                 </label>
-                <select
+                <CustomSelect
+                  options={usStates}
                   value={stateCode}
-                  onChange={(e) => setStateCode(e.target.value)}
-                  className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all cursor-pointer"
-                >
-                  {usStates.map((st) => (
-                    <option key={st.code} value={st.code}>
-                      {st.code} - {st.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setStateCode(val)}
+                  placeholder="Select State"
+                  searchPlaceholder="Search states..."
+                  searchable={true}
+                />
               </div>
 
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                   METRO / CITY
                 </label>
-                <div className="relative">
-                  <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Houston"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
-                  />
-                </div>
+                <CitySelect
+                  value={city}
+                  onChange={(val) => setCity(val)}
+                  stateCode={stateCode}
+                  placeholder="e.g. Houston"
+                  required={true}
+                />
               </div>
             </div>
 

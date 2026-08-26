@@ -5,6 +5,8 @@ import PhoneInputPkg from 'react-phone-input-2';
 import 'react-phone-input-2/lib/style.css';
 import { US_STATES_LIST } from '../data/statesData';
 import { useVehicleClasses } from '../data/vehicleTypes';
+import CustomSelect from '../components/CustomSelect';
+import CitySelect from '../components/CitySelect';
 
 const PhoneInput = PhoneInputPkg?.default || PhoneInputPkg;
 
@@ -316,45 +318,39 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                     Primary Vehicle Class
                   </label>
-                  <select
+                  <CustomSelect
+                    options={PRIMARY_VEHICLE_CLASSES}
                     value={vehicleClass}
-                    onChange={(e) => setVehicleClass(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
-                  >
-                    {PRIMARY_VEHICLE_CLASSES.map((vc) => (
-                      <option key={vc} value={vc}>{vc}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setVehicleClass(val)}
+                    placeholder="Select Vehicle Class"
+                    icon={Truck}
+                    searchable={false}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                     Home State
                   </label>
-                  <select
+                  <CustomSelect
+                    options={US_STATES_LIST}
                     value={stateCode}
-                    onChange={(e) => setStateCode(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none appearance-none cursor-pointer"
-                  >
-                    <option value="">Select State</option>
-                    {US_STATES_LIST.map((st) => (
-                      <option key={st.code} value={st.code}>
-                        {st.code} - {st.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setStateCode(val)}
+                    placeholder="Select State"
+                    searchPlaceholder="Search states..."
+                    searchable={true}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                     Operating Metro / City
                   </label>
-                  <input
-                    type="text"
+                  <CitySelect
                     value={cityName}
-                    onChange={(e) => setCityName(e.target.value)}
-                    placeholder="Houston"
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                    onChange={(val) => setCityName(val)}
+                    stateCode={stateCode}
+                    placeholder="e.g. Houston"
                   />
                 </div>
               </div>

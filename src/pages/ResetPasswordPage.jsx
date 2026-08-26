@@ -4,6 +4,81 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+/**
+ * Multi-strategy helper to verify Supabase recovery token/code without requiring a local PKCE code verifier
+ */
+async function establishRecoverySession() {
+  try {
+    const { data: currentSessionData } = await supabase.auth.getSession();
+    if (currentSessionData?.session) {
+      return currentSessionData.session;
+    }
+  } catch (e) {
+    console.warn("getSession notice:", e);
+  }
+
+  const hash = window.location.hash || '';
+  const search = window.location.search || '';
+
+  const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+  const searchParams = new URLSearchParams(search);
+
+  const code = searchParams.get('code') || hashParams.get('code');
+  const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
+  const type = searchParams.get('type') || hashParams.get('type') || 'recovery';
+
+  const tokenToVerify = tokenHash || code;
+
+  if (tokenToVerify) {
+    // Strategy 1: verifyOtp using token_hash
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token_hash: tokenToVerify,
+        type: type === 'recovery' ? 'recovery' : type
+      });
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (err) {
+      console.warn("verifyOtp token_hash notice:", err);
+    }
+
+    // Strategy 2: verifyOtp using token
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token: tokenToVerify,
+        type: type === 'recovery' ? 'recovery' : type
+      });
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (err) {
+      console.warn("verifyOtp token notice:", err);
+    }
+
+    // Strategy 3: exchangeCodeForSession
+    try {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(tokenToVerify);
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (err) {
+      console.warn("exchangeCodeForSession notice:", err);
+    }
+  }
+
+  try {
+    const { data: finalSessionData } = await supabase.auth.getSession();
+    if (finalSessionData?.session) {
+      return finalSessionData.session;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
+}
+
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const [newPassword, setNewPassword] = useState('');
@@ -26,6 +101,9 @@ export default function ResetPasswordPage() {
 
         const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
         const searchParams = new URLSearchParams(search);
+
+        const code = searchParams.get('code') || hashParams.get('code');
+        const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
 
         const errorParam = hashParams.get('error') || searchParams.get('error');
         const errorCode = hashParams.get('error_code') || searchParams.get('error_code');
@@ -56,15 +134,20 @@ export default function ResetPasswordPage() {
           return;
         }
 
-        // 3. Verify active session / recovery token state from Supabase
-        const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-        if (sessionErr || !session) {
-          // If no active session and no recovery hash token, link is invalid or expired
-          if (!hash.includes('access_token=') && !hash.includes('type=recovery')) {
-            setIsExpired(true);
-            setExpiredReason("Invalid or expired reset link. Password reset requires a valid, active link from your email.");
-            return;
-          }
+        // 3. Establish recovery session
+        const session = await establishRecoverySession();
+
+        const hasRecoveryToken =
+          Boolean(code) ||
+          Boolean(tokenHash) ||
+          hash.includes('access_token=') ||
+          hash.includes('type=recovery');
+
+        if (session || hasRecoveryToken) {
+          setIsExpired(false);
+        } else {
+          setIsExpired(true);
+          setExpiredReason("Invalid or expired reset link. Password reset requires a valid, active link from your email.");
         }
       } catch (err) {
         console.warn("Link verification notice:", err);
@@ -102,6 +185,14 @@ export default function ResetPasswordPage() {
 
     try {
       setLoading(true);
+
+      const session = await establishRecoverySession();
+      if (!session) {
+        setIsExpired(true);
+        setExpiredReason("This password reset link has expired or has already been used. Please request a new link.");
+        return;
+      }
+
       const { error: updateErr } = await supabase.auth.updateUser({
         password: cleanPw
       });

@@ -22,7 +22,7 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('unread', true)
-          .or(`user_id.eq.${currentUser.id},user_id.is.null`);
+          .eq('user_id', currentUser.id);
 
         if (!error) {
           setUnreadCount(count || 0);

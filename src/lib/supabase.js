@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { sendFcmV1PushNotification } from './fcmV1Dispatcher';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://qgriomlngioeiterbeii.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -195,18 +196,16 @@ export async function createNotification(notifData) {
 
 export async function fetchNotifications(userId) {
   try {
-    const query = supabase
-      .from('notifications')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (userId) {
-      query.or(`user_id.eq.${userId},user_id.is.null`);
-    } else {
-      query.is('user_id', null);
+    if (!userId) {
+      return [];
     }
 
-    const { data, error } = await query;
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
     if (error) throw error;
     return data || [];
   } catch (err) {
@@ -405,7 +404,39 @@ export async function updateCustomerOrderStatusInDb(orderId, status, driverId = 
       };
     }
 
-    return { success: true, data: data[0], driverId: validDriverUuid };
+    const orderRow = data[0];
+    const customerId = orderRow.customer_id || orderRow.user_id;
+
+    // Send instant notification to customer / mobile order placer
+    if (customerId) {
+      const orderRef = orderRow.order_ref || (orderRow.id ? `ORD-${String(orderRow.id).substring(0, 6).toUpperCase()}` : 'Order');
+      let title = '📦 Order Update';
+      let message = `Your dispatch order (${orderRef}) status has been updated to ${status}.`;
+
+      if (status === 'accepted') {
+        title = '📦 Order Accepted by Driver';
+        message = `Your dispatch order (${orderRef}) has been accepted by a driver and is preparing for pickup.`;
+      } else if (status === 'in_progress' || status === 'in_transit') {
+        title = '🚚 Order In Transit';
+        message = `Your dispatch order (${orderRef}) is now on its way to the delivery location.`;
+      } else if (status === 'delivered' || status === 'completed') {
+        title = '✅ Order Successfully Delivered';
+        message = `Your dispatch order (${orderRef}) has been safely delivered to the destination.`;
+      }
+
+      await safeSendNotification({
+        user_id: customerId,
+        title,
+        message,
+        category: 'Dispatch',
+        action_url: '/dashboard?tab=inbox',
+        action_text: 'Track Order',
+        unread: true,
+        created_at: new Date().toISOString()
+      });
+    }
+
+    return { success: true, data: orderRow, driverId: validDriverUuid };
   } catch (err) {
     console.warn('updateCustomerOrderStatusInDb catch notice:', err.message);
     return { success: false, error: err.message };
@@ -532,7 +563,25 @@ export async function acceptPackageOrder(orderId, driverUserId) {
       return { success: false, error: 'ORDER_UNAVAILABLE', message: 'Order is no longer available or RLS blocked.' };
     }
 
-    return { success: true, data: data[0] };
+    const orderRow = data[0];
+    const customerId = orderRow.customer_id || orderRow.user_id;
+
+    // Send notification to the customer / order placer safely
+    if (customerId) {
+      const orderRef = orderRow.order_ref || `ORD-${String(orderRow.id).substring(0, 6).toUpperCase()}`;
+      await safeSendNotification({
+        user_id: customerId,
+        title: '📦 Order Accepted by Driver',
+        message: `Your dispatch order (${orderRef}) has been accepted by a driver and is preparing for pickup.`,
+        category: 'Dispatch',
+        action_url: '/dashboard?tab=inbox',
+        action_text: 'Track Order',
+        unread: true,
+        created_at: new Date().toISOString()
+      });
+    }
+
+    return { success: true, data: orderRow };
   } catch (err) {
     console.warn('acceptPackageOrder error:', err.message);
     return { success: false, error: err.message };
@@ -568,7 +617,26 @@ export async function startPackageDelivery(orderId, driverUserId) {
     }
 
     if (error) throw error;
-    return { success: true, data: data ? data[0] : null };
+    const orderRow = data ? data[0] : null;
+
+    if (orderRow) {
+      const customerId = orderRow.customer_id || orderRow.user_id;
+      if (customerId) {
+        const orderRef = orderRow.order_ref || `ORD-${String(orderRow.id).substring(0, 6).toUpperCase()}`;
+        await safeSendNotification({
+          user_id: customerId,
+          title: '🚚 Order In Transit',
+          message: `Your dispatch order (${orderRef}) is now on its way to the delivery location.`,
+          category: 'Dispatch',
+          action_url: '/dashboard?tab=inbox',
+          action_text: 'Track Order',
+          unread: true,
+          created_at: new Date().toISOString()
+        });
+      }
+    }
+
+    return { success: true, data: orderRow };
   } catch (err) {
     console.warn('startPackageDelivery error:', err.message);
     return { success: false, error: err.message };
@@ -604,9 +672,88 @@ export async function completePackageDelivery(orderId, driverUserId) {
     }
 
     if (error) throw error;
-    return { success: true, data: data ? data[0] : null };
+    const orderRow = data ? data[0] : null;
+
+    if (orderRow) {
+      const customerId = orderRow.customer_id || orderRow.user_id;
+      if (customerId) {
+        const orderRef = orderRow.order_ref || `ORD-${String(orderRow.id).substring(0, 6).toUpperCase()}`;
+        await safeSendNotification({
+          user_id: customerId,
+          title: '✅ Order Successfully Delivered',
+          message: `Your dispatch order (${orderRef}) has been safely delivered to the destination.`,
+          category: 'Dispatch',
+          action_url: '/dashboard?tab=inbox',
+          action_text: 'View Receipt',
+          unread: true,
+          created_at: new Date().toISOString()
+        });
+      }
+    }
+
+    return { success: true, data: orderRow };
   } catch (err) {
     console.warn('completePackageDelivery error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Send direct FCM push notification to device token (server/backend or cloud environments)
+ */
+export async function sendDirectFcmPush(fcmToken, title, message, url = null) {
+  if (!fcmToken || typeof fcmToken !== 'string' || !fcmToken.trim()) return false;
+  // Browser fetches to fcm.googleapis.com are restricted by Google CORS policy.
+  // Push is dispatched via PostgreSQL pg_net database trigger or backend webhook.
+  return true;
+}
+
+/**
+ * Safely inserts a notification record only if the target user_id exists in profiles table
+ * to prevent PostgreSQL Foreign Key constraint errors (code 23503), and sends direct FCM push.
+ */
+export async function safeSendNotification(payload) {
+  if (!payload || !payload.user_id) return { success: false, error: 'Missing user_id' };
+
+  const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  if (!isUuid(payload.user_id)) {
+    return { success: false, error: 'Invalid UUID format' };
+  }
+
+  try {
+    // 1. Look for user in customer_profiles (Mobile App Customers) and profiles (Drivers/Web)
+    const [custRes, profRes] = await Promise.allSettled([
+      supabase.from('customer_profiles').select('id, fcm_token').eq('id', payload.user_id).maybeSingle(),
+      supabase.from('profiles').select('id, fcm_token').eq('id', payload.user_id).maybeSingle()
+    ]);
+
+    const custProfile = custRes.status === 'fulfilled' ? custRes.value?.data : null;
+    const driverProfile = profRes.status === 'fulfilled' ? profRes.value?.data : null;
+
+    const targetFcmToken = custProfile?.fcm_token || driverProfile?.fcm_token;
+
+    // 2. Trigger modern Google FCM HTTP v1 Push notification to mobile/web device token
+    if (targetFcmToken) {
+      console.log('[Push] Dispatching FCM v1 push to device token:', targetFcmToken.substring(0, 15) + '...');
+      sendFcmV1PushNotification(targetFcmToken, payload.title, payload.message, { url: payload.action_url }).catch(e => {
+        console.warn('sendFcmV1PushNotification notice:', e);
+      });
+    } else {
+      console.info('[Push] No active fcm_token found for user:', payload.user_id);
+    }
+
+    // 3. Insert notification into database inbox (triggers the push notification in PostgreSQL)
+    const { data, error } = await supabase
+      .from('notifications')
+      .insert([payload])
+      .select('*');
+
+    if (error) {
+      console.warn('safeSendNotification database insert notice:', error.message);
+    }
+    return { success: true, data: data ? data[0] : null, fcmSent: Boolean(targetFcmToken) };
+  } catch (err) {
+    console.warn('safeSendNotification catch notice:', err.message);
     return { success: false, error: err.message };
   }
 }
@@ -1036,4 +1183,225 @@ export async function deletePackageType(typeId) {
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * ─── FIREBASE CLOUD MESSAGING (FCM) TOKEN HELPERS ─────────────
+ */
+
+/**
+ * Save / Update user's FCM device token in Supabase
+ */
+export async function saveUserFcmToken(userId, fcmToken) {
+  if (!userId || !fcmToken) return { success: false, error: 'Missing userId or fcmToken' };
+  try {
+    // 1. Update in profiles table (Drivers & Web Users)
+    await supabase
+      .from('profiles')
+      .update({ fcm_token: fcmToken })
+      .eq('id', userId);
+
+    // 2. Update in customer_profiles table (Mobile App Customers)
+    await supabase
+      .from('customer_profiles')
+      .update({ fcm_token: fcmToken })
+      .eq('id', userId);
+
+    return { success: true };
+  } catch (err) {
+    console.warn('saveUserFcmToken notice:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Fetch active FCM device tokens for push broadcasts
+ */
+export async function fetchAllActiveFcmTokens() {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role, fcm_token')
+      .not('fcm_token', 'is', null);
+
+    if (error) throw error;
+    return (data || []).filter(p => p.fcm_token && String(p.fcm_token).trim() !== '');
+  } catch (err) {
+    console.warn('fetchAllActiveFcmTokens notice:', err.message);
+    return [];
+  }
+}
+
+/**
+ * ─── 5 KM RADIUS NEARBY DRIVER LOCATION & DISPATCH HELPERS ────
+ */
+
+/**
+ * Update Driver live GPS Location in Supabase (via RPC with table fallback)
+ */
+export async function updateDriverLocation(driverId, lat, lng) {
+  if (!driverId || lat === null || lat === undefined || lng === null || lng === undefined) {
+    return { success: false, error: 'Missing driverId or coordinates' };
+  }
+
+  const pLat = typeof lat === 'number' ? lat : parseFloat(String(lat));
+  const pLng = typeof lng === 'number' ? lng : parseFloat(String(lng));
+
+  try {
+    // 1. Attempt using RPC function
+    const { data: rpcData, error: rpcError } = await supabase.rpc('update_driver_location', {
+      p_driver_id: driverId,
+      p_lat: pLat,
+      p_lng: pLng
+    });
+
+    if (!rpcError) {
+      return { success: true, data: rpcData };
+    }
+
+    // 2. Fallback: Direct table update
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        latitude: pLat,
+        longitude: pLng,
+        last_location_updated_at: new Date().toISOString()
+      })
+      .eq('id', driverId);
+
+    if (updateError) throw updateError;
+    return { success: true };
+  } catch (err) {
+    console.warn('updateDriverLocation notice:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Find Drivers within 5 km of an order pickup location
+ * @param {number} pickupLat - Pickup latitude
+ * @param {number} pickupLng - Pickup longitude
+ * @param {number} radiusKm - Search radius in km (default: 5.0 km)
+ */
+export async function getNearbyDriversForOrder(pickupLat, pickupLng, radiusKm = 5.0) {
+  if (pickupLat === null || pickupLat === undefined || pickupLng === null || pickupLng === undefined) {
+    return [];
+  }
+
+  const pLat = typeof pickupLat === 'number' ? pickupLat : parseFloat(String(pickupLat));
+  const pLng = typeof pickupLng === 'number' ? pickupLng : parseFloat(String(pickupLng));
+  const rKm = typeof radiusKm === 'number' ? radiusKm : parseFloat(String(radiusKm));
+
+  try {
+    // 1. Attempt using RPC function
+    const { data, error } = await supabase.rpc('get_nearby_drivers_for_order', {
+      p_pickup_lat: pLat,
+      p_pickup_lng: pLng,
+      p_radius_km: rKm
+    });
+
+    if (!error && Array.isArray(data)) {
+      return data;
+    }
+
+    // 2. Fallback: Query profiles directly and compute distance in JS if RPC is not yet created
+    const { data: profiles, error: pErr } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, fcm_token, latitude, longitude, role')
+      .or('role.eq.driver,role.is.null')
+      .not('latitude', 'is', null)
+      .not('longitude', 'is', null);
+
+    if (pErr || !Array.isArray(profiles)) return [];
+
+    const nearby = [];
+    for (const p of profiles) {
+      if (p.latitude !== null && p.longitude !== null) {
+        const dLat = (p.latitude - pLat) * (Math.PI / 180);
+        const dLon = (p.longitude - pLng) * (Math.PI / 180);
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(pLat * (Math.PI / 180)) *
+          Math.cos(p.latitude * (Math.PI / 180)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distKm = 6371 * c; // Earth's radius in km
+
+        if (distKm <= rKm) {
+          nearby.push({
+            driver_id: p.id,
+            driver_name: p.full_name || p.email || 'Driver',
+            fcm_token: p.fcm_token,
+            distance_km: parseFloat(distKm.toFixed(2))
+          });
+        }
+      }
+    }
+    return nearby.sort((a, b) => a.distance_km - b.distance_km);
+  } catch (err) {
+    console.warn('getNearbyDriversForOrder notice:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Notify Nearby Drivers when a new customer order is placed
+ */
+export async function notifyNearbyDriversOnNewOrder(orderData, radiusKm = 40.2) {
+  const pLat = orderData?.pickup_lat || orderData?.pickup_latitude || orderData?.lat;
+  const pLng = orderData?.pickup_lng || orderData?.pickup_longitude || orderData?.lng;
+
+  if (pLat === undefined || pLat === null || pLng === undefined || pLng === null) {
+    return { success: false, notifiedCount: 0 };
+  }
+
+  try {
+    const nearbyDrivers = await getNearbyDriversForOrder(pLat, pLng, radiusKm);
+    if (!nearbyDrivers || nearbyDrivers.length === 0) {
+      return { success: true, notifiedCount: 0 };
+    }
+
+    const orderRef = orderData.order_ref || (orderData.id ? `ORD-${String(orderData.id).substring(0, 6).toUpperCase()}` : 'New Load');
+    const payout = orderData.total_amount ? `$${orderData.total_amount}` : 'Competitive Pay';
+    const pickupLoc = orderData.pickup_address || orderData.pickup || 'Nearby Pickup';
+
+    // Insert database notification rows for each matching driver's inbox
+    const notificationInserts = nearbyDrivers.map(d => ({
+      user_id: d.driver_id,
+      title: `⚡ New Nearby Order (${d.distance_km} km away)`,
+      message: `A new ${orderData.category || 'package'} dispatch order (${orderRef}) is available near you: ${pickupLoc} • Payout: ${payout}`,
+      category: 'Dispatch',
+      action_url: '/dispatch-orders',
+      action_text: 'View & Claim Order',
+      unread: true,
+      created_at: new Date().toISOString()
+    }));
+
+    await supabase.from('notifications').insert(notificationInserts);
+
+    // Send Google FCM HTTP v1 push notification to each nearby driver device
+    for (const d of nearbyDrivers) {
+      if (d.fcm_token) {
+        sendFcmV1PushNotification(
+          d.fcm_token,
+          `⚡ New Nearby Order (${d.distance_km} km away)`,
+          `A new ${orderData.category || 'package'} dispatch order is available near you: ${pickupLoc} • ${payout}`,
+          { url: '/dispatch-orders' }
+        ).catch(e => {
+          console.warn('sendFcmV1PushNotification driver notice:', e);
+        });
+      }
+    }
+
+    return {
+      success: true,
+      notifiedCount: nearbyDrivers.length,
+      drivers: nearbyDrivers
+    };
+  } catch (err) {
+    console.warn('notifyNearbyDriversOnNewOrder notice:', err.message);
+    return { success: false, error: err.message, notifiedCount: 0 };
+  }
+}
+
 

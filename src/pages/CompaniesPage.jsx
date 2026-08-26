@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import CustomSelect from '../components/CustomSelect';
 import { 
   Building2, 
   MapPin, 
@@ -129,8 +130,7 @@ export default function CompaniesPage({ currentUser, onLogout }) {
           .from('profiles')
           .select('id, email, role, full_name, city, state_code, phone, status, is_active, created_at')
           .eq('role', 'company')
-          .order('created_at', { ascending: false })
-          .limit(100);
+          .order('created_at', { ascending: false });
 
         if (!error && Array.isArray(data)) {
           // Filter profiles by role = 'company' or where metadata exists in company_profiles
@@ -453,17 +453,16 @@ export default function CompaniesPage({ currentUser, onLogout }) {
               </div>
 
               {/* Contract Select */}
-              <div className="relative">
-                <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
-                <select
+              <div className="w-full">
+                <CustomSelect
+                  options={contractOptions}
                   value={contractFilter}
-                  onChange={(e) => setContractFilter(e.target.value)}
-                  className="w-full pl-10 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all appearance-none cursor-pointer"
-                >
-                  {contractOptions.map((type) => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setContractFilter(val)}
+                  placeholder="All Contract Specializations"
+                  icon={Building2}
+                  searchable={false}
+                  buttonClassName="py-2.5"
+                />
               </div>
             </div>
 

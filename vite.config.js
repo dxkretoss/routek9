@@ -12,6 +12,7 @@ export default defineConfig({
     include: ['react-simple-maps', 'prop-types', 'topojson-client', 'd3-scale', 'jodit-react', 'jodit']
   },
   server: {
+    port: 5173,
     proxy: {
       '/api/samgov': {
         target: 'https://api.sam.gov',

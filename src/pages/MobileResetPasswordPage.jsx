@@ -3,6 +3,83 @@ import { Link } from 'react-router-dom';
 import { Smartphone, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, KeyRound, ArrowRight, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+/**
+ * Multi-strategy helper to verify Supabase recovery token/code without requiring a local PKCE code verifier
+ */
+async function establishRecoverySession() {
+  try {
+    // 1. Check if an active session is already available
+    const { data: currentSessionData } = await supabase.auth.getSession();
+    if (currentSessionData?.session) {
+      return currentSessionData.session;
+    }
+  } catch (e) {
+    console.warn("getSession notice:", e);
+  }
+
+  const hash = window.location.hash || '';
+  const search = window.location.search || '';
+
+  const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+  const searchParams = new URLSearchParams(search);
+
+  const code = searchParams.get('code') || hashParams.get('code');
+  const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
+  const type = searchParams.get('type') || hashParams.get('type') || 'recovery';
+
+  const tokenToVerify = tokenHash || code;
+
+  if (tokenToVerify) {
+    // Strategy 1: verifyOtp using token_hash (Standard Supabase password recovery)
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token_hash: tokenToVerify,
+        type: type === 'recovery' ? 'recovery' : type
+      });
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (err) {
+      console.warn("verifyOtp token_hash notice:", err);
+    }
+
+    // Strategy 2: verifyOtp using token
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token: tokenToVerify,
+        type: type === 'recovery' ? 'recovery' : type
+      });
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (err) {
+      console.warn("verifyOtp token notice:", err);
+    }
+
+    // Strategy 3: exchangeCodeForSession (If local PKCE verifier exists)
+    try {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(tokenToVerify);
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (err) {
+      console.warn("exchangeCodeForSession notice:", err);
+    }
+  }
+
+  // Strategy 4: Final getSession check
+  try {
+    const { data: finalSessionData } = await supabase.auth.getSession();
+    if (finalSessionData?.session) {
+      return finalSessionData.session;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
+}
+
 export default function MobileResetPasswordPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -18,7 +95,7 @@ export default function MobileResetPasswordPage() {
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Listen for Supabase password recovery events (handles async token exchange)
+    // Listen for Supabase password recovery auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
       if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
@@ -38,13 +115,12 @@ export default function MobileResetPasswordPage() {
 
         const code = searchParams.get('code') || hashParams.get('code');
         const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
-        const type = searchParams.get('type') || hashParams.get('type');
 
         const errorParam = hashParams.get('error') || searchParams.get('error');
         const errorCode = hashParams.get('error_code') || searchParams.get('error_code');
         const errorDesc = hashParams.get('error_description') || searchParams.get('error_description');
 
-        // Check if URL has error parameters from Supabase (e.g. otp_expired, access_denied)
+        // Check if URL has explicit error parameters from Supabase
         if (errorParam || errorCode || errorDesc) {
           const descLower = (errorDesc || '').toLowerCase();
           if (
@@ -73,41 +149,20 @@ export default function MobileResetPasswordPage() {
           return;
         }
 
-        // 2. PKCE Code Exchange: If ?code=... is in URL, exchange code for active session!
-        if (code) {
-          try {
-            const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
-            if (exchangeErr) {
-              console.warn("PKCE exchange error notice:", exchangeErr);
-            } else if (exchangeData?.session) {
-              if (isMounted) {
-                setIsExpired(false);
-                setCheckingLink(false);
-              }
-              return;
-            }
-          } catch (exErr) {
-            console.warn("PKCE exchange exception:", exErr);
-          }
-        }
-
-        // 3. Verify active session or recovery token state from Supabase Auth
-        const { data: { session } } = await supabase.auth.getSession();
+        // Attempt establishing recovery session across all strategies
+        const session = await establishRecoverySession();
 
         const hasRecoveryToken =
-          code ||
-          tokenHash ||
+          Boolean(code) ||
+          Boolean(tokenHash) ||
           hash.includes('access_token=') ||
-          hash.includes('type=recovery') ||
-          type === 'recovery';
+          hash.includes('type=recovery');
 
         if (session || hasRecoveryToken) {
-          // Valid recovery session or recovery token detected!
           if (isMounted) {
             setIsExpired(false);
           }
         } else {
-          // No session AND no recovery token in URL
           if (isMounted) {
             setIsExpired(true);
             setExpiredReason("Invalid or expired reset link. Please request a new password reset link from your RouteK9 Mobile App.");
@@ -156,25 +211,7 @@ export default function MobileResetPasswordPage() {
       setLoading(true);
 
       // Verify or establish session before calling updateUser
-      let { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        // Check for ?code= in URL and attempt code exchange
-        const searchParams = new URLSearchParams(window.location.search);
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-        const code = searchParams.get('code') || hashParams.get('code');
-
-        if (code) {
-          try {
-            const { data: exData } = await supabase.auth.exchangeCodeForSession(code);
-            if (exData?.session) {
-              session = exData.session;
-            }
-          } catch (exErr) {
-            console.warn("Submit session exchange exception:", exErr);
-          }
-        }
-      }
+      const session = await establishRecoverySession();
 
       if (!session) {
         setError("Auth session missing or reset link expired. Please request a new password reset link from your mobile app.");
@@ -418,7 +455,7 @@ export default function MobileResetPasswordPage() {
 
         {/* Footer info */}
         <div className="pt-2 text-center text-[11px] text-slate-500 font-medium">
-          RouteK9 Mobile Driver Network • Secure Supabase Auth
+          RouteK9 Mobile Driver Network • Secure 256-bit Encryption
         </div>
       </div>
     </div>
