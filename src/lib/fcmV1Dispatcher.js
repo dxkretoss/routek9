@@ -152,6 +152,8 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
   try {
     const accessToken = await getGoogleOAuth2AccessToken();
     const cleanToken = fcmToken.trim();
+    const orderMatch = `${title} ${body}`.match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+    const orderTag = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : 'routek9-general';
 
     const response = await fetch(
       `https://fcm.googleapis.com/v1/projects/${FIREBASE_SERVICE_ACCOUNT.project_id}/messages:send`,
@@ -172,6 +174,7 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
               click_action: 'FLUTTER_NOTIFICATION_CLICK',
               title: title || 'RouteK9 Notification',
               body: body || 'You have a new update in RouteK9.',
+              tag: orderTag,
               ...Object.fromEntries(
                 Object.entries(dataPayload).map(([k, v]) => [k, String(v ?? '')])
               )
@@ -182,19 +185,23 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
                 sound: 'default',
                 channel_id: 'high_importance_channel',
                 notification_priority: 'PRIORITY_HIGH',
-                default_vibrate_timings: true
+                default_vibrate_timings: true,
+                tag: orderTag
               }
             },
             webpush: {
               headers: {
-                Urgency: 'high'
+                Urgency: 'high',
+                Topic: orderTag
               },
               notification: {
                 title: title || 'RouteK9 Notification',
                 body: body || 'You have a new update in RouteK9.',
-                icon: '/assets/favicon.png',
-                badge: '/assets/favicon.png',
-                requireInteraction: true
+                icon: '/favicon.png',
+                badge: '/favicon.png',
+                tag: orderTag,
+                renotify: false,
+                requireInteraction: false
               },
               fcm_options: {
                 link: String(dataPayload?.url || dataPayload?.click_action || '/dispatch-orders')
@@ -205,7 +212,8 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
                 aps: {
                   sound: 'default',
                   badge: 1,
-                  'content-available': 1
+                  'content-available': 1,
+                  'thread-id': orderTag
                 }
               }
             }

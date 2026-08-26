@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
 import { saveUserFcmToken } from './supabase';
+import { DEFAULT_DISPATCH_RADIUS_MILES } from './dispatchConfig';
 
 export const firebaseConfig = {
   apiKey: "AIzaSyD21GJ1QjLLrI3he70oXC9Tbgmodf5Jv5c",
@@ -104,32 +105,61 @@ export async function listenToForegroundMessages(onMessageCallback) {
   }
 }
 
-// Deduplication cache to prevent identical notifications from firing twice within 3 seconds
+// Deduplication cache to prevent duplicate notifications from firing within 30 seconds
 const recentDispatchedNotifications = new Map();
 
 /**
- * Show a native OS/Browser Desktop Notification banner
+ * Show a native OS/Browser Desktop Notification banner safely with finite validation
  */
-export function showBrowserDesktopNotification(title, options = {}) {
+export function showBrowserDesktopNotification(title, options = {}, isRetry = false) {
   if (typeof window === 'undefined' || !('Notification' in window)) {
-    console.warn('[Desktop Notif] Notification API not supported in this browser.');
     return;
   }
 
-  const tag = options.tag || title;
+  // Validate title parameter
+  const safeTitle = typeof title === 'string' && title.trim() ? title.trim() : 'RouteK9 Notification';
+
+  // Extract order reference (e.g. RK-9127A, ORD-12345) to universally deduplicate across FCM + Database events
+  const combinedText = `${safeTitle} ${options.body || ''}`;
+
+  // Proximity guard: If distance is explicitly mentioned and exceeds dispatch radius, suppress it!
+  const milesMatch = combinedText.match(/([0-9.]+)\s*mi\s*away/i);
+  if (milesMatch) {
+    const miles = parseFloat(milesMatch[1]);
+    if (!isNaN(miles) && miles > DEFAULT_DISPATCH_RADIUS_MILES) {
+      console.log(`[Desktop Notif] Suppressed distant notification (${miles} mi away > ${DEFAULT_DISPATCH_RADIUS_MILES} mi limit)`);
+      return;
+    }
+  }
+
+  const orderMatch = combinedText.match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+  const dedupKey = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : (options.tag || safeTitle);
+
   const now = Date.now();
-  if (recentDispatchedNotifications.has(tag) && (now - recentDispatchedNotifications.get(tag) < 3000)) {
-    // Suppress duplicate notification
+
+  // 1. In-memory check: Suppress duplicate within 30s
+  if (recentDispatchedNotifications.has(dedupKey) && (now - recentDispatchedNotifications.get(dedupKey) < 30000)) {
     return;
   }
-  recentDispatchedNotifications.set(tag, now);
 
-  console.log('[Desktop Notif] Current permission:', Notification.permission, '| Dispatching:', title);
+  // 2. Cross-tab localStorage check (guarantees across all open tabs, only 1 notification is ever shown)
+  try {
+    const storageKey = `routek9_notif_barrier_${dedupKey}`;
+    const lastFired = localStorage.getItem(storageKey);
+    if (lastFired && (now - Number(lastFired) < 30000)) {
+      return;
+    }
+    localStorage.setItem(storageKey, String(now));
+  } catch (e) {
+    // Ignore quota or private-browsing errors
+  }
+
+  recentDispatchedNotifications.set(dedupKey, now);
 
   const defaultOptions = {
     icon: '/favicon.png',
     badge: '/favicon.png',
-    tag: tag,
+    tag: dedupKey,
     renotify: false,
     requireInteraction: false,
     data: {
@@ -138,43 +168,34 @@ export function showBrowserDesktopNotification(title, options = {}) {
     ...options
   };
 
+  // Permission handling with strict non-reentrant validation
   if (Notification.permission === 'granted') {
-    // Deliver cleanly via ServiceWorker if available, else fall back to standard Notification
-    if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
-      navigator.serviceWorker.ready
-        .then((reg) => {
-          return reg.showNotification(title, defaultOptions);
-        })
-        .catch(() => {
-          try {
-            const notif = new Notification(title, defaultOptions);
-            notif.onclick = () => {
-              window.focus();
-              if (options.url) window.location.href = options.url;
-            };
-          } catch (e) {
-            console.warn('[Desktop Notif] Notification fallback notice:', e.message);
-          }
-        });
-    } else {
-      try {
-        const notif = new Notification(title, defaultOptions);
-        notif.onclick = () => {
-          window.focus();
-          if (options.url) window.location.href = options.url;
-        };
-      } catch (e) {
-        console.warn('[Desktop Notif] Standard notification notice:', e.message);
+    try {
+      const notif = new Notification(safeTitle, defaultOptions);
+      notif.onclick = () => {
+        window.focus();
+        if (options.url) window.location.href = options.url;
+      };
+    } catch (e) {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready
+          .then((reg) => {
+            if (reg && typeof reg.showNotification === 'function') {
+              reg.showNotification(safeTitle, defaultOptions);
+            }
+          })
+          .catch(() => {});
       }
     }
-  } else if (Notification.permission !== 'denied') {
-    Notification.requestPermission().then((permission) => {
-      if (permission === 'granted') {
-        showBrowserDesktopNotification(title, options);
-      }
-    });
-  } else {
-    console.warn('[Desktop Notif] Blocked: Notification.permission is "denied" for this site. Enable it in Chrome site settings (click the icon next to localhost in URL bar).');
+  } else if (Notification.permission === 'default' && !isRetry) {
+    // Single non-recursive attempt to request permission if not decided
+    Notification.requestPermission()
+      .then((permission) => {
+        if (permission === 'granted') {
+          showBrowserDesktopNotification(safeTitle, options, true);
+        }
+      })
+      .catch(() => {});
   }
 }
 

@@ -39,9 +39,29 @@ export default function NotificationsPage({ currentUser, onLogout }) {
       try {
         const dbNotifs = await fetchNotifications(currentUser?.id);
         
+        // Group duplicate notifications by order reference
+        const groupedMap = new Map();
+        for (const n of (dbNotifs || [])) {
+          const orderMatch = (n.title + ' ' + (n.message || '')).match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+          const dedupKey = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : `${n.title}_${n.created_at?.substring(0, 16)}`;
+          if (!groupedMap.has(dedupKey)) {
+            groupedMap.set(dedupKey, {
+              ...n,
+              allIds: [n.id],
+              orderRef: orderMatch ? orderMatch[0].toUpperCase() : null
+            });
+          } else {
+            groupedMap.get(dedupKey).allIds.push(n.id);
+          }
+        }
+
+        const uniqueDbNotifs = Array.from(groupedMap.values());
+
         // Map database fields to front-end keys
-        const mappedDb = (dbNotifs || []).map((n) => ({
+        const mappedDb = uniqueDbNotifs.map((n) => ({
           id: n.id,
+          allIds: n.allIds || [n.id],
+          orderRef: n.orderRef || null,
           title: n.title,
           message: n.message,
           category: n.category || 'System',
@@ -70,14 +90,25 @@ export default function NotificationsPage({ currentUser, onLogout }) {
   const categories = ['All', 'Route Match', 'SAM Bids', 'Earnings', 'Dispatch Alert', 'Certification', 'System'];
 
   const handleMarkAsRead = async (id) => {
+    const target = notifications.find(n => n.id === id);
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, unread: false } : n))
     );
 
-    const target = notifications.find(n => n.id === id);
     if (target?.isDbRecord) {
       try {
-        await markNotificationRead(id, false);
+        if (target.allIds && target.allIds.length > 0) {
+          await Promise.all(target.allIds.map(dbId => markNotificationRead(dbId, false)));
+        } else {
+          await markNotificationRead(id, false);
+        }
+        if (target.orderRef && currentUser?.id) {
+          await supabase
+            .from('notifications')
+            .update({ unread: false })
+            .eq('user_id', currentUser.id)
+            .ilike('message', `%${target.orderRef}%`);
+        }
       } catch (err) {
         console.warn("Could not update notification in DB:", err);
       }
@@ -95,7 +126,11 @@ export default function NotificationsPage({ currentUser, onLogout }) {
 
     if (target?.isDbRecord) {
       try {
-        await markNotificationRead(id, nextUnread);
+        if (target.allIds && target.allIds.length > 0) {
+          await Promise.all(target.allIds.map(dbId => markNotificationRead(dbId, nextUnread)));
+        } else {
+          await markNotificationRead(id, nextUnread);
+        }
       } catch (err) {
         console.warn("Could not toggle notification in DB:", err);
       }
@@ -103,12 +138,23 @@ export default function NotificationsPage({ currentUser, onLogout }) {
   };
 
   const handleDelete = async (id) => {
+    const target = notifications.find(n => n.id === id);
     setNotifications((prev) => prev.filter((n) => n.id !== id));
 
-    const target = notifications.find(n => n.id === id);
     if (target?.isDbRecord) {
       try {
-        await deleteNotificationRecord(id);
+        if (target.allIds && target.allIds.length > 0) {
+          await Promise.all(target.allIds.map(dbId => deleteNotificationRecord(dbId)));
+        } else {
+          await deleteNotificationRecord(id);
+        }
+        if (target.orderRef && currentUser?.id) {
+          await supabase
+            .from('notifications')
+            .delete()
+            .eq('user_id', currentUser.id)
+            .ilike('message', `%${target.orderRef}%`);
+        }
       } catch (err) {
         console.warn("Could not delete notification from DB:", err);
       }

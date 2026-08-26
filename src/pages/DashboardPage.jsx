@@ -1085,24 +1085,48 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
   };
 
   const handleToggleInboxRead = async (id) => {
+    const target = inboxNotifications.find(n => n.id === id);
     const updated = inboxNotifications.map(n => n.id === id ? { ...n, unread: false } : n);
     setInboxNotifications(updated);
     const unreadCount = updated.filter(n => n.unread).length;
     window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount } }));
     try {
-      await markNotificationRead(id, false);
+      if (target?.allIds && target.allIds.length > 0) {
+        await Promise.all(target.allIds.map(dbId => markNotificationRead(dbId, false)));
+      } else {
+        await markNotificationRead(id, false);
+      }
+      if (target?.orderRef && currentUser?.id) {
+        await supabase
+          .from('notifications')
+          .update({ unread: false })
+          .eq('user_id', currentUser.id)
+          .ilike('message', `%${target.orderRef}%`);
+      }
     } catch (err) {
       console.warn("Error toggling notification read:", err);
     }
   };
 
   const handleDeleteInboxNotification = async (id) => {
+    const target = inboxNotifications.find(n => n.id === id);
     const updated = inboxNotifications.filter(n => n.id !== id);
     setInboxNotifications(updated);
     const unreadCount = updated.filter(n => n.unread).length;
     window.dispatchEvent(new CustomEvent('rk9_notifications_updated', { detail: { unreadCount } }));
     try {
-      await deleteNotificationRecord(id);
+      if (target?.allIds && target.allIds.length > 0) {
+        await Promise.all(target.allIds.map(dbId => deleteNotificationRecord(dbId)));
+      } else {
+        await deleteNotificationRecord(id);
+      }
+      if (target?.orderRef && currentUser?.id) {
+        await supabase
+          .from('notifications')
+          .delete()
+          .eq('user_id', currentUser.id)
+          .ilike('message', `%${target.orderRef}%`);
+      }
     } catch (err) {
       console.warn("Error deleting notification record:", err);
     }
@@ -1115,8 +1139,28 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       try {
         const dbNotifs = await fetchNotifications(currentUser?.id);
         if (dbNotifs && dbNotifs.length > 0) {
-          const formatted = dbNotifs.map((n) => ({
+          // Group and track all duplicate row IDs for atomic delete/read operations
+          const groupedMap = new Map();
+          for (const n of dbNotifs) {
+            const orderMatch = (n.title + ' ' + (n.message || '')).match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+            const dedupKey = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : `${n.title}_${n.created_at?.substring(0, 16)}`;
+            if (!groupedMap.has(dedupKey)) {
+              groupedMap.set(dedupKey, {
+                ...n,
+                allIds: [n.id],
+                orderRef: orderMatch ? orderMatch[0].toUpperCase() : null
+              });
+            } else {
+              groupedMap.get(dedupKey).allIds.push(n.id);
+            }
+          }
+
+          const uniqueDbNotifs = Array.from(groupedMap.values());
+
+          const formatted = uniqueDbNotifs.map((n) => ({
             id: n.id,
+            allIds: n.allIds || [n.id],
+            orderRef: n.orderRef || null,
             title: n.title,
             snippet: n.message,
             sender: n.title?.includes('Inquiry') || n.title?.includes('Contract') ? 'Company Dispatch Inquiry' : 'RouteK9 Platform',

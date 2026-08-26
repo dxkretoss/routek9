@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { sendFcmV1PushNotification } from './fcmV1Dispatcher';
+import { DEFAULT_DISPATCH_RADIUS_MILES } from './dispatchConfig';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://qgriomlngioeiterbeii.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -1282,82 +1283,84 @@ export async function updateDriverLocation(driverId, lat, lng) {
  * @param {number} pickupLng - Pickup longitude
  * @param {number} radiusKm - Search radius in km (default: 5.0 km)
  */
-export async function getNearbyDriversForOrder(pickupLat, pickupLng, radiusKm = 5.0) {
+/**
+ * Find Drivers within 25 miles of an order pickup location using saved profile coordinates
+ * @param {number} pickupLat - Pickup latitude
+ * @param {number} pickupLng - Pickup longitude
+ * @param {number} radiusMiles - Search radius in miles (default: 25.0 miles)
+ */
+export async function getNearbyDriversForOrder(pickupLat, pickupLng, radiusMiles = DEFAULT_DISPATCH_RADIUS_MILES) {
   if (pickupLat === null || pickupLat === undefined || pickupLng === null || pickupLng === undefined) {
     return [];
   }
 
   const pLat = typeof pickupLat === 'number' ? pickupLat : parseFloat(String(pickupLat));
   const pLng = typeof pickupLng === 'number' ? pickupLng : parseFloat(String(pickupLng));
-  const rKm = typeof radiusKm === 'number' ? radiusKm : parseFloat(String(radiusKm));
+  const maxMiles = typeof radiusMiles === 'number' ? radiusMiles : parseFloat(String(radiusMiles));
+
+  if (isNaN(pLat) || isNaN(pLng)) return [];
 
   try {
-    // 1. Attempt using RPC function
-    const { data, error } = await supabase.rpc('get_nearby_drivers_for_order', {
-      p_pickup_lat: pLat,
-      p_pickup_lng: pLng,
-      p_radius_km: rKm
-    });
-
-    if (!error && Array.isArray(data)) {
-      return data;
-    }
-
-    // 2. Query profiles directly and compute distance in JS
+    // 1. Query profiles directly where driver coordinates are saved in database
     const { data: profiles, error: pErr } = await supabase
       .from('profiles')
-      .select('id, full_name, email, fcm_token, latitude, longitude, role');
+      .select('id, full_name, email, fcm_token, latitude, longitude, role')
+      .not('latitude', 'is', null)
+      .not('longitude', 'is', null);
 
-    if (pErr || !Array.isArray(profiles)) return [];
+    if (pErr || !Array.isArray(profiles) || profiles.length === 0) return [];
 
-    const nearby = [];
+    const uniqueDriversMap = new Map();
+    const R = 3958.8; // Earth's radius in miles
+
     for (const p of profiles) {
-      if (p.latitude !== null && p.latitude !== undefined && p.longitude !== null && p.longitude !== undefined) {
-        const pDriverLat = typeof p.latitude === 'number' ? p.latitude : parseFloat(String(p.latitude));
-        const pDriverLng = typeof p.longitude === 'number' ? p.longitude : parseFloat(String(p.longitude));
-        
-        if (!isNaN(pDriverLat) && !isNaN(pDriverLng)) {
-          const dLat = (pDriverLat - pLat) * (Math.PI / 180);
-          const dLon = (pDriverLng - pLng) * (Math.PI / 180);
-          const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(pLat * (Math.PI / 180)) *
-            Math.cos(pDriverLat * (Math.PI / 180)) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          const distKm = 6371 * c; // Earth's radius in km
+      if (p.latitude === null || p.latitude === undefined || p.longitude === null || p.longitude === undefined) {
+        continue;
+      }
 
-          if (distKm <= rKm) {
-            nearby.push({
-              driver_id: p.id,
-              driver_name: p.full_name || p.email || 'Driver',
-              fcm_token: p.fcm_token,
-              distance_km: parseFloat(distKm.toFixed(2))
-            });
-          }
+      const pDriverLat = typeof p.latitude === 'number' ? p.latitude : parseFloat(String(p.latitude));
+      const pDriverLng = typeof p.longitude === 'number' ? p.longitude : parseFloat(String(p.longitude));
+      
+      if (isNaN(pDriverLat) || isNaN(pDriverLng)) continue;
+
+      // Haversine formula for exact distance in miles
+      const dLat = (pDriverLat - pLat) * (Math.PI / 180);
+      const dLon = (pDriverLng - pLng) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(pLat * (Math.PI / 180)) *
+        Math.cos(pDriverLat * (Math.PI / 180)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distMiles = R * c;
+
+      // STRICT PROXIMITY CHECK: Only drivers within the specified radius (e.g. 25 miles)
+      if (distMiles <= maxMiles) {
+        if (!uniqueDriversMap.has(p.id)) {
+          uniqueDriversMap.set(p.id, {
+            driver_id: p.id,
+            driver_name: p.full_name || p.email || 'Driver',
+            fcm_token: p.fcm_token,
+            distance_miles: parseFloat(distMiles.toFixed(2))
+          });
         }
-      } else if (rKm > 100 || !pLat || !pLng) {
-        // If radius is large (e.g. nationwide testing) or location unset, include driver
-        nearby.push({
-          driver_id: p.id,
-          driver_name: p.full_name || p.email || 'Driver',
-          fcm_token: p.fcm_token,
-          distance_km: 1.0
-        });
       }
     }
-    return nearby.sort((a, b) => a.distance_km - b.distance_km);
+
+    return Array.from(uniqueDriversMap.values()).sort((a, b) => a.distance_miles - b.distance_miles);
   } catch (err) {
     console.warn('getNearbyDriversForOrder notice:', err.message);
     return [];
   }
 }
 
+const recentNotifiedOrdersMap = new Map();
+
 /**
  * Notify Nearby Drivers when a new customer order is placed
  */
-export async function notifyNearbyDriversOnNewOrder(orderData, radiusKm = 40.2) {
+export async function notifyNearbyDriversOnNewOrder(orderData, radiusMiles = DEFAULT_DISPATCH_RADIUS_MILES) {
   const pLat = orderData?.pickup_lat || orderData?.pickup_latitude || orderData?.lat;
   const pLng = orderData?.pickup_lng || orderData?.pickup_longitude || orderData?.lng;
 
@@ -1365,42 +1368,78 @@ export async function notifyNearbyDriversOnNewOrder(orderData, radiusKm = 40.2) 
     return { success: false, notifiedCount: 0 };
   }
 
+  const orderRef = orderData.order_ref || (orderData.id ? `ORD-${String(orderData.id).substring(0, 6).toUpperCase()}` : 'New Load');
+  const cleanOrderKey = String(orderData.order_ref || orderData.id || '').toUpperCase();
+  const now = Date.now();
+
+  // 1. In-memory & LocalStorage lock: If processed within 60s, return early
+  if (cleanOrderKey) {
+    if (recentNotifiedOrdersMap.has(cleanOrderKey) && (now - recentNotifiedOrdersMap.get(cleanOrderKey) < 60000)) {
+      return { success: true, notifiedCount: 0, duplicate: true };
+    }
+    recentNotifiedOrdersMap.set(cleanOrderKey, now);
+
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const lockKey = `routek9_processed_order_${cleanOrderKey}`;
+        const prev = localStorage.getItem(lockKey);
+        if (prev && (now - Number(prev) < 60000)) {
+          return { success: true, notifiedCount: 0, duplicate: true };
+        }
+        localStorage.setItem(lockKey, String(now));
+      }
+    } catch (e) {}
+  }
+
   try {
-    const nearbyDrivers = await getNearbyDriversForOrder(pLat, pLng, radiusKm);
+    // Strictly find drivers whose saved profile location is within radiusMiles (e.g. 25 miles)
+    const nearbyDrivers = await getNearbyDriversForOrder(pLat, pLng, radiusMiles);
     if (!nearbyDrivers || nearbyDrivers.length === 0) {
+      console.log(`[Dispatch Proximity] 0 drivers found within ${radiusMiles} miles of (${pLat}, ${pLng}). No notifications sent.`);
       return { success: true, notifiedCount: 0 };
     }
 
-    const orderRef = orderData.order_ref || (orderData.id ? `ORD-${String(orderData.id).substring(0, 6).toUpperCase()}` : 'New Load');
+    // 2. Database level idempotency: Check which drivers ALREADY received a notification for this order
+    const { data: existingRows } = await supabase
+      .from('notifications')
+      .select('user_id')
+      .ilike('message', `%${cleanOrderKey}%`)
+      .limit(100);
+
+    const alreadyNotifiedUserIds = new Set((existingRows || []).map(r => r.user_id));
+    const driversToNotify = nearbyDrivers.filter(d => !alreadyNotifiedUserIds.has(d.driver_id));
+
+    if (driversToNotify.length === 0) {
+      return { success: true, notifiedCount: 0, duplicate: true };
+    }
+
     const payout = orderData.total_amount ? `$${orderData.total_amount}` : 'Competitive Pay';
     const pickupLoc = orderData.pickup_address || orderData.pickup || 'Nearby Pickup';
 
-    // Insert database notification rows for each matching driver's inbox
-    const notificationInserts = nearbyDrivers.map(d => {
-      const distMi = (Number(d.distance_km || 0) * 0.621371).toFixed(1);
-      return {
-        user_id: d.driver_id,
-        title: `⚡ New Nearby Order (${distMi} mi away)`,
-        message: `A new ${orderData.category || 'package'} dispatch order (${orderRef}) is available near you: ${pickupLoc} • Payout: ${payout}`,
-        category: 'Dispatch',
-        action_url: '/dispatch-orders',
-        action_text: 'View & Claim Order',
-        unread: true,
-        created_at: new Date().toISOString()
-      };
-    });
+    // Insert database notification rows for only non-notified drivers
+    const notificationInserts = driversToNotify.map(d => ({
+      user_id: d.driver_id,
+      title: `⚡ New Nearby Order Available (${orderRef})`,
+      message: `A new ${orderData.category || 'package'} dispatch order (${orderRef}) is available near you: ${pickupLoc} • Payout: ${payout}`,
+      category: 'Dispatch',
+      action_url: '/dispatch-orders',
+      action_text: 'View & Claim Order',
+      unread: true,
+      created_at: new Date().toISOString()
+    }));
 
     await supabase.from('notifications').insert(notificationInserts);
 
-    // Send Google FCM HTTP v1 push notification to each nearby driver device
-    for (const d of nearbyDrivers) {
-      if (d.fcm_token) {
-        const distMi = (Number(d.distance_km || 0) * 0.621371).toFixed(1);
+    // Send Google FCM HTTP v1 push notification to each unique nearby driver device
+    const sentFcmTokens = new Set();
+    for (const d of driversToNotify) {
+      if (d.fcm_token && !sentFcmTokens.has(d.fcm_token)) {
+        sentFcmTokens.add(d.fcm_token);
         sendFcmV1PushNotification(
           d.fcm_token,
-          `⚡ New Nearby Order (${distMi} mi away)`,
+          `⚡ New Nearby Order Available (${orderRef})`,
           `A new ${orderData.category || 'package'} dispatch order is available near you: ${pickupLoc} • ${payout}`,
-          { url: '/dispatch-orders' }
+          { url: '/dispatch-orders', orderRef: orderRef }
         ).catch(e => {
           console.warn('sendFcmV1PushNotification driver notice:', e);
         });

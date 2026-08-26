@@ -18,14 +18,24 @@ export default function Navbar({ currentUser, onLogout, onOpenPricing }) {
 
     async function loadUnreadCount() {
       try {
-        const { count, error } = await supabase
+        const { data, error } = await supabase
           .from('notifications')
-          .select('*', { count: 'exact', head: true })
+          .select('title, message, created_at')
           .eq('unread', true)
           .eq('user_id', currentUser.id);
 
-        if (!error) {
-          setUnreadCount(count || 0);
+        if (!error && Array.isArray(data)) {
+          const seen = new Set();
+          let uniqueCount = 0;
+          for (const n of data) {
+            const orderMatch = (n.title + ' ' + (n.message || '')).match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+            const dedupKey = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : `${n.title}_${n.created_at?.substring(0, 16)}`;
+            if (!seen.has(dedupKey)) {
+              seen.add(dedupKey);
+              uniqueCount++;
+            }
+          }
+          setUnreadCount(uniqueCount);
         }
       } catch (err) {
         console.warn("Could not load unread notifications count:", err);

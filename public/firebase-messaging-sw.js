@@ -24,14 +24,27 @@ firebase.initializeApp(firebaseConfig);
 
 const messaging = firebase.messaging();
 
+const recentSwPushes = new Map();
+
 function displayPushNotification(title, body, url, tag) {
+  const combinedText = `${title || ''} ${body || ''}`;
+  const orderMatch = combinedText.match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+  const dedupTag = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : (tag || 'routek9-general');
+
+  const now = Date.now();
+  if (recentSwPushes.has(dedupTag) && (now - recentSwPushes.get(dedupTag) < 20000)) {
+    console.log('[firebase-messaging-sw.js] Suppressed duplicate SW notification for:', dedupTag);
+    return Promise.resolve();
+  }
+  recentSwPushes.set(dedupTag, now);
+
   const options = {
     body: body || 'You have a new update in RouteK9.',
-    icon: '/assets/favicon.png',
-    badge: '/assets/favicon.png',
-    tag: tag || `routek9-notif-${Date.now()}`,
-    renotify: true,
-    requireInteraction: true,
+    icon: '/favicon.png',
+    badge: '/favicon.png',
+    tag: dedupTag,
+    renotify: false,
+    requireInteraction: false,
     data: {
       url: url || '/dispatch-orders'
     }
@@ -43,33 +56,24 @@ function displayPushNotification(title, body, url, tag) {
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background push message:', payload);
 
-  const title = payload.notification?.title || payload.data?.title || 'RouteK9 Notification';
-  const body = payload.notification?.body || payload.data?.body || 'You have a new update in RouteK9.';
-  const url = payload.data?.url || payload.data?.click_action || payload.fcmOptions?.link || '/dispatch-orders';
-  const tag = payload.data?.tag || `routek9-bg-${Date.now()}`;
-
-  displayPushNotification(title, body, url, tag);
-});
-
-// Native W3C Push event fallback
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  try {
-    const payload = event.data.json();
-    console.log('[firebase-messaging-sw.js] Native push event payload:', payload);
-    const title = payload.notification?.title || payload.data?.title || 'RouteK9 Notification';
-    const body = payload.notification?.body || payload.data?.body || 'You have a new update in RouteK9.';
-    const url = payload.data?.url || payload.data?.click_action || payload.notification?.click_action || '/dispatch-orders';
-    const tag = payload.data?.tag || `routek9-push-${Date.now()}`;
-
-    event.waitUntil(displayPushNotification(title, body, url, tag));
-  } catch (err) {
-    const textData = event.data.text();
-    if (textData) {
-      event.waitUntil(displayPushNotification('RouteK9 Notification', textData, '/dispatch-orders'));
-    }
+  // If the push message already had a notification block, Chrome handles it natively with tag deduplication
+  if (payload.notification) {
+    return Promise.resolve();
   }
+
+  const title = payload.data?.title || 'RouteK9 Notification';
+  const body = payload.data?.body || 'You have a new update in RouteK9.';
+  const url = payload.data?.url || payload.data?.click_action || '/dispatch-orders';
+  const tag = payload.data?.tag || payload.data?.orderRef || null;
+
+  // Only display service worker background notification if NO RouteK9 web tabs are open
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+    if (windowClients && windowClients.length > 0) {
+      console.log('[firebase-messaging-sw.js] Web tab is open; suppressing duplicate SW background push banner.');
+      return Promise.resolve();
+    }
+    return displayPushNotification(title, body, url, tag);
+  });
 });
 
 self.addEventListener('notificationclick', (event) => {

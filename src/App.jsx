@@ -43,6 +43,7 @@ import PrivacyPage from './pages/PrivacyPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import { requestFcmToken, listenToForegroundMessages, showBrowserDesktopNotification, playNotificationSound } from './lib/firebase';
+import { DEFAULT_DISPATCH_RADIUS_MILES } from './lib/dispatchConfig';
 
 import { US_STATES } from './data/statesData';
 import { mockRoutes as initialRoutes } from './data/mockRoutes';
@@ -536,11 +537,15 @@ export default function App() {
   useEffect(() => {
     let unsubscribe = null;
     listenToForegroundMessages((payload) => {
+      // If user session is active, the Supabase real-time notification stream is already handling delivery
+      if (currentUser?.id) return;
+
       const title = payload.notification?.title || payload.data?.title || 'RouteK9 Notification';
       const body = payload.notification?.body || payload.data?.body || 'You have a new update in RouteK9.';
       const url = payload.data?.url || payload.data?.click_action || null;
+      const orderRef = payload.data?.orderRef || null;
       playNotificationSound();
-      showBrowserDesktopNotification(title, { body, url });
+      showBrowserDesktopNotification(title, { body, url, tag: orderRef ? `order-${orderRef}` : undefined });
     }).then((unsub) => {
       unsubscribe = unsub;
     });
@@ -548,7 +553,7 @@ export default function App() {
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, []);
+  }, [currentUser?.id]);
 
   // Request FCM Push permission and register token when user session is active
   useEffect(() => {
@@ -573,11 +578,38 @@ export default function App() {
         },
         (payload) => {
           if (payload.new) {
-            playNotificationSound();
             const title = payload.new.title || 'RouteK9 Notification';
             const body = payload.new.message || 'You have a new update in RouteK9.';
             const url = payload.new.action_url || '/dashboard?tab=inbox';
-            showBrowserDesktopNotification(title, { body, url });
+
+            // Extract order reference for universal single-trigger guarantee
+            const combinedText = `${title} ${body}`;
+            const orderMatch = combinedText.match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+            const dedupKey = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : `notif-${payload.new.id}`;
+
+            const now = Date.now();
+            try {
+              const lastKey = `routek9_alert_barrier_${dedupKey}`;
+              const prev = localStorage.getItem(lastKey);
+              if (prev && (now - Number(prev) < 30000)) {
+                console.log('[Notification Guard] Suppressed duplicate alert/sound for:', dedupKey);
+                return;
+              }
+              localStorage.setItem(lastKey, String(now));
+            } catch (e) {}
+
+            // Strict proximity guard: If notification indicates distance > dispatch radius, ignore
+            const milesMatch = combinedText.match(/([0-9.]+)\s*mi\s*away/i);
+            if (milesMatch) {
+              const miles = parseFloat(milesMatch[1]);
+              if (!isNaN(miles) && miles > DEFAULT_DISPATCH_RADIUS_MILES) {
+                console.log(`[Notification Guard] Suppressed distant notification (${miles} mi > ${DEFAULT_DISPATCH_RADIUS_MILES} mi limit)`);
+                return;
+              }
+            }
+
+            playNotificationSound();
+            showBrowserDesktopNotification(title, { body, url, tag: dedupKey });
           }
         }
       )
@@ -589,6 +621,7 @@ export default function App() {
   }, [currentUser?.id]);
 
   // Global real-time listener for newly placed customer orders to notify nearby drivers
+  // Uses web navigator.locks so that even if the driver has 10 browser tabs open, ONLY 1 TAB processes the order
   useEffect(() => {
     const ordersChannel = supabase
       .channel('global-customer-orders-channel')
@@ -601,8 +634,17 @@ export default function App() {
         },
         async (payload) => {
           if (payload.new) {
-            console.log('[Orders] New customer order placed. Dispatching notifications to drivers...');
-            await notifyNearbyDriversOnNewOrder(payload.new, 50000);
+            const orderId = payload.new.id || payload.new.order_ref;
+            if (typeof navigator !== 'undefined' && 'locks' in navigator) {
+              navigator.locks.request(`routek9-notify-${orderId}`, { ifAvailable: true }, async (lock) => {
+                if (!lock) return; // Another open tab is already handling this order
+                console.log('[Orders] Processing new customer order broadcast:', orderId);
+                // Dispatch only to nearby drivers within default dispatch radius
+                await notifyNearbyDriversOnNewOrder(payload.new, DEFAULT_DISPATCH_RADIUS_MILES);
+              });
+            } else {
+              await notifyNearbyDriversOnNewOrder(payload.new, DEFAULT_DISPATCH_RADIUS_MILES);
+            }
           }
         }
       )
