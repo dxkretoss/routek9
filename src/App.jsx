@@ -555,10 +555,11 @@ export default function App() {
     };
   }, [currentUser?.id]);
 
-  // Request FCM Push permission and register token when user session is active
+  // Request FCM Push permission and automatically sync live GPS coordinates to Supabase profiles
   useEffect(() => {
     if (currentUser?.id) {
       requestFcmToken(currentUser.id);
+      captureUserLocation(currentUser.id);
     }
   }, [currentUser?.id]);
 
