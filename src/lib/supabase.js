@@ -1314,6 +1314,11 @@ export async function getNearbyDriversForOrder(pickupLat, pickupLng, radiusMiles
     const R = 3958.8; // Earth's radius in miles
 
     for (const p of profiles) {
+      // Only drivers should receive new order dispatch alerts (exclude customers)
+      if (p.role && p.role.toLowerCase() === 'customer') {
+        continue;
+      }
+
       if (p.latitude === null || p.latitude === undefined || p.longitude === null || p.longitude === undefined) {
         continue;
       }

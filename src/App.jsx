@@ -43,7 +43,7 @@ import PrivacyPage from './pages/PrivacyPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import { requestFcmToken, listenToForegroundMessages, showBrowserDesktopNotification, playNotificationSound } from './lib/firebase';
-import { DEFAULT_DISPATCH_RADIUS_MILES } from './lib/dispatchConfig';
+import { DEFAULT_DISPATCH_RADIUS_MILES, calculateDistanceMiles } from './lib/dispatchConfig';
 
 import { US_STATES } from './data/statesData';
 import { mockRoutes as initialRoutes } from './data/mockRoutes';
@@ -576,7 +576,7 @@ export default function App() {
           table: 'notifications',
           filter: `user_id=eq.${currentUser.id}`
         },
-        (payload) => {
+        async (payload) => {
           if (payload.new) {
             const title = payload.new.title || 'RouteK9 Notification';
             const body = payload.new.message || 'You have a new update in RouteK9.';
@@ -598,13 +598,32 @@ export default function App() {
               localStorage.setItem(lastKey, String(now));
             } catch (e) {}
 
-            // Strict proximity guard: If notification indicates distance > dispatch radius, ignore
-            const milesMatch = combinedText.match(/([0-9.]+)\s*mi\s*away/i);
-            if (milesMatch) {
-              const miles = parseFloat(milesMatch[1]);
-              if (!isNaN(miles) && miles > DEFAULT_DISPATCH_RADIUS_MILES) {
-                console.log(`[Notification Guard] Suppressed distant notification (${miles} mi > ${DEFAULT_DISPATCH_RADIUS_MILES} mi limit)`);
-                return;
+            // Strict live proximity check against driver's browser coordinates (e.g. India)
+            if (currentUser?.latitude && currentUser?.longitude && payload.new.category === 'Dispatch') {
+              const uLat = typeof currentUser.latitude === 'number' ? currentUser.latitude : parseFloat(String(currentUser.latitude));
+              const uLng = typeof currentUser.longitude === 'number' ? currentUser.longitude : parseFloat(String(currentUser.longitude));
+              
+              if (!isNaN(uLat) && !isNaN(uLng)) {
+                const orderRef = orderMatch ? orderMatch[0].toUpperCase() : null;
+                if (orderRef) {
+                  try {
+                    const { data: orderRow } = await supabase
+                      .from('customer_orders')
+                      .select('pickup_lat, pickup_latitude, pickup_lng, pickup_longitude')
+                      .or(`order_ref.eq.${orderRef},id.eq.${orderRef.replace('ORD-', '')}`)
+                      .maybeSingle();
+
+                    if (orderRow) {
+                      const pLat = orderRow.pickup_lat || orderRow.pickup_latitude;
+                      const pLng = orderRow.pickup_lng || orderRow.pickup_longitude;
+                      const dist = calculateDistanceMiles(uLat, uLng, pLat, pLng);
+                      if (dist !== null && dist > DEFAULT_DISPATCH_RADIUS_MILES) {
+                        console.log(`[Notification Guard] Suppressed distant alert (${dist.toFixed(1)} mi > ${DEFAULT_DISPATCH_RADIUS_MILES} mi limit)`);
+                        return;
+                      }
+                    }
+                  } catch (e) {}
+                }
               }
             }
 
