@@ -104,6 +104,9 @@ export async function listenToForegroundMessages(onMessageCallback) {
   }
 }
 
+// Deduplication cache to prevent identical notifications from firing twice within 3 seconds
+const recentDispatchedNotifications = new Map();
+
 /**
  * Show a native OS/Browser Desktop Notification banner
  */
@@ -113,13 +116,21 @@ export function showBrowserDesktopNotification(title, options = {}) {
     return;
   }
 
+  const tag = options.tag || title;
+  const now = Date.now();
+  if (recentDispatchedNotifications.has(tag) && (now - recentDispatchedNotifications.get(tag) < 3000)) {
+    // Suppress duplicate notification
+    return;
+  }
+  recentDispatchedNotifications.set(tag, now);
+
   console.log('[Desktop Notif] Current permission:', Notification.permission, '| Dispatching:', title);
 
   const defaultOptions = {
     icon: '/favicon.png',
     badge: '/favicon.png',
-    tag: options.tag || `routek9-${Date.now()}`,
-    renotify: true,
+    tag: tag,
+    renotify: false,
     requireInteraction: false,
     data: {
       url: options.url || '/dispatch-orders'
@@ -128,30 +139,36 @@ export function showBrowserDesktopNotification(title, options = {}) {
   };
 
   if (Notification.permission === 'granted') {
-    // 1. Trigger via standard browser Notification API
-    try {
-      const notif = new Notification(title, defaultOptions);
-      notif.onclick = () => {
-        window.focus();
-        if (options.url) window.location.href = options.url;
-      };
-    } catch (e) {
-      console.warn('[Desktop Notif] Standard notification notice:', e.message);
-    }
-
-    // 2. Also trigger via Service Worker registration for OS tray delivery
-    if ('serviceWorker' in navigator) {
+    // Deliver cleanly via ServiceWorker if available, else fall back to standard Notification
+    if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
       navigator.serviceWorker.ready
         .then((reg) => {
           return reg.showNotification(title, defaultOptions);
         })
-        .catch((swErr) => {
-          console.warn('[Desktop Notif] Service Worker notice:', swErr.message);
+        .catch(() => {
+          try {
+            const notif = new Notification(title, defaultOptions);
+            notif.onclick = () => {
+              window.focus();
+              if (options.url) window.location.href = options.url;
+            };
+          } catch (e) {
+            console.warn('[Desktop Notif] Notification fallback notice:', e.message);
+          }
         });
+    } else {
+      try {
+        const notif = new Notification(title, defaultOptions);
+        notif.onclick = () => {
+          window.focus();
+          if (options.url) window.location.href = options.url;
+        };
+      } catch (e) {
+        console.warn('[Desktop Notif] Standard notification notice:', e.message);
+      }
     }
   } else if (Notification.permission !== 'denied') {
     Notification.requestPermission().then((permission) => {
-      console.log('[Desktop Notif] User responded to permission prompt:', permission);
       if (permission === 'granted') {
         showBrowserDesktopNotification(title, options);
       }

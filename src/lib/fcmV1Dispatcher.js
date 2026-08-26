@@ -219,8 +219,16 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
       console.log('✅ [FCM v1 Push] Push delivered successfully to device:', result.name || cleanToken.substring(0, 15));
       return { success: true, result };
     } else {
-      console.warn('⚠️ [FCM v1 Push] Google returned notice:', result.error?.message || result);
-      return { success: false, error: result.error?.message || 'Push failed' };
+      const isUnregistered = result.error?.code === 404 || 
+        result.error?.message === 'NotRegistered' || 
+        result.error?.details?.some?.(d => d.errorCode === 'UNREGISTERED');
+
+      if (isUnregistered) {
+        console.info('ℹ️ [FCM v1 Push] Device token has expired or is unregistered on Google FCM. Device will refresh on next launch.');
+      } else {
+        console.warn('⚠️ [FCM v1 Push] Google returned notice:', result.error?.message || result);
+      }
+      return { success: false, error: result.error?.message || 'Push failed', isUnregistered };
     }
   } catch (err) {
     console.warn('❌ [FCM v1 Push] Execution error:', err.message);

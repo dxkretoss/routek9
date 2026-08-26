@@ -1303,38 +1303,48 @@ export async function getNearbyDriversForOrder(pickupLat, pickupLng, radiusKm = 
       return data;
     }
 
-    // 2. Fallback: Query profiles directly and compute distance in JS if RPC is not yet created
+    // 2. Query profiles directly and compute distance in JS
     const { data: profiles, error: pErr } = await supabase
       .from('profiles')
-      .select('id, full_name, email, fcm_token, latitude, longitude, role')
-      .or('role.eq.driver,role.is.null')
-      .not('latitude', 'is', null)
-      .not('longitude', 'is', null);
+      .select('id, full_name, email, fcm_token, latitude, longitude, role');
 
     if (pErr || !Array.isArray(profiles)) return [];
 
     const nearby = [];
     for (const p of profiles) {
-      if (p.latitude !== null && p.longitude !== null) {
-        const dLat = (p.latitude - pLat) * (Math.PI / 180);
-        const dLon = (p.longitude - pLng) * (Math.PI / 180);
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(pLat * (Math.PI / 180)) *
-          Math.cos(p.latitude * (Math.PI / 180)) *
-          Math.sin(dLon / 2) *
-          Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const distKm = 6371 * c; // Earth's radius in km
+      if (p.latitude !== null && p.latitude !== undefined && p.longitude !== null && p.longitude !== undefined) {
+        const pDriverLat = typeof p.latitude === 'number' ? p.latitude : parseFloat(String(p.latitude));
+        const pDriverLng = typeof p.longitude === 'number' ? p.longitude : parseFloat(String(p.longitude));
+        
+        if (!isNaN(pDriverLat) && !isNaN(pDriverLng)) {
+          const dLat = (pDriverLat - pLat) * (Math.PI / 180);
+          const dLon = (pDriverLng - pLng) * (Math.PI / 180);
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(pLat * (Math.PI / 180)) *
+            Math.cos(pDriverLat * (Math.PI / 180)) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distKm = 6371 * c; // Earth's radius in km
 
-        if (distKm <= rKm) {
-          nearby.push({
-            driver_id: p.id,
-            driver_name: p.full_name || p.email || 'Driver',
-            fcm_token: p.fcm_token,
-            distance_km: parseFloat(distKm.toFixed(2))
-          });
+          if (distKm <= rKm) {
+            nearby.push({
+              driver_id: p.id,
+              driver_name: p.full_name || p.email || 'Driver',
+              fcm_token: p.fcm_token,
+              distance_km: parseFloat(distKm.toFixed(2))
+            });
+          }
         }
+      } else if (rKm > 100 || !pLat || !pLng) {
+        // If radius is large (e.g. nationwide testing) or location unset, include driver
+        nearby.push({
+          driver_id: p.id,
+          driver_name: p.full_name || p.email || 'Driver',
+          fcm_token: p.fcm_token,
+          distance_km: 1.0
+        });
       }
     }
     return nearby.sort((a, b) => a.distance_km - b.distance_km);
@@ -1366,25 +1376,29 @@ export async function notifyNearbyDriversOnNewOrder(orderData, radiusKm = 40.2) 
     const pickupLoc = orderData.pickup_address || orderData.pickup || 'Nearby Pickup';
 
     // Insert database notification rows for each matching driver's inbox
-    const notificationInserts = nearbyDrivers.map(d => ({
-      user_id: d.driver_id,
-      title: `⚡ New Nearby Order (${d.distance_km} km away)`,
-      message: `A new ${orderData.category || 'package'} dispatch order (${orderRef}) is available near you: ${pickupLoc} • Payout: ${payout}`,
-      category: 'Dispatch',
-      action_url: '/dispatch-orders',
-      action_text: 'View & Claim Order',
-      unread: true,
-      created_at: new Date().toISOString()
-    }));
+    const notificationInserts = nearbyDrivers.map(d => {
+      const distMi = (Number(d.distance_km || 0) * 0.621371).toFixed(1);
+      return {
+        user_id: d.driver_id,
+        title: `⚡ New Nearby Order (${distMi} mi away)`,
+        message: `A new ${orderData.category || 'package'} dispatch order (${orderRef}) is available near you: ${pickupLoc} • Payout: ${payout}`,
+        category: 'Dispatch',
+        action_url: '/dispatch-orders',
+        action_text: 'View & Claim Order',
+        unread: true,
+        created_at: new Date().toISOString()
+      };
+    });
 
     await supabase.from('notifications').insert(notificationInserts);
 
     // Send Google FCM HTTP v1 push notification to each nearby driver device
     for (const d of nearbyDrivers) {
       if (d.fcm_token) {
+        const distMi = (Number(d.distance_km || 0) * 0.621371).toFixed(1);
         sendFcmV1PushNotification(
           d.fcm_token,
-          `⚡ New Nearby Order (${d.distance_km} km away)`,
+          `⚡ New Nearby Order (${distMi} mi away)`,
           `A new ${orderData.category || 'package'} dispatch order is available near you: ${pickupLoc} • ${payout}`,
           { url: '/dispatch-orders' }
         ).catch(e => {

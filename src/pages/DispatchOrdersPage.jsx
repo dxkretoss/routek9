@@ -47,17 +47,7 @@ import {
 import { showBrowserDesktopNotification, playNotificationSound } from '../lib/firebase';
 
 // Configurable default nearest dispatch radius in miles
-const DEFAULT_DISPATCH_RADIUS_MILES = 25;
-
-// Configurable Test GPS Coordinates for testing US-based orders from anywhere (e.g. India)
-// Set to null to use live browser GPS, or set to target US city coordinates:
-// e.g. Los Angeles, CA: { lat: 34.0522, lng: -118.2437 }
-// e.g. Houston, TX:     { lat: 29.7604, lng: -95.3698 }
-// e.g. Boston, MA:      { lat: 42.3601, lng: -71.0589 }
-const TEST_OVERRIDE_COORDS = {
-  lat: 34.0522,
-  lng: -118.2437
-};
+const DEFAULT_DISPATCH_RADIUS_MILES = 25000;
 
 // Haversine formula to compute great-circle distance between two GPS coordinates in miles
 function calculateDistanceMiles(lat1, lon1, lat2, lon2) {
@@ -121,21 +111,14 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
     }
   };
 
-  // Retrieve user latitude / longitude: Priority is TEST_OVERRIDE_COORDS -> currentUser -> live browser geolocation
+  // Retrieve user latitude / longitude: Priority is currentUser profile -> live browser geolocation
   const [driverCoords, setDriverCoords] = useState(() => {
-    if (TEST_OVERRIDE_COORDS && TEST_OVERRIDE_COORDS.lat !== null && TEST_OVERRIDE_COORDS.lng !== null) {
-      return { lat: TEST_OVERRIDE_COORDS.lat, lng: TEST_OVERRIDE_COORDS.lng };
-    }
     const lat = currentUser?.latitude ? (typeof currentUser.latitude === 'number' ? currentUser.latitude : parseFloat(String(currentUser.latitude))) : null;
     const lng = currentUser?.longitude ? (typeof currentUser.longitude === 'number' ? currentUser.longitude : parseFloat(String(currentUser.longitude))) : null;
     return { lat, lng };
   });
 
   useEffect(() => {
-    if (TEST_OVERRIDE_COORDS && TEST_OVERRIDE_COORDS.lat !== null && TEST_OVERRIDE_COORDS.lng !== null) {
-      setDriverCoords({ lat: TEST_OVERRIDE_COORDS.lat, lng: TEST_OVERRIDE_COORDS.lng });
-      return;
-    }
     if (currentUser?.latitude && currentUser?.longitude) {
       setDriverCoords({
         lat: typeof currentUser.latitude === 'number' ? currentUser.latitude : parseFloat(String(currentUser.latitude)),
@@ -405,28 +388,12 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
               return [newUiOrder, ...prev];
             });
 
-            // If order is within driver dispatch radius (e.g. 25 miles), show toast alert, sound & browser desktop notification immediately!
+            // If order is within driver dispatch radius, show on-screen info toast
             const isNearby = !newUiOrder.deadheadMiles || newUiOrder.deadheadMiles <= DEFAULT_DISPATCH_RADIUS_MILES;
             if (isNearby) {
-              playNotificationSound();
-
               setNotification({
                 type: 'info',
                 message: `⚡ New Nearby Dispatch Order Available (${newUiOrder.deadheadDisplay || 'Nearby'}) • Payout: ${newUiOrder.priceDisplay}`
-              });
-
-              showBrowserDesktopNotification(`⚡ New Nearby Order (${newUiOrder.deadheadDisplay || 'Nearby'})`, {
-                body: `A new dispatch order (${newUiOrder.id}) is available for pickup: ${newUiOrder.pickup} • Driver Payout: ${newUiOrder.priceDisplay}`,
-                tag: `dispatch-order-${newUiOrder.id}`,
-                url: '/dispatch-orders'
-              });
-            }
-
-            // Also broadcast to nearby driver accounts in database (within 25 miles = 40.2 km)
-            if (payload.new?.pickup_lat && payload.new?.pickup_lng) {
-              const radiusKm = DEFAULT_DISPATCH_RADIUS_MILES * 1.60934;
-              notifyNearbyDriversOnNewOrder(payload.new, radiusKm).catch(e => {
-                console.warn("Notice notifying nearby drivers:", e);
               });
             }
           } else if (payload.eventType === 'UPDATE') {

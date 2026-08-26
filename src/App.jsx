@@ -601,18 +601,8 @@ export default function App() {
         },
         async (payload) => {
           if (payload.new) {
-            console.log('[Orders] New customer order placed. Alerting nearby drivers within 25 miles...');
-            playNotificationSound();
-            const orderRef = payload.new.order_ref || (payload.new.id ? `ORD-${String(payload.new.id).substring(0, 6).toUpperCase()}` : 'New Order');
-            const payout = payload.new.total_amount ? `$${payload.new.total_amount}` : 'Available';
-            const pickup = payload.new.pickup_address || payload.new.pickup || 'Nearby Pickup';
-
-            showBrowserDesktopNotification(`⚡ New Nearby Order Available (${orderRef})`, {
-              body: `Pickup: ${pickup} • Payout: ${payout}`,
-              url: '/dispatch-orders'
-            });
-
-            await notifyNearbyDriversOnNewOrder(payload.new, 40.2);
+            console.log('[Orders] New customer order placed. Dispatching notifications to drivers...');
+            await notifyNearbyDriversOnNewOrder(payload.new, 50000);
           }
         }
       )
