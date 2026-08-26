@@ -168,24 +168,39 @@ export function showBrowserDesktopNotification(title, options = {}, isRetry = fa
     ...options
   };
 
-  // Permission handling with strict non-reentrant validation
+  // Permission handling with unified ServiceWorker registration channel
   if (Notification.permission === 'granted') {
-    try {
-      const notif = new Notification(safeTitle, defaultOptions);
-      notif.onclick = () => {
-        window.focus();
-        if (options.url) window.location.href = options.url;
-      };
-    } catch (e) {
-      if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
-        navigator.serviceWorker.ready
-          .then((reg) => {
-            if (reg && typeof reg.showNotification === 'function') {
-              reg.showNotification(safeTitle, defaultOptions);
-            }
-          })
-          .catch(() => {});
-      }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((reg) => {
+          if (reg && typeof reg.showNotification === 'function') {
+            return reg.showNotification(safeTitle, defaultOptions);
+          }
+          try {
+            const notif = new Notification(safeTitle, defaultOptions);
+            notif.onclick = () => {
+              window.focus();
+              if (options.url) window.location.href = options.url;
+            };
+          } catch (e) {}
+        })
+        .catch(() => {
+          try {
+            const notif = new Notification(safeTitle, defaultOptions);
+            notif.onclick = () => {
+              window.focus();
+              if (options.url) window.location.href = options.url;
+            };
+          } catch (e) {}
+        });
+    } else {
+      try {
+        const notif = new Notification(safeTitle, defaultOptions);
+        notif.onclick = () => {
+          window.focus();
+          if (options.url) window.location.href = options.url;
+        };
+      } catch (e) {}
     }
   } else if (Notification.permission === 'default' && !isRetry) {
     // Single non-recursive attempt to request permission if not decided
