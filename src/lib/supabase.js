@@ -1193,15 +1193,23 @@ export async function deletePackageType(typeId) {
  * Save / Update user's FCM device token in Supabase
  */
 export async function saveUserFcmToken(userId, fcmToken) {
-  if (!userId || !fcmToken) return { success: false, error: 'Missing userId or fcmToken' };
+  if (!userId || !fcmToken) return { success: false, error: 'Missing userId or token' };
+
   try {
-    // 1. Update in profiles table (Drivers & Web Users)
+    // 1. Clear this exact device token from any stale profiles so only the active logged-in account gets pushed
+    await supabase
+      .from('profiles')
+      .update({ fcm_token: null })
+      .eq('fcm_token', fcmToken)
+      .neq('id', userId);
+
+    // 2. Assign to current active user profile
     await supabase
       .from('profiles')
       .update({ fcm_token: fcmToken })
       .eq('id', userId);
 
-    // 2. Update in customer_profiles table (Mobile App Customers)
+    // 3. Update in customer_profiles table (Mobile App Customers)
     await supabase
       .from('customer_profiles')
       .update({ fcm_token: fcmToken })
