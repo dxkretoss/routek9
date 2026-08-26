@@ -47,7 +47,7 @@ import {
 import { showBrowserDesktopNotification, playNotificationSound } from '../lib/firebase';
 
 // Configurable default nearest dispatch radius in miles
-const DEFAULT_DISPATCH_RADIUS_MILES = 25000;
+const DEFAULT_DISPATCH_RADIUS_MILES = 25;
 
 // Haversine formula to compute great-circle distance between two GPS coordinates in miles
 function calculateDistanceMiles(lat1, lon1, lat2, lon2) {
