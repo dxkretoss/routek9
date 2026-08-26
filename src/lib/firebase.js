@@ -236,11 +236,19 @@ if (typeof window !== 'undefined') {
   window.addEventListener('touchstart', unlockAudio, { passive: true });
 }
 
+let lastSoundPlayedTime = 0;
+
 /**
- * Play an audible chime sound when a new dispatch order arrives
+ * Play an audible chime sound when a new dispatch order arrives (rate-limited to 1 per 5s)
  */
 export function playNotificationSound() {
   if (typeof window === 'undefined') return;
+  const now = Date.now();
+  if (now - lastSoundPlayedTime < 5000) {
+    return;
+  }
+  lastSoundPlayedTime = now;
+
   try {
     const ctx = getUnlockedAudioContext();
     if (!ctx) return;
