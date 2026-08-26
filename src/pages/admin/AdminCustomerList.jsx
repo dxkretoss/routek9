@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Users,
   Search,
@@ -22,10 +23,14 @@ import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
 export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl === 'orders' ? 'orders' : 'directory'
+  );
   const [customers, setCustomers] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [activeTab, setActiveTab] = useState('directory'); // 'directory' or 'orders'
   const [selectedCustomerModal, setSelectedCustomerModal] = useState(null);
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +39,31 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
   const [directoryPage, setDirectoryPage] = useState(1);
   const [ordersPage, setOrdersPage] = useState(1);
   const itemsPerPage = 10;
+
+  // Sync URL search param changes to activeTab
+  useEffect(() => {
+    const currentTab = searchParams.get('tab');
+    if (currentTab === 'orders') {
+      setActiveTab('orders');
+    } else {
+      setActiveTab('directory');
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    if (newTab === 'directory') setDirectoryPage(1);
+    if (newTab === 'orders') setOrdersPage(1);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (newTab === 'orders') {
+        next.set('tab', 'orders');
+      } else {
+        next.delete('tab');
+      }
+      return next;
+    }, { replace: true });
+  };
 
   // Reset search when active tab changes
   useEffect(() => {
@@ -297,10 +327,7 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
       {/* Tabs Selector */}
       <div className="flex border-b border-slate-200">
         <button
-          onClick={() => {
-            setActiveTab('directory');
-            setDirectoryPage(1);
-          }}
+          onClick={() => handleTabChange('directory')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'directory'
             ? 'border-rose-600 text-rose-600'
             : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -310,10 +337,7 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
         </button>
 
         <button
-          onClick={() => {
-            setActiveTab('orders');
-            setOrdersPage(1);
-          }}
+          onClick={() => handleTabChange('orders')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'orders'
             ? 'border-rose-600 text-rose-600'
             : 'border-transparent text-slate-500 hover:text-slate-700'

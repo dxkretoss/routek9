@@ -65,12 +65,9 @@ export async function checkAndAutoSyncDaily() {
   }
 }
 
-// 1. Fetch Government Contracts from Database (pure database read, no API call on load/reload)
+// 1. Fetch Government Contracts from Database (pure database read, single query)
 export async function fetchGovContractsFromDb() {
   try {
-    // Purge expired contracts from database first
-    await purgeExpiredGovContractsFromDb();
-
     const { data, error } = await supabase
       .from('gov_contracts')
       .select('*')
@@ -82,7 +79,47 @@ export async function fetchGovContractsFromDb() {
     }
 
     if (Array.isArray(data)) {
-      const mapped = data.map(item => ({
+      const now = Date.now();
+      const expiredIds = [];
+      const activeContracts = [];
+
+      data.forEach(item => {
+        const deadlineStr = item.response_deadline || item.responseDeadline || item.responseDeadLine || item.deadline || item.due_date;
+        let isPast = false;
+
+        if (deadlineStr && typeof deadlineStr === 'string' && !deadlineStr.toLowerCase().includes('open')) {
+          const d = new Date(deadlineStr.trim());
+          if (!isNaN(d.getTime()) && d.getTime() < now) {
+            isPast = true;
+          }
+        }
+
+        const statusVal = String(item.status || item.contract_status || '').toLowerCase();
+        const isStatusExpired = ['expired', 'closed', 'inactive', 'archived', 'ended'].includes(statusVal);
+
+        if (isPast || isStatusExpired) {
+          if (item.id) expiredIds.push(item.id);
+          if (item.notice_id) expiredIds.push(item.notice_id);
+        } else {
+          activeContracts.push(item);
+        }
+      });
+
+      // Async background cleanup of expired rows without making a redundant select query
+      if (expiredIds.length > 0) {
+        (async () => {
+          try {
+            for (const idVal of expiredIds) {
+              await supabase.from('gov_contracts').delete().or(`id.eq.${idVal},notice_id.eq.${idVal}`);
+            }
+          } catch (delErr) {
+            console.warn("Expired contract cleanup notice:", delErr);
+          }
+        })();
+      }
+
+      const listToMap = activeContracts.length > 0 ? activeContracts : data;
+      const mapped = listToMap.map(item => ({
         id: item.id,
         noticeId: item.notice_id,
         title: item.title,

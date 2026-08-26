@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Building2,
   MapPin,
@@ -26,9 +27,14 @@ import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
 export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl === 'routes' || tabFromUrl === 'corporate-routes' ? 'routes' : 'directory'
+  );
   const [companies, setCompanies] = useState([]);
   const [routes, setRoutes] = useState([]);
-  const [activeTab, setActiveTab] = useState('directory'); // 'directory' or 'routes'
+  const [companyProfilesMap, setCompanyProfilesMap] = useState({});
   const [selectedRouteModal, setSelectedRouteModal] = useState(null);
   const [selectedCompanyModal, setSelectedCompanyModal] = useState(null);
   const [activeDriverModal, setActiveDriverModal] = useState(null);
@@ -41,6 +47,29 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCompaniesCount, setTotalCompaniesCount] = useState(64);
   const itemsPerPage = 10;
+
+  // Sync URL search param changes to activeTab
+  useEffect(() => {
+    const currentTab = searchParams.get('tab');
+    if (currentTab === 'routes' || currentTab === 'corporate-routes') {
+      setActiveTab('routes');
+    } else {
+      setActiveTab('directory');
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (newTab === 'routes') {
+        next.set('tab', 'routes');
+      } else {
+        next.delete('tab');
+      }
+      return next;
+    }, { replace: true });
+  };
 
   // Reset search when active tab changes
   useEffect(() => {
@@ -58,19 +87,25 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
   const groupedRoutesByCompany = React.useMemo(() => {
     const groupsMap = {};
     routes.forEach((r) => {
-      const key = (r.companyId || r.companyName || 'unknown').toLowerCase();
+      const cId = r.companyId ? String(r.companyId).toLowerCase() : '';
+      const uId = r.userId ? String(r.userId).toLowerCase() : '';
+
+      const matchingCompany = (cId && companyProfilesMap[cId]) ||
+        (uId && companyProfilesMap[uId]) ||
+        (cId && companies.find(c => String(c.id).toLowerCase() === cId || String(c.user_id).toLowerCase() === cId)) ||
+        (uId && companies.find(c => String(c.id).toLowerCase() === uId || String(c.user_id).toLowerCase() === uId));
+
+      const companyName = matchingCompany?.company_name || matchingCompany?.full_name || r.companyName || 'Partner Company';
+      const companyEmail = matchingCompany?.email || matchingCompany?.contact_email || '';
+      const companyAvatar = matchingCompany?.avatar_url || matchingCompany?.avatar || matchingCompany?.logo || null;
+
+      const key = (matchingCompany?.id || companyEmail || r.companyId || 'unknown').toLowerCase();
       if (!groupsMap[key]) {
-        const matchingCompany = companies.find(c =>
-          (r.companyId && String(c.id) === String(r.companyId)) ||
-          (c.company_name && c.company_name.toLowerCase() === key) ||
-          (c.full_name && c.full_name.toLowerCase() === key) ||
-          (c.email && c.email.toLowerCase() === key)
-        );
         groupsMap[key] = {
           key,
-          companyName: matchingCompany?.company_name || r.companyName || 'Partner Company',
-          companyEmail: matchingCompany?.email || '',
-          companyAvatar: matchingCompany?.avatar_url || null,
+          companyName,
+          companyEmail,
+          companyAvatar,
           companyMembership: matchingCompany?.membership || 'Free',
           companyId: r.companyId,
           routes: []
@@ -90,13 +125,14 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
     });
 
     return groups.sort((a, b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
-  }, [routes, companies]);
+  }, [routes, companies, companyProfilesMap]);
 
   const filteredGroupedRoutes = groupedRoutesByCompany.filter(g => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
       g.companyName.toLowerCase().includes(q) ||
+      (g.companyEmail && g.companyEmail.toLowerCase().includes(q)) ||
       g.routes.some(r => r.id?.toLowerCase().includes(q) || r.title?.toLowerCase().includes(q))
     );
   });
@@ -133,23 +169,76 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
         const [txsRes, cdRes, routesRes] = await Promise.allSettled([
           supabase.from('transactions').select('amount, status, course_id, user_id, email, created_at').eq('status', 'Succeeded').limit(200),
           supabase.from('company_drivers').select('company_id, full_name, name, email, phone').eq('status', 'ACTIVE').limit(200),
-          supabase.from('routes').select('id, title, company_id, user_id, stops_count, distance_miles, duration_minutes, created_at').not('company_id', 'is', null).order('created_at', { ascending: false }).limit(50)
+          supabase.from('routes').select('id, title, company_id, user_id, stops_count, distance_miles, duration_minutes, stops_data, created_at').not('company_id', 'is', null).order('created_at', { ascending: false }).limit(50)
         ]);
 
         if (!isMounted) return;
 
         if (routesRes.status === 'fulfilled' && routesRes.value?.data) {
-          const mappedRoutes = routesRes.value.data.map(r => ({
-            id: r.id,
-            title: r.title || 'Corporate Dispatched Route',
-            companyId: r.company_id || r.user_id,
-            companyName: 'Partner Company',
-            stopsCount: r.stops_count || 0,
-            distanceMiles: r.distance_miles || 0,
-            durationMinutes: r.duration_minutes || 0,
-            createdAt: r.created_at,
-            stops: []
-          }));
+          const rawRoutes = routesRes.value.data;
+
+          // Fetch company profiles and metadata for dispatch author companies
+          const compIds = Array.from(new Set(rawRoutes.map(r => r.company_id || r.user_id).filter(id => id && /^[0-9a-f-]{36}$/i.test(id))));
+          if (compIds.length > 0) {
+            Promise.allSettled([
+              supabase.from('profiles').select('id, email, full_name, avatar_url, city, state_code, phone').in('id', compIds),
+              supabase.from('company_profiles').select('user_id, company_name, contact_name, city, state, phone, contact_email, website, avatar_url, logo').in('user_id', compIds)
+            ]).then(([profResult, metaResult]) => {
+              if (!isMounted) return;
+              const profs = (profResult.status === 'fulfilled' && profResult.value?.data) ? profResult.value.data : [];
+              const metas = (metaResult.status === 'fulfilled' && metaResult.value?.data) ? metaResult.value.data : [];
+              const metaMap = {};
+              metas.forEach(m => {
+                if (m.user_id) metaMap[m.user_id.toLowerCase()] = m;
+              });
+              const map = {};
+              profs.forEach(p => {
+                const meta = metaMap[p.id.toLowerCase()] || {};
+                const compData = {
+                  id: p.id,
+                  company_name: meta.company_name || p.full_name || (p.email ? p.email.split('@')[0] : 'Partner Company'),
+                  email: meta.contact_email || p.email || '',
+                  avatar_url: p.avatar_url || meta.avatar_url || meta.logo || null,
+                  membership: 'Free'
+                };
+                map[p.id.toLowerCase()] = compData;
+                if (p.email) map[p.email.toLowerCase()] = compData;
+              });
+              metas.forEach(m => {
+                if (m.user_id && !map[m.user_id.toLowerCase()]) {
+                  map[m.user_id.toLowerCase()] = {
+                    id: m.user_id,
+                    company_name: m.company_name || 'Partner Company',
+                    email: m.contact_email || '',
+                    avatar_url: m.avatar_url || m.logo || null,
+                    membership: 'Free'
+                  };
+                }
+              });
+              setCompanyProfilesMap(prev => ({ ...prev, ...map }));
+            }).catch(e => console.warn("Fetch company profiles notice:", e));
+          }
+
+          const mappedRoutes = rawRoutes.map(r => {
+            let parsedStops = [];
+            if (Array.isArray(r.stops_data)) {
+              parsedStops = r.stops_data;
+            } else if (typeof r.stops_data === 'string') {
+              try { parsedStops = JSON.parse(r.stops_data); } catch (err) { }
+            }
+            return {
+              id: r.id,
+              title: r.title || 'Corporate Dispatched Route',
+              companyId: r.company_id || r.user_id,
+              userId: r.user_id,
+              companyName: 'Partner Company',
+              stopsCount: r.stops_count || (parsedStops.length > 0 ? parsedStops.length : 0),
+              distanceMiles: r.distance_miles || 0,
+              durationMinutes: r.duration_minutes || 0,
+              createdAt: r.created_at,
+              stops: parsedStops
+            };
+          });
           setRoutes(mappedRoutes);
         }
       } catch (e) {
@@ -187,11 +276,11 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
       const [metaRes, profRes] = await Promise.allSettled([
         supabase
           .from('company_profiles')
-          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description')
+          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description, avatar_url, logo')
           .limit(200),
         supabase
           .from('profiles')
-          .select('id, email, role, full_name, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work')
+          .select('id, email, role, full_name, avatar_url, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work')
           .eq('role', 'company')
           .order('created_at', { ascending: false })
           .range(from, to)
@@ -218,6 +307,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
           state_code: p.state_code || meta.state || 'TX',
           phone: p.phone || meta.phone || '',
           contact_email: meta.contact_email || p.email || '',
+          avatar_url: p.avatar_url || meta.avatar_url || meta.logo || null,
           status: isDeactivated ? 'INACTIVE' : 'ACTIVE',
           ready_to_work: p.ready_to_work !== false,
           website_url: p.website_url || meta.website || '',
@@ -335,7 +425,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
       {/* Tabs Selector */}
       <div className="flex border-b border-slate-200">
         <button
-          onClick={() => setActiveTab('directory')}
+          onClick={() => handleTabChange('directory')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all ${activeTab === 'directory'
             ? 'border-rose-600 text-rose-600'
             : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -344,7 +434,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
           Company Directory ({totalCompaniesCount || 64})
         </button>
         <button
-          onClick={() => setActiveTab('routes')}
+          onClick={() => handleTabChange('routes')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all ${activeTab === 'routes'
             ? 'border-rose-600 text-rose-600'
             : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -420,10 +510,10 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
                               <img
                                 src={comp.avatar_url}
                                 alt={comp.company_name}
-                                className="w-9 h-9 rounded-xl object-cover border border-slate-200 shadow-xs shrink-0"
+                                className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs shrink-0"
                               />
                             ) : (
-                              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
+                              <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
                                 {getCompanyInitials(comp.company_name)}
                               </div>
                             )}
@@ -634,10 +724,10 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
                               <img
                                 src={group.companyAvatar}
                                 alt={group.companyName}
-                                className="w-8 h-8 rounded-xl object-cover border border-slate-200 shadow-xs shrink-0"
+                                className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs shrink-0"
                               />
                             ) : (
-                              <div className="w-8 h-8 rounded-xl bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center shadow-2xs shrink-0">
+                              <div className="w-9 h-9 rounded-full bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center shadow-2xs shrink-0">
                                 {getCompanyInitials(group.companyName)}
                               </div>
                             )}
@@ -650,9 +740,13 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
                                   </span>
                                 )}
                               </div>
-                              {group.companyEmail && (
-                                <div className="text-[11px] text-slate-400 font-medium">{group.companyEmail}</div>
-                              )}
+                              <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
+                                {group.companyEmail ? (
+                                  <span>{group.companyEmail}</span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">No email linked</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -681,6 +775,8 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
                             onClick={() => {
                               setSelectedCompanyRoutesModal({
                                 companyName: group.companyName,
+                                companyEmail: group.companyEmail,
+                                companyAvatar: group.companyAvatar,
                                 routes: group.routes
                               });
                             }}
@@ -973,17 +1069,32 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
             {/* Modal Header */}
             <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-rose-600 font-extrabold text-base flex items-center justify-center text-white shrink-0">
-                  {getCompanyInitials(selectedCompanyRoutesModal.companyName)}
-                </div>
+                {selectedCompanyRoutesModal.companyAvatar ? (
+                  <img
+                    src={selectedCompanyRoutesModal.companyAvatar}
+                    alt={selectedCompanyRoutesModal.companyName}
+                    className="w-11 h-11 rounded-2xl object-cover border border-white/20 shadow-md shrink-0"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-2xl bg-rose-600 font-extrabold text-base flex items-center justify-center text-white shrink-0">
+                    {getCompanyInitials(selectedCompanyRoutesModal.companyName)}
+                  </div>
+                )}
                 <div>
-                  <h3 className="text-lg font-extrabold text-white font-serif-heading flex items-center gap-2">
-                    <span>{selectedCompanyRoutesModal.companyName}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-extrabold text-white font-serif-heading">
+                      {selectedCompanyRoutesModal.companyName}
+                    </h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-extrabold uppercase border border-rose-500/30">
                       {selectedCompanyRoutesModal.routes.length} Corporate {selectedCompanyRoutesModal.routes.length === 1 ? 'Route' : 'Routes'}
                     </span>
-                  </h3>
-                  <p className="text-xs text-slate-400 font-medium">All corporate dispatches & delivery zone plans created by this company with date, time, & stop details</p>
+                  </div>
+                  {selectedCompanyRoutesModal.companyEmail && (
+                    <div className="text-xs text-slate-300 font-medium flex items-center gap-1.5 mt-0.5">
+                      <span>{selectedCompanyRoutesModal.companyEmail}</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">All corporate dispatches & delivery zone plans created by this company with date, time, & stop details</p>
                 </div>
               </div>
               <button

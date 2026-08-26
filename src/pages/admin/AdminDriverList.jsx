@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Truck,
   ShieldCheck,
@@ -28,13 +29,17 @@ import { supabase, updateDriverVerification, fetchAllRouteBids, updateBidStatus,
 import { formatPhoneNumber } from './components/AdminComponents';
 
 export default function AdminDriverList({ users = [], driversCount = 0, searchQuery = '', setSearchQuery, onRefresh }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl === 'routes' || tabFromUrl === 'saved-routes' ? 'routes' : 'drivers'
+  );
   const [drivers, setDrivers] = useState([]);
   const [bids, setBids] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
-  const [activeTab, setActiveTab] = useState('drivers'); // 'drivers', 'routes', or 'bids'
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [selectedRouteModal, setSelectedRouteModal] = useState(null);
   const [selectedDriverModal, setSelectedDriverModal] = useState(null);
@@ -43,9 +48,34 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
   const [selectedDriverRoutesModal, setSelectedDriverRoutesModal] = useState(null);
   const [expandedRouteId, setExpandedRouteId] = useState(null);
   const [activeDriverModal, setActiveDriverModal] = useState(null);
+  const [routeAuthorsMap, setRouteAuthorsMap] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [totalDriversCount, setTotalDriversCount] = useState(driversCount || 513);
+
+  // Sync URL search param changes to activeTab (e.g. browser back/forward or reload)
+  useEffect(() => {
+    const currentTab = searchParams.get('tab');
+    if (currentTab === 'routes' || currentTab === 'saved-routes') {
+      setActiveTab('routes');
+    } else {
+      setActiveTab('drivers');
+    }
+  }, [searchParams]);
+
+  // Tab switch handler that updates both state & top nav URL query param
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (newTab === 'routes') {
+        next.set('tab', 'routes');
+      } else {
+        next.delete('tab');
+      }
+      return next;
+    }, { replace: true });
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -79,19 +109,30 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
   const groupedRoutesByDriver = React.useMemo(() => {
     const groupsMap = {};
     routes.forEach((r) => {
-      const key = (r.user_id || r.driverName || 'unknown').toLowerCase();
+      const uId = r.user_id ? String(r.user_id).toLowerCase() : '';
+      const dName = r.driverName ? r.driverName.toLowerCase() : '';
+
+      const authorProfile = (uId && routeAuthorsMap[uId]) ||
+        (dName && routeAuthorsMap[dName]) ||
+        (uId && users.find(u => String(u.id).toLowerCase() === uId)) ||
+        (dName && users.find(u => (u.full_name && u.full_name.toLowerCase() === dName) || (u.email && u.email.toLowerCase() === dName))) ||
+        (uId && drivers.find(d => String(d.id).toLowerCase() === uId)) ||
+        (dName && drivers.find(d => (d.full_name && d.full_name.toLowerCase() === dName) || (d.email && d.email.toLowerCase() === dName)));
+
+      const driverEmail = authorProfile?.email ||
+        (r.driverEmail || (r.user_id && String(r.user_id).includes('@') ? r.user_id : (r.driverName && r.driverName.includes('@') ? r.driverName : '')));
+
+      const driverName = authorProfile?.full_name ||
+        (r.driverName && !r.driverName.includes('@') ? r.driverName : (driverEmail ? driverEmail.split('@')[0] : 'Route Driver'));
+
+      const key = (authorProfile?.id || driverEmail || r.user_id || r.driverName || 'unknown').toLowerCase();
       if (!groupsMap[key]) {
-        const matchingDriver = drivers.find(d =>
-          (r.user_id && String(d.id) === String(r.user_id)) ||
-          (d.email && d.email.toLowerCase() === key) ||
-          (d.full_name && d.full_name.toLowerCase() === key)
-        );
         groupsMap[key] = {
           key,
-          driverName: matchingDriver?.full_name || r.driverName || 'Route Driver',
-          driverEmail: matchingDriver?.email || '',
-          driverAvatar: matchingDriver?.avatar_url || matchingDriver?.avatar || matchingDriver?.profile_picture || null,
-          driverMembership: matchingDriver?.membership || 'Free',
+          driverName: driverName,
+          driverEmail: driverEmail,
+          driverAvatar: authorProfile?.avatar_url || authorProfile?.avatar || authorProfile?.profile_picture || null,
+          driverMembership: authorProfile?.membership || 'Free',
           userId: r.user_id,
           routes: []
         };
@@ -110,28 +151,17 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
     });
 
     return groups.sort((a, b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
-  }, [routes, drivers]);
+  }, [routes, drivers, users, routeAuthorsMap]);
 
   const filteredGroupedRoutes = groupedRoutesByDriver.filter(g => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
       g.driverName.toLowerCase().includes(q) ||
+      (g.driverEmail && g.driverEmail.toLowerCase().includes(q)) ||
       g.routes.some(r => r.id?.toLowerCase().includes(q) || r.title?.toLowerCase().includes(q))
     );
   });
-
-  function getFriendlyZoneName(stop, stopsList = []) {
-    if (!stop) return '';
-    if (stop.zoneName) return stop.zoneName;
-    if (!stop.zoneId) return '';
-    if (stop.zoneId.startsWith('zone-')) {
-      return stop.zoneId.replace('zone-', 'Zone ');
-    }
-    const uniqueZoneIds = Array.from(new Set(stopsList.map(s => s.zoneId).filter(Boolean)));
-    const index = uniqueZoneIds.indexOf(stop.zoneId);
-    return index >= 0 ? `Zone ${index + 1}` : 'Zone';
-  }
 
   const pageCacheRef = React.useRef({});
 
@@ -142,7 +172,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
       try {
         const [bidsData, routesRes] = await Promise.allSettled([
           fetchAllRouteBids(),
-          supabase.from('routes').select('id, user_id, title, driver_name, stops_count, distance_miles, duration_minutes, status, created_at').limit(50)
+          supabase.from('routes').select('id, user_id, title, driver_name, stops_count, distance_miles, duration_minutes, status, stops_data, created_at').order('created_at', { ascending: false }).limit(100)
         ]);
 
         if (!isMounted) return;
@@ -152,18 +182,55 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
         }
 
         if (routesRes.status === 'fulfilled' && routesRes.value?.data) {
-          setRoutes(routesRes.value.data.map(r => ({
-            id: r.id,
-            user_id: r.user_id,
-            title: r.title || 'Saved Courier Route',
-            driverName: r.driver_name || 'Solo Driver',
-            vehicle: 'Cargo Van',
-            stopsCount: r.stops_count || 0,
-            distanceMiles: r.distance_miles || 0,
-            durationMinutes: r.duration_minutes || 0,
-            status: r.status || 'ACTIVE',
-            createdAt: r.created_at
-          })));
+          const rawRoutes = routesRes.value.data;
+
+          // Fetch profiles for route authors to ensure emails, names, & avatars are always available
+          const authorIds = Array.from(new Set(rawRoutes.map(r => r.user_id).filter(id => id && /^[0-9a-f-]{36}$/i.test(id))));
+          if (authorIds.length > 0) {
+            supabase
+              .from('profiles')
+              .select('id, email, full_name, avatar_url')
+              .in('id', authorIds)
+              .then(({ data: authorProfiles }) => {
+                if (isMounted && authorProfiles) {
+                  const map = {};
+                  authorProfiles.forEach(p => {
+                    if (p.id) map[p.id.toLowerCase()] = p;
+                    if (p.email) map[p.email.toLowerCase()] = p;
+                    if (p.full_name) map[p.full_name.toLowerCase()] = p;
+                  });
+                  setRouteAuthorsMap(prev => ({ ...prev, ...map }));
+                }
+              })
+              .catch(e => console.warn("Fetch route authors notice:", e));
+          }
+
+          setRoutes(rawRoutes.map(r => {
+            let parsedStops = [];
+            if (Array.isArray(r.stops_data)) {
+              parsedStops = r.stops_data;
+            } else if (typeof r.stops_data === 'string') {
+              try { parsedStops = JSON.parse(r.stops_data); } catch (e) { }
+            } else if (Array.isArray(r.stops)) {
+              parsedStops = r.stops;
+            } else if (typeof r.stops === 'string') {
+              try { parsedStops = JSON.parse(r.stops); } catch (e) { }
+            }
+
+            return {
+              id: r.id,
+              user_id: r.user_id,
+              title: r.title || 'Saved Courier Route',
+              driverName: r.driver_name || 'Solo Driver',
+              vehicle: 'Cargo Van',
+              stopsCount: r.stops_count || (parsedStops.length > 0 ? parsedStops.length : 0),
+              distanceMiles: r.distance_miles || 0,
+              durationMinutes: r.duration_minutes || 0,
+              status: r.status || 'ACTIVE',
+              stops: parsedStops,
+              createdAt: r.created_at
+            };
+          }));
         }
       } catch (subErr) {
         console.warn("Background hydration notice:", subErr);
@@ -414,7 +481,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
       {/* Tabs Selector */}
       <div className="flex border-b border-slate-200">
         <button
-          onClick={() => setActiveTab('drivers')}
+          onClick={() => handleTabChange('drivers')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'drivers'
             ? 'border-rose-600 text-rose-600'
             : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -423,7 +490,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
           Driver Directory ({displayTotalCount})
         </button>
         <button
-          onClick={() => setActiveTab('routes')}
+          onClick={() => handleTabChange('routes')}
           className={`px-4 py-2 text-xs font-extrabold border-b-2 transition-all cursor-pointer ${activeTab === 'routes'
             ? 'border-rose-600 text-rose-600'
             : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -590,6 +657,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                                     driverAvatar: driver.avatar_url || driver.avatar,
                                     routes: driverRoutes
                                   });
+                                  setExpandedRouteId(driverRoutes.length === 1 ? driverRoutes[0].id : null);
                                 }}
                                 className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                               >
@@ -753,9 +821,15 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                                   </span>
                                 )}
                               </div>
-                              {group.driverEmail && (
-                                <div className="text-[11px] text-slate-400 font-medium">{group.driverEmail}</div>
-                              )}
+                              <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
+                                {group.driverEmail ? (
+                                  <>
+                                    <span>{group.driverEmail}</span>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">No email linked</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -784,8 +858,11 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                             onClick={() => {
                               setSelectedDriverRoutesModal({
                                 driverName: group.driverName,
+                                driverEmail: group.driverEmail,
+                                driverAvatar: group.driverAvatar,
                                 routes: group.routes
                               });
+                              setExpandedRouteId(group.routes.length === 1 ? group.routes[0].id : null);
                             }}
                             className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5"
                           >
@@ -1307,13 +1384,21 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                   {(selectedDriverRoutesModal.driverName || 'D').charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="text-lg font-extrabold text-white font-serif-heading flex items-center gap-2">
-                    <span>{selectedDriverRoutesModal.driverName}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-extrabold text-white font-serif-heading">
+                      {selectedDriverRoutesModal.driverName}
+                    </h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-extrabold uppercase border border-rose-500/30">
                       {selectedDriverRoutesModal.routes.length} Saved {selectedDriverRoutesModal.routes.length === 1 ? 'Route' : 'Routes'}
                     </span>
-                  </h3>
-                  <p className="text-xs text-slate-400 font-medium">All delivery routes created and saved by this driver with date, time, & stop details</p>
+                  </div>
+                  {selectedDriverRoutesModal.driverEmail && (
+                    <div className="text-xs text-slate-300 font-medium flex items-center gap-1.5 mt-0.5">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{selectedDriverRoutesModal.driverEmail}</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">All delivery routes created and saved by this driver with date, time, & stop details</p>
                 </div>
               </div>
               <button

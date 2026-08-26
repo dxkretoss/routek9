@@ -234,7 +234,7 @@ export default function AdminExamQuestions() {
   });
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-fadeIn">
+    <div className="mx-auto space-y-8 animate-fadeIn">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>

@@ -571,12 +571,8 @@ export default function AdminPackages() {
       )}
 
       {/* Header Banner & Refresh Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs">
+      <div className='flex justify-between'>
         <div>
-          <div className="flex items-center gap-2 text-rose-600 text-xs font-bold uppercase tracking-wider mb-1">
-            <Package className="w-4 h-4" />
-            <span>Mobile App Live Sync Engine</span>
-          </div>
           <h2 className="text-2xl font-black text-[#0b132b] font-serif-heading tracking-tight">
             Package Listing & Pricing Management
           </h2>
@@ -584,6 +580,8 @@ export default function AdminPackages() {
             Configure package sizes, tiers, base rates, and distance fees for the RouteK9 Flutter app.
           </p>
         </div>
+
+
 
         <div className="flex items-center gap-3">
           <button

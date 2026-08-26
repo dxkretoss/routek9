@@ -337,7 +337,7 @@ export default function AdminDispatchOrders() {
   const completedCount = orders.filter(o => o.status === 'COMPLETED').length;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-fadeIn">
+    <div className=" mx-auto space-y-8 animate-fadeIn">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
@@ -537,26 +537,19 @@ export default function AdminDispatchOrders() {
                         <div className="text-[10px] text-slate-400 font-bold">{order.distanceMiles} mi</div>
                       </td>
 
-                      {/* Status Dropdown Override */}
+                      {/* Read-Only Live Status Badge */}
                       <td className="p-4 text-center">
-                        <div className="relative inline-block">
-                          <select
-                            value={order.status}
-                            onChange={e => handleStatusChange(order.id, e.target.value)}
-                            className={`appearance-none pl-3 pr-7 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-pointer focus:outline-none ${isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              isInTransit ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                isAccepted ? 'bg-amber-50  text-amber-700  border-amber-200' :
-                                  'bg-sky-50    text-sky-700    border-sky-200'
-                              }`}
-                          >
-                            <option value="AVAILABLE">AVAILABLE</option>
-                            <option value="ACCEPTED">ACCEPTED</option>
-                            <option value="IN_TRANSIT">IN TRANSIT</option>
-                            <option value="COMPLETED">COMPLETED</option>
-                            <option value="CANCELLED">CANCELLED</option>
-                          </select>
-                          <ChevronDown className="w-2.5 h-2.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-current" />
-                        </div>
+                        <span
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
+                            isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                            isInTransit ? 'bg-purple-50 text-purple-700 border-purple-300' :
+                            isAccepted ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                            order.status === 'CANCELLED' ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                            'bg-sky-50 text-sky-700 border-sky-300'
+                          }`}
+                        >
+                          ● {order.status === 'IN_TRANSIT' ? 'IN TRANSIT' : (order.status || 'AVAILABLE')}
+                        </span>
                       </td>
 
                       {/* Actions */}
@@ -642,9 +635,9 @@ export default function AdminDispatchOrders() {
                       {selectedOrder.category || 'Instant'}
                     </span>
                     <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${selectedOrder.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
-                        selectedOrder.status === 'IN_TRANSIT' ? 'bg-indigo-100 text-indigo-800' :
-                          selectedOrder.status === 'ACCEPTED' ? 'bg-blue-100 text-blue-800' :
-                            'bg-amber-100 text-amber-800'
+                      selectedOrder.status === 'IN_TRANSIT' ? 'bg-indigo-100 text-indigo-800' :
+                        selectedOrder.status === 'ACCEPTED' ? 'bg-blue-100 text-blue-800' :
+                          'bg-amber-100 text-amber-800'
                       }`}>
                       {selectedOrder.order_status || selectedOrder.status}
                     </span>
