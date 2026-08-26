@@ -166,15 +166,13 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
         body: JSON.stringify({
           message: {
             token: cleanToken,
-            notification: {
-              title: title || 'RouteK9 Notification',
-              body: body || 'You have a new update in RouteK9.'
-            },
             data: {
               click_action: 'FLUTTER_NOTIFICATION_CLICK',
               title: title || 'RouteK9 Notification',
               body: body || 'You have a new update in RouteK9.',
               tag: orderTag,
+              orderRef: orderMatch ? orderMatch[0].toUpperCase() : '',
+              url: String(dataPayload?.url || dataPayload?.click_action || '/dispatch-orders'),
               ...Object.fromEntries(
                 Object.entries(dataPayload).map(([k, v]) => [k, String(v ?? '')])
               )
@@ -182,6 +180,8 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
             android: {
               priority: 'HIGH',
               notification: {
+                title: title || 'RouteK9 Notification',
+                body: body || 'You have a new update in RouteK9.',
                 sound: 'default',
                 channel_id: 'high_importance_channel',
                 notification_priority: 'PRIORITY_HIGH',
@@ -194,15 +194,6 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
                 Urgency: 'high',
                 Topic: orderTag
               },
-              notification: {
-                title: title || 'RouteK9 Notification',
-                body: body || 'You have a new update in RouteK9.',
-                icon: '/favicon.png',
-                badge: '/favicon.png',
-                tag: orderTag,
-                renotify: false,
-                requireInteraction: false
-              },
               fcm_options: {
                 link: String(dataPayload?.url || dataPayload?.click_action || '/dispatch-orders')
               }
@@ -210,6 +201,10 @@ export async function sendFcmV1PushNotification(fcmToken, title, body, dataPaylo
             apns: {
               payload: {
                 aps: {
+                  alert: {
+                    title: title || 'RouteK9 Notification',
+                    body: body || 'You have a new update in RouteK9.'
+                  },
                   sound: 'default',
                   badge: 1,
                   'content-available': 1,
