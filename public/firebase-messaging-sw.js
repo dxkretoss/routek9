@@ -26,13 +26,27 @@ const messaging = firebase.messaging();
 
 const recentSwPushes = new Map();
 
+// Synchronize with active tabs via BroadcastChannel to prevent duplicate notifications
+if (typeof BroadcastChannel !== 'undefined') {
+  try {
+    const swNotifChannel = new BroadcastChannel('routek9_notif_channel');
+    swNotifChannel.onmessage = (event) => {
+      if (event.data && event.data.tag) {
+        recentSwPushes.set(event.data.tag, event.data.time || Date.now());
+      }
+    };
+  } catch (e) {
+    console.warn('[firebase-messaging-sw.js] BroadcastChannel notice:', e);
+  }
+}
+
 function displayPushNotification(title, body, url, tag) {
   const combinedText = `${title || ''} ${body || ''}`;
   const orderMatch = combinedText.match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
   const dedupTag = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : (tag || 'routek9-general');
 
   const now = Date.now();
-  if (recentSwPushes.has(dedupTag) && (now - recentSwPushes.get(dedupTag) < 20000)) {
+  if (recentSwPushes.has(dedupTag) && (now - recentSwPushes.get(dedupTag) < 45000)) {
     console.log('[firebase-messaging-sw.js] Suppressed duplicate SW notification for:', dedupTag);
     return Promise.resolve();
   }
@@ -53,12 +67,12 @@ function displayPushNotification(title, body, url, tag) {
   return self.registration.showNotification(title || 'RouteK9 Notification', options);
 }
 
-messaging.onBackgroundMessage((payload) => {
+messaging.onBackgroundMessage(async (payload) => {
   console.log('[firebase-messaging-sw.js] Received background push message:', payload);
 
   // If the push message already had a notification block, Chrome handles it natively with tag deduplication
   if (payload.notification) {
-    return Promise.resolve();
+    return;
   }
 
   const title = payload.data?.title || 'RouteK9 Notification';
@@ -66,14 +80,29 @@ messaging.onBackgroundMessage((payload) => {
   const url = payload.data?.url || payload.data?.click_action || '/dispatch-orders';
   const tag = payload.data?.tag || payload.data?.orderRef || null;
 
+  const combinedText = `${title || ''} ${body || ''}`;
+  const orderMatch = combinedText.match(/RK-[A-Za-z0-9]+|ORD-[A-Za-z0-9]+/i);
+  const dedupTag = orderMatch ? `order-${orderMatch[0].toUpperCase()}` : (tag || 'routek9-general');
+
+  const now = Date.now();
+  if (recentSwPushes.has(dedupTag) && (now - recentSwPushes.get(dedupTag) < 45000)) {
+    console.log('[firebase-messaging-sw.js] Order already displayed by active tab. Suppressing duplicate:', dedupTag);
+    return;
+  }
+
   // Only display service worker background notification if NO RouteK9 web tabs are open
-  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+  try {
+    const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (windowClients && windowClients.length > 0) {
       console.log('[firebase-messaging-sw.js] Web tab is open; suppressing duplicate SW background push banner.');
-      return Promise.resolve();
+      recentSwPushes.set(dedupTag, now);
+      return;
     }
-    return displayPushNotification(title, body, url, tag);
-  });
+  } catch (err) {
+    console.warn('[firebase-messaging-sw.js] Clients check error:', err);
+  }
+
+  return displayPushNotification(title, body, url, dedupTag);
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -97,4 +126,3 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
-

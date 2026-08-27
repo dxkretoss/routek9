@@ -4,7 +4,7 @@
  * proximity queries, database notifications, and browser alert guards across the entire app.
  */
 
-export const DEFAULT_DISPATCH_RADIUS_MILES = 25;
+export const DEFAULT_DISPATCH_RADIUS_MILES = 25000;
 
 /**
  * Helper to compute Haversine great-circle distance between two GPS coordinates in miles

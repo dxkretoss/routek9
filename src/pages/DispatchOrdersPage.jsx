@@ -442,13 +442,13 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
       return true;
     })
     .sort((a, b) => {
-      // Sort nearest pickup orders first when distance is available
-      if (a.deadheadMiles !== null && b.deadheadMiles !== null) {
-        return a.deadheadMiles - b.deadheadMiles;
+      // Sort newest orders first (most recently placed order at the top)
+      const timeA = a.rawRow?.created_at ? new Date(a.rawRow.created_at).getTime() : 0;
+      const timeB = b.rawRow?.created_at ? new Date(b.rawRow.created_at).getTime() : 0;
+      if (timeB !== timeA) {
+        return timeB - timeA;
       }
-      if (a.deadheadMiles !== null) return -1;
-      if (b.deadheadMiles !== null) return 1;
-      return 0;
+      return String(b.rawId || '').localeCompare(String(a.rawId || ''));
     });
 
   // Reset pagination when any search or filter criteria changes
@@ -471,17 +471,29 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
 
   const activeDriverId = getActiveDriverId();
 
-  // Active Deliveries (Accepted or In Progress) assigned to logged-in driver
-  const activeDeliveries = orders.filter(o =>
-    (o.status === 'ACCEPTED' || o.status === 'IN_TRANSIT' || o.dbStatus === 'accepted' || o.dbStatus === 'in_progress' || o.dbStatus === 'ongoing') &&
-    (o.assignedDriver?.id === activeDriverId || !o.assignedDriver?.id || o.rawRow?.driver_id === activeDriverId)
-  );
+  // Active Deliveries (Accepted or In Progress) assigned to logged-in driver, sorted newest first
+  const activeDeliveries = orders
+    .filter(o =>
+      (o.status === 'ACCEPTED' || o.status === 'IN_TRANSIT' || o.dbStatus === 'accepted' || o.dbStatus === 'in_progress' || o.dbStatus === 'ongoing') &&
+      (o.assignedDriver?.id === activeDriverId || !o.assignedDriver?.id || o.rawRow?.driver_id === activeDriverId)
+    )
+    .sort((a, b) => {
+      const timeA = a.rawRow?.created_at ? new Date(a.rawRow.created_at).getTime() : 0;
+      const timeB = b.rawRow?.created_at ? new Date(b.rawRow.created_at).getTime() : 0;
+      return timeB - timeA;
+    });
 
-  // Completed History Deliveries assigned to logged-in driver
-  const completedOrders = orders.filter(o =>
-    (o.status === 'COMPLETED' || o.dbStatus === 'delivered' || o.dbStatus === 'completed') &&
-    (o.assignedDriver?.id === activeDriverId || o.rawRow?.driver_id === activeDriverId)
-  );
+  // Completed History Deliveries assigned to logged-in driver, sorted newest first
+  const completedOrders = orders
+    .filter(o =>
+      (o.status === 'COMPLETED' || o.dbStatus === 'delivered' || o.dbStatus === 'completed') &&
+      (o.assignedDriver?.id === activeDriverId || o.rawRow?.driver_id === activeDriverId)
+    )
+    .sort((a, b) => {
+      const timeA = a.rawRow?.created_at ? new Date(a.rawRow.created_at).getTime() : 0;
+      const timeB = b.rawRow?.created_at ? new Date(b.rawRow.created_at).getTime() : 0;
+      return timeB - timeA;
+    });
 
   const acceptedOrders = activeDeliveries;
   const totalEarnings = completedOrders.reduce((sum, o) => sum + (parseFloat(o.price) || 0), 0);
@@ -937,7 +949,7 @@ export default function DispatchOrdersPage({ currentUser, onLogout }) {
                         Nearby Orders Feed ({DEFAULT_DISPATCH_RADIUS_MILES} Mile Radius)
                       </h4>
                       <p className="text-[11px] text-rose-700/80 font-medium">
-                        Showing live orders closest to your current location sorted by nearest pickup point.
+                        Showing newest live orders within your dispatch area.
                       </p>
                     </div>
                   </div>

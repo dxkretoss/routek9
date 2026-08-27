@@ -137,8 +137,8 @@ export function showBrowserDesktopNotification(title, options = {}, isRetry = fa
 
   const now = Date.now();
 
-  // 1. In-memory check: Suppress duplicate within 30s
-  if (recentDispatchedNotifications.has(dedupKey) && (now - recentDispatchedNotifications.get(dedupKey) < 30000)) {
+  // 1. In-memory check: Suppress duplicate within 45s
+  if (recentDispatchedNotifications.has(dedupKey) && (now - recentDispatchedNotifications.get(dedupKey) < 45000)) {
     return;
   }
 
@@ -146,7 +146,7 @@ export function showBrowserDesktopNotification(title, options = {}, isRetry = fa
   try {
     const storageKey = `routek9_notif_barrier_${dedupKey}`;
     const lastFired = localStorage.getItem(storageKey);
-    if (lastFired && (now - Number(lastFired) < 30000)) {
+    if (lastFired && (now - Number(lastFired) < 45000)) {
       return;
     }
     localStorage.setItem(storageKey, String(now));
@@ -155,6 +155,15 @@ export function showBrowserDesktopNotification(title, options = {}, isRetry = fa
   }
 
   recentDispatchedNotifications.set(dedupKey, now);
+
+  // 3. Synchronize with Service Worker via BroadcastChannel so it never fires a second notification
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('routek9_notif_channel');
+      bc.postMessage({ type: 'NOTIFICATION_SHOWN', tag: dedupKey, time: now });
+      bc.close();
+    }
+  } catch (e) {}
 
   const defaultOptions = {
     icon: '/favicon.png',
