@@ -88,9 +88,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
 
         const revenuePromise = supabase
           .from('transactions')
-          .select('amount, status')
-          .eq('status', 'Succeeded')
-          .limit(5);
+          .select('amount, status');
 
         const coursesPromise = getCourses();
 
@@ -185,13 +183,12 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
         }
 
         // ── Process Revenue ──
-        if (revRes.status === 'fulfilled' && revRes.value?.data && revRes.value.data.length > 0) {
-          const sum = revRes.value.data.reduce((acc, tx) => {
-            if (tx.amount) {
-              const num = parseFloat(String(tx.amount).replace(/[^0-9.]/g, ''));
-              return acc + (isNaN(num) ? 0 : num);
-            }
-            return acc;
+        if (revRes.status === 'fulfilled' && Array.isArray(revRes.value?.data)) {
+          const succeededTx = revRes.value.data.filter(tx => (tx.status || 'Succeeded').toLowerCase() === 'succeeded');
+          const sum = succeededTx.reduce((acc, tx) => {
+            const amtStr = String(tx.amount || '0');
+            const num = parseFloat(amtStr.replace(/[^0-9.]/g, ''));
+            return acc + (isNaN(num) ? 0 : num);
           }, 0);
           setTotalRevenue(sum);
         }
