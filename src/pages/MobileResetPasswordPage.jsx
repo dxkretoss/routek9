@@ -4,7 +4,7 @@ import { Smartphone, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, KeyR
 import { supabase } from '../lib/supabase';
 
 /**
- * Multi-strategy helper to verify Supabase recovery token/code without requiring a local PKCE code verifier
+ * Multi-strategy helper to verify Supabase recovery token/code across devices and flows
  */
 async function establishRecoverySession() {
   try {
@@ -23,17 +23,31 @@ async function establishRecoverySession() {
   const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
   const searchParams = new URLSearchParams(search);
 
-  const code = searchParams.get('code') || hashParams.get('code');
+  // Strategy 1: URL Hash with access_token & refresh_token (Implicit Flow - works across all devices)
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+  if (accessToken && refreshToken) {
+    try {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (e) {
+      console.warn("setSession error:", e);
+    }
+  }
+
+  // Strategy 2: verifyOtp using token_hash (Standard Supabase password recovery OTP)
   const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
   const type = searchParams.get('type') || hashParams.get('type') || 'recovery';
 
-  const tokenToVerify = tokenHash || code;
-
-  if (tokenToVerify) {
-    // Strategy 1: verifyOtp using token_hash (Standard Supabase password recovery)
+  if (tokenHash) {
     try {
       const { data, error } = await supabase.auth.verifyOtp({
-        token_hash: tokenToVerify,
+        token_hash: tokenHash,
         type: type === 'recovery' ? 'recovery' : type
       });
       if (!error && data?.session) {
@@ -42,23 +56,13 @@ async function establishRecoverySession() {
     } catch (err) {
       console.warn("verifyOtp token_hash notice:", err);
     }
+  }
 
-    // Strategy 2: verifyOtp using token
+  // Strategy 3: exchangeCodeForSession (PKCE authorization code flow)
+  const code = searchParams.get('code') || hashParams.get('code');
+  if (code) {
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        token: tokenToVerify,
-        type: type === 'recovery' ? 'recovery' : type
-      });
-      if (!error && data?.session) {
-        return data.session;
-      }
-    } catch (err) {
-      console.warn("verifyOtp token notice:", err);
-    }
-
-    // Strategy 3: exchangeCodeForSession (If local PKCE verifier exists)
-    try {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(tokenToVerify);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error && data?.session) {
         return data.session;
       }
@@ -91,6 +95,37 @@ export default function MobileResetPasswordPage() {
   const [isExpired, setIsExpired] = useState(false);
   const [expiredReason, setExpiredReason] = useState('');
   const [checkingLink, setCheckingLink] = useState(true);
+
+  // Fallback resend reset link state
+  const [resendEmail, setResendEmail] = useState('');
+  const [resending, setResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
+  const [resendError, setResendError] = useState(null);
+
+  const handleResendLink = async (e) => {
+    e.preventDefault();
+    const cleanEmail = resendEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setResendError("Please enter your email address.");
+      return;
+    }
+    try {
+      setResending(true);
+      setResendError(null);
+      setResendSuccess(false);
+
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/mobile-reset-password`
+      });
+      if (error) throw error;
+      setResendSuccess(true);
+    } catch (err) {
+      console.error("Resend reset link error:", err);
+      setResendError(err.message || "Failed to send reset link. Please check your email.");
+    } finally {
+      setResending(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -165,7 +200,7 @@ export default function MobileResetPasswordPage() {
         } else {
           if (isMounted) {
             setIsExpired(true);
-            setExpiredReason("Invalid or expired reset link. Please request a new password reset link from your RouteK9 Mobile App.");
+            setExpiredReason("Invalid or expired reset link. Please request a fresh reset link below.");
           }
         }
       } catch (err) {
@@ -214,7 +249,7 @@ export default function MobileResetPasswordPage() {
       const session = await establishRecoverySession();
 
       if (!session) {
-        setError("Auth session missing or reset link expired. Please request a new password reset link from your mobile app.");
+        setError("Auth session missing or reset link expired. Please request a fresh password reset link below.");
         setLoading(false);
         return;
       }
@@ -293,30 +328,79 @@ export default function MobileResetPasswordPage() {
             <p className="text-xs font-semibold text-slate-300">Verifying secure mobile access token...</p>
           </div>
         ) : isExpired ? (
-          /* State 2: Expired or Already Used Token */
+          /* State 2: Expired or Cross-Device Link */
           <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-center space-y-4 animate-scaleUp">
             <div className="w-12 h-12 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400 mx-auto border border-rose-500/40">
               <AlertCircle className="w-6 h-6 text-rose-400" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-base font-extrabold text-white">Reset Link Expired or Invalid</h4>
+              <h4 className="text-base font-extrabold text-white">Reset Link Expired or Cross-Device</h4>
               <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                {expiredReason || "This password reset link has already been used or has expired. Please open the RouteK9 Mobile App to request a new link."}
+                {expiredReason || "This security link has expired or was initiated on another device. Enter your email below to receive a fresh password reset link."}
               </p>
             </div>
-            <div className="pt-2 space-y-2">
+
+            {/* Inline Resend Reset Email Form */}
+            {resendSuccess ? (
+              <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-xs font-semibold space-y-1">
+                <div className="flex items-center justify-center gap-1.5 font-bold text-white">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Fresh Reset Link Sent!</span>
+                </div>
+                <p className="text-[11px] text-emerald-300">
+                  Please check your inbox at <strong className="text-white">{resendEmail}</strong> and click the link.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleResendLink} className="space-y-2.5 pt-1 text-left">
+                {resendError && (
+                  <div className="p-2.5 rounded-lg bg-rose-500/20 border border-rose-500/30 text-rose-300 text-[11px] font-semibold">
+                    {resendError}
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-300">
+                    Your Registered Email Address <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="Enter your email"
+                    value={resendEmail}
+                    onChange={(e) => setResendEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:bg-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={resending}
+                  className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {resending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sending Link...</span>
+                    </>
+                  ) : (
+                    <span>Send Fresh Reset Link</span>
+                  )}
+                </button>
+              </form>
+            )}
+
+            <div className="pt-2 border-t border-slate-700/50 space-y-2">
               <a
                 href="routek9://login"
-                className="w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-2.5 px-4 bg-white/10 hover:bg-white/20 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Smartphone className="w-4 h-4" />
                 <span>Open RouteK9 Mobile App</span>
               </a>
               <Link
                 to="/"
-                className="block w-full py-2.5 px-4 bg-white/10 hover:bg-white/20 text-slate-200 rounded-xl text-xs font-bold transition-all text-center"
+                className="block w-full py-2 text-slate-400 hover:text-white text-xs font-medium transition-colors text-center"
               >
-                Back to Website
+                ← Back to Home
               </Link>
             </div>
           </div>
@@ -372,7 +456,7 @@ export default function MobileResetPasswordPage() {
             {/* New Password Field */}
             <div className="space-y-1.5 text-left">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-                New Password
+                New Password <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -397,7 +481,7 @@ export default function MobileResetPasswordPage() {
             {/* Confirm Password Field */}
             <div className="space-y-1.5 text-left">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-                Confirm New Password
+                Confirm New Password <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />

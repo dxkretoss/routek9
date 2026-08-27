@@ -5,7 +5,7 @@ import { ShieldCheck, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Key
 import { supabase } from '../lib/supabase';
 
 /**
- * Multi-strategy helper to verify Supabase recovery token/code without requiring a local PKCE code verifier
+ * Multi-strategy helper to verify Supabase recovery token/code across devices and flows
  */
 async function establishRecoverySession() {
   try {
@@ -23,17 +23,31 @@ async function establishRecoverySession() {
   const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
   const searchParams = new URLSearchParams(search);
 
-  const code = searchParams.get('code') || hashParams.get('code');
+  // Strategy 1: URL Hash with access_token & refresh_token (Implicit Flow - works across all devices)
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+  if (accessToken && refreshToken) {
+    try {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
+      if (!error && data?.session) {
+        return data.session;
+      }
+    } catch (e) {
+      console.warn("setSession error:", e);
+    }
+  }
+
+  // Strategy 2: verifyOtp using token_hash (Standard Supabase password recovery OTP)
   const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
   const type = searchParams.get('type') || hashParams.get('type') || 'recovery';
 
-  const tokenToVerify = tokenHash || code;
-
-  if (tokenToVerify) {
-    // Strategy 1: verifyOtp using token_hash
+  if (tokenHash) {
     try {
       const { data, error } = await supabase.auth.verifyOtp({
-        token_hash: tokenToVerify,
+        token_hash: tokenHash,
         type: type === 'recovery' ? 'recovery' : type
       });
       if (!error && data?.session) {
@@ -42,23 +56,13 @@ async function establishRecoverySession() {
     } catch (err) {
       console.warn("verifyOtp token_hash notice:", err);
     }
+  }
 
-    // Strategy 2: verifyOtp using token
+  // Strategy 3: exchangeCodeForSession (PKCE authorization code flow)
+  const code = searchParams.get('code') || hashParams.get('code');
+  if (code) {
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        token: tokenToVerify,
-        type: type === 'recovery' ? 'recovery' : type
-      });
-      if (!error && data?.session) {
-        return data.session;
-      }
-    } catch (err) {
-      console.warn("verifyOtp token notice:", err);
-    }
-
-    // Strategy 3: exchangeCodeForSession
-    try {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(tokenToVerify);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error && data?.session) {
         return data.session;
       }
@@ -373,7 +377,7 @@ export default function ResetPasswordPage() {
               {/* New Password Field */}
               <div className="space-y-1.5 text-left">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  New Password
+                  New Password <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -398,7 +402,7 @@ export default function ResetPasswordPage() {
               {/* Confirm Password Field */}
               <div className="space-y-1.5 text-left">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Confirm New Password
+                  Confirm New Password <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
