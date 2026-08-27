@@ -62,7 +62,7 @@ const LOCATION_SUGGESTIONS = [
   'NC (North Carolina)'
 ];
 
-export default function CompaniesPage({ currentUser, onLogout }) {
+export default function CompaniesPage({ currentUser, onLogout, onOpenPricing, onTriggerGateModal }) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [stateFilter, setStateFilter] = useState('');
@@ -75,6 +75,19 @@ export default function CompaniesPage({ currentUser, onLogout }) {
   const handleContactCompany = (company) => {
     if (!currentUser) {
       navigate('/login?redirect=/companies');
+      return;
+    }
+    if (!currentUser.isPro) {
+      if (onTriggerGateModal) {
+        onTriggerGateModal({
+          title: "Courier Company Direct Inquiry Locked",
+          message: "Contacting verified courier companies and submitting direct route contract applications requires an active Route K9 PRO membership."
+        });
+      } else if (onOpenPricing) {
+        onOpenPricing();
+      } else {
+        navigate('/pricing');
+      }
       return;
     }
     setSelectedCompany(company);
