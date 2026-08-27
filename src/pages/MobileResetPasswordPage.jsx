@@ -187,20 +187,14 @@ export default function MobileResetPasswordPage() {
         // Attempt establishing recovery session across all strategies
         const session = await establishRecoverySession();
 
-        const hasRecoveryToken =
-          Boolean(code) ||
-          Boolean(tokenHash) ||
-          hash.includes('access_token=') ||
-          hash.includes('type=recovery');
-
-        if (session || hasRecoveryToken) {
+        if (session) {
           if (isMounted) {
             setIsExpired(false);
           }
         } else {
           if (isMounted) {
             setIsExpired(true);
-            setExpiredReason("Invalid or expired reset link. Please request a fresh reset link below.");
+            setExpiredReason("This password reset link was requested on your mobile device or has expired. Please enter your email below to receive a fresh reset link on this browser, or open the link on your mobile phone.");
           }
         }
       } catch (err) {
