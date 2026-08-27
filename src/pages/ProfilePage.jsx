@@ -227,7 +227,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    {accountRole === 'company' ? 'Company / Business Name' : 'Full Name (Certificate & Contract Bids)'}
+                    {accountRole === 'company' ? 'Company / Business Name' : 'Full Name (Certificate & Contract Bids)'} <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -243,7 +243,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Email Address
+                    Email Address <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -262,7 +262,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Phone Number
+                    Phone Number <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <PhoneInput
@@ -316,7 +316,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Primary Vehicle Class
+                    Primary Vehicle Class <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     options={PRIMARY_VEHICLE_CLASSES}
@@ -330,7 +330,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Home State
+                    Home State <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     options={US_STATES_LIST}
@@ -344,7 +344,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Operating Metro / City
+                    Operating Metro / City <span className="text-rose-500">*</span>
                   </label>
                   <CitySelect
                     value={cityName}

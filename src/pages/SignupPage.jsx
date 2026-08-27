@@ -107,6 +107,15 @@ export default function SignupPage({ onSignup }) {
       }
     }
 
+    // Driver Validation
+    if (signupRole === 'driver') {
+      if (!vehicleType || !vehicleType.trim()) {
+        setError("Please select your primary vehicle class.");
+        setLoading(false);
+        return;
+      }
+    }
+
     // Fallback name
     nameToSave = nameToSave || cleanEmail.split('@')[0] || 'User';
 
@@ -525,7 +534,7 @@ export default function SignupPage({ onSignup }) {
               {/* Name Field */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  {signupRole === 'driver' ? 'Full Name' : 'Company Name'}
+                  {signupRole === 'driver' ? 'Full Name' : 'Company Name'} <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -545,7 +554,7 @@ export default function SignupPage({ onSignup }) {
               {/* Email Field */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Email Address
+                  Email Address <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -567,12 +576,15 @@ export default function SignupPage({ onSignup }) {
                 <div className="space-y-3 animate-fadeIn">
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                      Primary Vehicle Class
+                      Primary Vehicle Class <span className="text-rose-500">*</span>
                     </label>
                     <CustomSelect
                       options={PRIMARY_VEHICLE_CLASSES}
                       value={vehicleType}
-                      onChange={(val) => setVehicleType(val)}
+                      onChange={(val) => {
+                        setVehicleType(val);
+                        if (error && error.includes('vehicle class')) setError(null);
+                      }}
                       placeholder="Select Vehicle Class"
                       icon={Truck}
                       searchable={false}
@@ -584,7 +596,7 @@ export default function SignupPage({ onSignup }) {
               {/* Password Field */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Password
+                  Password <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />

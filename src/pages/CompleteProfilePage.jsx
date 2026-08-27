@@ -382,7 +382,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
             {/* FULL NAME / COMPANY NAME */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                {role === 'company' ? 'COMPANY NAME' : 'FULL NAME'}
+                {role === 'company' ? 'COMPANY NAME' : 'FULL NAME'} <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 {role === 'company' ? (
@@ -427,7 +427,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
             {role === 'driver' && (
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  PRIMARY VEHICLE CLASS
+                  PRIMARY VEHICLE CLASS <span className="text-rose-500">*</span>
                 </label>
                 <CustomSelect
                   options={PRIMARY_VEHICLE_CLASSES}
@@ -443,7 +443,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
             {/* PHONE NUMBER */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                PHONE NUMBER
+                PHONE NUMBER <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <PhoneInput
@@ -481,7 +481,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  STATE CODE
+                  STATE CODE <span className="text-rose-500">*</span>
                 </label>
                 <CustomSelect
                   options={usStates}
@@ -495,7 +495,7 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
 
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  METRO / CITY
+                  METRO / CITY <span className="text-rose-500">*</span>
                 </label>
                 <CitySelect
                   value={city}

@@ -481,7 +481,7 @@ export default function LoginPage({ onLogin }) {
                 {/* New Password */}
                 <div className="space-y-1.5 text-left">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    New Password
+                    New Password <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -506,7 +506,7 @@ export default function LoginPage({ onLogin }) {
                 {/* Confirm Password */}
                 <div className="space-y-1.5 text-left">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Confirm New Password
+                    Confirm New Password <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -637,7 +637,7 @@ export default function LoginPage({ onLogin }) {
                 {/* Email Field */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Email Address
+                    Email Address <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -658,7 +658,7 @@ export default function LoginPage({ onLogin }) {
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                      Password
+                      Password <span className="text-rose-500">*</span>
                     </label>
                     <button
                       type="button"
@@ -780,7 +780,7 @@ export default function LoginPage({ onLogin }) {
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Your Email Address
+                    Your Email Address <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
