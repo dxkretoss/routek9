@@ -1,11 +1,11 @@
-/**
- * Serverless Function for Stripe Checkout Session creation
- * Enforces Server-Side Authoritative Pricing & Database Price Verification
- * - Reflects real-time Admin price updates from Supabase database.
- * - Blocks client-side Inspect Element / DevTools price tampering.
- */
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const DEFAULT_CATALOG = {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const OFFICIAL_PRICE_CATALOG: Record<string, { name: string; amountInCents: number; isSubscription: boolean; interval?: string }> = {
   // Pro Subscriptions
   'pro_monthly': { name: 'Route K9 PRO Membership (Monthly)', amountInCents: 2900, isSubscription: true, interval: 'month' },
   'pro_yearly': { name: 'Route K9 PRO Membership (Yearly)', amountInCents: 29900, isSubscription: true, interval: 'year' },
@@ -25,19 +25,16 @@ const DEFAULT_CATALOG = {
   'courier-dispatcher': { name: 'Courier Dispatcher Training', amountInCents: 4900, isSubscription: false },
 };
 
-async function fetchCourseFromDb(courseId, supabaseUrl, supabaseAnonKey) {
+async function fetchCourseFromDb(courseId: string, supabaseUrl: string, supabaseAnonKey: string) {
   if (!courseId) return null;
   const cleanId = String(courseId).replace(/^course_/, '').toLowerCase().trim();
   try {
-    const sUrl = supabaseUrl || process.env.VITE_SUPABASE_URL || 'https://qgriomlngioeiterbeii.supabase.co';
-    const sKey = supabaseAnonKey || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    if (!sKey) return null;
-
-    const url = `${sUrl}/rest/v1/courses?id=eq.${encodeURIComponent(cleanId)}&select=title,price,status`;
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    const url = `${supabaseUrl}/rest/v1/courses?id=eq.${encodeURIComponent(cleanId)}&select=title,price,status`;
     const res = await fetch(url, {
       headers: {
-        'apikey': sKey,
-        'Authorization': `Bearer ${sKey}`,
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${supabaseAnonKey}`,
       }
     });
 
@@ -61,58 +58,52 @@ async function fetchCourseFromDb(courseId, supabaseUrl, supabaseAnonKey) {
   return null;
 }
 
-async function resolveAuthoritativePrice(priceId, clientProductName) {
-  const cleanId = String(priceId || '').replace(/^course_/, '').toLowerCase().trim();
-
-  // 1. Pro Subscriptions
-  if (cleanId.includes('yearly')) {
-    return { name: 'Route K9 PRO (Yearly)', amountInCents: 29900, isSubscription: true, interval: 'year' };
-  }
-  if (cleanId.includes('monthly') || cleanId.includes('pro')) {
-    return { name: 'Route K9 PRO (Monthly)', amountInCents: 2900, isSubscription: true, interval: 'month' };
-  }
-  if (cleanId.includes('hipaa') || cleanId.includes('cert')) {
-    return { name: 'HIPAA & Bloodborne Pathogens Certification', amountInCents: 2500, isSubscription: false };
-  }
-
-  // 2. Fetch live price set by Admin in Supabase database
-  const dbResult = await fetchCourseFromDb(cleanId);
-  if (dbResult) {
-    return dbResult;
-  }
-
-  // 3. Fallback to default catalog
-  if (DEFAULT_CATALOG[cleanId]) {
-    return DEFAULT_CATALOG[cleanId];
-  }
-
-  // 4. Strict default minimum ($49.00 / 4900 cents)
-  return {
-    name: clientProductName || 'Route K9 Training Course',
-    amountInCents: 4900,
-    isSubscription: false,
-  };
-}
-
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const key = (process.env.STRIPE_SECRET_KEY || process.env.VITE_STRIPE_SECRET_KEY || '').trim();
-    if (!key) {
-      return res.status(400).json({ error: 'STRIPE_SECRET_KEY is not configured on server' });
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY") || Deno.env.get("VITE_STRIPE_SECRET_KEY");
+    if (!stripeKey) {
+      return new Response(
+        JSON.stringify({ error: "STRIPE_SECRET_KEY is not configured in Lovable Secrets." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    const { priceId, returnUrl, productName, amountInCents, email } = req.body || {};
+    const { priceId, returnUrl, productName, email } = await req.json();
 
     if (!returnUrl) {
-      return res.status(400).json({ error: 'returnUrl is required' });
+      return new Response(
+        JSON.stringify({ error: "returnUrl is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // SERVER-SIDE AUTHORITATIVE PRICE VALIDATION (Blocks DevTools / Inspect Element tampering)
-    const verified = await resolveAuthoritativePrice(priceId, productName);
+    const cleanId = String(priceId || '').replace(/^course_/, '').toLowerCase().trim();
+    let verified: { name: string; amountInCents: number; isSubscription: boolean; interval?: string } | null = null;
+
+    if (cleanId.includes('yearly')) {
+      verified = { name: 'Route K9 PRO (Yearly)', amountInCents: 29900, isSubscription: true, interval: 'year' };
+    } else if (cleanId.includes('monthly') || cleanId.includes('pro')) {
+      verified = { name: 'Route K9 PRO (Monthly)', amountInCents: 2900, isSubscription: true, interval: 'month' };
+    } else if (cleanId.includes('hipaa') || cleanId.includes('cert')) {
+      verified = { name: 'HIPAA & Bloodborne Pathogens Certification', amountInCents: 2500, isSubscription: false };
+    } else {
+      // Lookup dynamic price in Supabase DB
+      const sUrl = Deno.env.get("SUPABASE_URL") || "";
+      const sKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+      verified = await fetchCourseFromDb(cleanId, sUrl, sKey);
+
+      if (!verified) {
+        verified = OFFICIAL_PRICE_CATALOG[cleanId] || {
+          name: productName || 'Route K9 Training Course',
+          amountInCents: 4900,
+          isSubscription: false,
+        };
+      }
+    }
 
     const params = new URLSearchParams();
     params.append('ui_mode', 'embedded');
@@ -134,15 +125,21 @@ export default async function handler(req, res) {
     const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${key}`,
+        Authorization: `Bearer ${stripeKey.trim()}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: params.toString(),
     });
 
     const sessionData = await stripeRes.json();
-    return res.status(stripeRes.status).json(sessionData);
-  } catch (err) {
-    return res.status(500).json({ error: err.message || 'Server error creating Stripe session' });
+    return new Response(
+      JSON.stringify(sessionData),
+      { status: stripeRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (err: any) {
+    return new Response(
+      JSON.stringify({ error: err?.message || 'Server error creating Stripe session' }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
-}
+});

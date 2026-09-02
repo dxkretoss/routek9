@@ -1,8 +1,9 @@
 import { getStripeEnvironment } from "./stripe";
+import { supabase } from "./supabase";
 
 /**
  * Creates an official Stripe Checkout Session and returns clientSecret for Stripe Embedded Checkout.
- * Uses Lovable Gateway / Vite Proxy to create official Stripe sessions seamlessly.
+ * Uses Lovable Cloud Deno Edge Function / Local Server API to create official Stripe sessions seamlessly.
  */
 export async function createCertificationCheckout({ data }) {
   const { priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName: customProductName } = data || {};
@@ -50,7 +51,32 @@ export async function createCertificationCheckout({ data }) {
 
     const targetEmail = (email || customerEmail || "").trim();
 
-    // 1. Call secure server-side Stripe checkout session endpoint
+    // 1. Try Lovable / Supabase Cloud Deno Edge Function (Uses Lovable Cloud Secrets)
+    try {
+      const { data: edgeData, error: edgeError } = await supabase.functions.invoke('create-checkout-session', {
+        body: {
+          priceId,
+          returnUrl: cleanReturnUrl,
+          productName,
+          amountInCents,
+          email: targetEmail,
+        }
+      });
+
+      if (!edgeError && edgeData) {
+        if (edgeData.client_secret) {
+          return { clientSecret: edgeData.client_secret };
+        }
+        if (edgeData.error) {
+          const msg = typeof edgeData.error === "string" ? edgeData.error : edgeData.error.message;
+          return { error: msg };
+        }
+      }
+    } catch (edgeErr) {
+      console.warn("Lovable cloud edge function invocation notice:", edgeErr);
+    }
+
+    // 2. Call local Vite dev server / backend endpoint
     try {
       const response = await fetch("/api/create-checkout-session", {
         method: "POST",
@@ -58,6 +84,7 @@ export async function createCertificationCheckout({ data }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          priceId,
           returnUrl: cleanReturnUrl,
           productName,
           amountInCents,

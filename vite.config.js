@@ -41,21 +41,84 @@ export default defineConfig(({ mode }) => {
                   return;
                 }
 
+                // Server-Side Pricing Truth Table
+                const OFFICIAL_PRICES = {
+                  'pro_monthly': { name: 'Route K9 PRO Membership (Monthly)', amountInCents: 2900, isSubscription: true, interval: 'month' },
+                  'pro_yearly': { name: 'Route K9 PRO Membership (Yearly)', amountInCents: 29900, isSubscription: true, interval: 'year' },
+                  'pro-monthly': { name: 'Route K9 PRO Membership (Monthly)', amountInCents: 2900, isSubscription: true, interval: 'month' },
+                  'pro-yearly': { name: 'Route K9 PRO Membership (Yearly)', amountInCents: 29900, isSubscription: true, interval: 'year' },
+                  'hipaa_certificate': { name: 'HIPAA & Bloodborne Pathogens Certification', amountInCents: 2500, isSubscription: false },
+                  'hipaa': { name: 'HIPAA & Bloodborne Pathogens Certification', amountInCents: 2500, isSubscription: false },
+                  'master-contractor': { name: 'Master Contractor Training', amountInCents: 4900, isSubscription: false },
+                  'logistics-consultant': { name: 'Logistics Consultant Training', amountInCents: 4900, isSubscription: false },
+                  'delivery-company': { name: 'Delivery Company Training', amountInCents: 4900, isSubscription: false },
+                  'notary-public': { name: 'Notary Public Training', amountInCents: 4900, isSubscription: false },
+                  'field-inspector': { name: 'Field Inspector Training', amountInCents: 4900, isSubscription: false },
+                  'courier-dispatcher': { name: 'Courier Dispatcher Training', amountInCents: 4900, isSubscription: false },
+                };
+
+                const cleanId = String(parsed.priceId || '').replace(/^course_/, '').toLowerCase().trim();
+
+                // 1. Pro Subscriptions
+                let verified = null;
+                if (cleanId.includes('yearly')) {
+                  verified = { name: 'Route K9 PRO (Yearly)', amountInCents: 29900, isSubscription: true, interval: 'year' };
+                } else if (cleanId.includes('monthly') || cleanId.includes('pro')) {
+                  verified = { name: 'Route K9 PRO (Monthly)', amountInCents: 2900, isSubscription: true, interval: 'month' };
+                } else if (cleanId.includes('hipaa') || cleanId.includes('cert')) {
+                  verified = { name: 'HIPAA & Bloodborne Pathogens Certification', amountInCents: 2500, isSubscription: false };
+                } else {
+                  // 2. Fetch live price set by Admin in Supabase DB
+                  const sUrl = env.VITE_SUPABASE_URL || 'https://qgriomlngioeiterbeii.supabase.co';
+                  const sKey = env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '';
+                  if (sKey) {
+                    try {
+                      const dbRes = await fetch(`${sUrl}/rest/v1/courses?id=eq.${encodeURIComponent(cleanId)}&select=title,price`, {
+                        headers: { apikey: sKey, Authorization: `Bearer ${sKey}` }
+                      });
+                      if (dbRes.ok) {
+                        const rows = await dbRes.json();
+                        if (Array.isArray(rows) && rows.length > 0) {
+                          const p = parseFloat(rows[0].price);
+                          if (!isNaN(p) && p >= 0.50) {
+                            verified = {
+                              name: rows[0].title || parsed.productName || 'Route K9 Course',
+                              amountInCents: Math.round(p * 100),
+                              isSubscription: false,
+                            };
+                          }
+                        }
+                      }
+                    } catch (dbErr) {
+                      console.warn("DB course check notice:", dbErr);
+                    }
+                  }
+
+                  // 3. Fallback to default catalog or default $49
+                  if (!verified) {
+                    verified = OFFICIAL_PRICES[cleanId] || {
+                      name: parsed.productName || 'Route K9 Training Course',
+                      amountInCents: 4900,
+                      isSubscription: false,
+                    };
+                  }
+                }
+
                 const params = new URLSearchParams();
                 params.append('ui_mode', 'embedded');
-                params.append('mode', parsed.mode || (parsed.isSubscription ? 'subscription' : 'payment'));
+                params.append('mode', verified.isSubscription ? 'subscription' : 'payment');
                 params.append('return_url', parsed.returnUrl);
                 params.append('line_items[0][price_data][currency]', 'usd');
-                params.append('line_items[0][price_data][product_data][name]', parsed.productName || 'Route K9 Purchase');
-                params.append('line_items[0][price_data][unit_amount]', String(parsed.amountInCents || 4900));
+                params.append('line_items[0][price_data][product_data][name]', verified.name);
+                params.append('line_items[0][price_data][unit_amount]', String(verified.amountInCents));
                 params.append('line_items[0][quantity]', '1');
 
                 if (parsed.email && parsed.email.includes('@')) {
                   params.append('customer_email', parsed.email.trim());
                 }
 
-                if (parsed.isSubscription) {
-                  params.append('line_items[0][price_data][recurring][interval]', parsed.interval || 'month');
+                if (verified.isSubscription) {
+                  params.append('line_items[0][price_data][recurring][interval]', verified.interval || 'month');
                 }
 
                 const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
