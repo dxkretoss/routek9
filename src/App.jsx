@@ -296,6 +296,17 @@ export default function App() {
 
     // 1. Check current session on load
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const isResetPage = typeof window !== 'undefined' && (
+        window.location.pathname === '/mobile-reset-password' ||
+        window.location.pathname === '/resetpass' ||
+        window.location.hash.includes('type=recovery')
+      );
+
+      if (isResetPage) {
+        // Do not redirect to complete-profile if user is resetting password
+        return;
+      }
+
       if (session?.user) {
         const syncResult = await syncSupabaseProfile(session.user);
         if (syncResult?.role !== 'admin' && syncResult?.needsOnboarding && window.location.pathname !== '/complete-profile') {
@@ -321,12 +332,12 @@ export default function App() {
       const isWebReset = typeof window !== 'undefined' && window.location.pathname === '/resetpass';
       const isRecovery = event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && (window.location.hash.includes('type=recovery') || isWebReset || isMobileReset));
 
-      if (isMobileReset) {
+      if (isMobileReset || isWebReset || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
         return;
       }
 
       if (isRecovery) {
-        if (!isWebReset) {
+        if (!isWebReset && !isMobileReset) {
           navigate('/resetpass', { replace: true });
         }
         return;
@@ -335,13 +346,14 @@ export default function App() {
       if (session?.user) {
         const syncResult = await syncSupabaseProfile(session.user);
         if (syncResult?.isActive) {
-          const isRec = event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && (window.location.hash.includes('type=recovery') || window.location.pathname === '/resetpass'));
-          if (isRec) {
-            if (!isMobileReset && !isWebReset) {
-              navigate('/resetpass', { replace: true });
-            }
+          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+          const currentHash = typeof window !== 'undefined' ? window.location.hash : '';
+          const isReset = currentPath === '/mobile-reset-password' || currentPath === '/resetpass' || currentHash.includes('type=recovery');
+
+          if (isReset) {
             return;
           }
+
           const hasHash = typeof window !== 'undefined' && (
             window.location.hash.includes('access_token=') ||
             window.location.hash.includes('type=signup') ||
@@ -360,7 +372,7 @@ export default function App() {
           // Only auto-redirect on explicit SIGNED_IN event (user clicked login button / OAuth)
           // Do NOT auto-login/redirect from /login or /signup on INITIAL_SESSION from cookies/localStorage
           if (event === 'SIGNED_IN' || hasHash) {
-            const currentPath = window.location.pathname;
+            if (isReset) return;
             if (hasHash || currentPath === '/login' || currentPath === '/signup') {
               const role = (syncResult.role || '').toLowerCase();
               const isAdmin = role === 'admin' || role === 'superadmin' || role === 'super_admin';
