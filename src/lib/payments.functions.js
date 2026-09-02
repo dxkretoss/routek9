@@ -69,19 +69,25 @@ export async function createCertificationCheckout({ data }) {
       sessionParams.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");
     }
 
-    // Direct Stripe REST Checkout API using Restricted Key
-    const stripeRestrictedKey = (import.meta.env.VITE_STRIPE_SECRET_KEY || import.meta.env.VITE_PAYMENTS_SECRET_TOKEN || "").trim();
-
-    const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    // Secure Server-Side Stripe Checkout Session Creation (Key is kept on server only)
+    const response = await fetch("/api/create-checkout-session", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${stripeRestrictedKey}`,
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type": "application/json",
       },
-      body: sessionParams.toString(),
+      body: JSON.stringify({
+        priceId,
+        returnUrl: cleanReturnUrl,
+        productName,
+        amountInCents,
+        email: targetEmail,
+        isSubscription,
+        interval: priceId.includes("yearly") ? "year" : "month",
+        mode: isSubscription ? "subscription" : "payment",
+      }),
     });
 
-    const sessionData = await stripeRes.json();
+    const sessionData = await response.json();
 
     if (sessionData && sessionData.client_secret) {
       return { clientSecret: sessionData.client_secret };
