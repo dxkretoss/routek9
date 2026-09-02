@@ -51,7 +51,94 @@ export async function createCertificationCheckout({ data }) {
 
     const targetEmail = (email || customerEmail || "").trim();
 
-    // 1. Try Lovable / Supabase Cloud Deno Edge Function (Uses Lovable Cloud Secrets)
+    const isLocalhost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+    // 1. If running locally on localhost, use local Vite server endpoint
+    if (isLocalhost) {
+      try {
+        const response = await fetch("/api/create-checkout-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            priceId,
+            returnUrl: cleanReturnUrl,
+            productName,
+            amountInCents,
+            email: targetEmail,
+            isSubscription,
+            interval: priceId.includes("yearly") ? "year" : "month",
+            mode: isSubscription ? "subscription" : "payment",
+          }),
+        });
+
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const session = await response.json();
+          if (session && session.client_secret) {
+            return { clientSecret: session.client_secret };
+          }
+          if (session && session.error) {
+            const msg = typeof session.error === "string" ? session.error : session.error.message;
+            return { error: msg || "Stripe API Error" };
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Local create-checkout-session api error:", apiErr);
+      }
+    }
+
+    // 2. Production: Direct Lovable Gateway Call (Bypasses server requirements & connects to Lovable Secrets)
+    const gatewayUrls = [
+      "https://connector-gateway.lovable.dev/stripe/v1/checkout/sessions",
+      "/api/stripe/v1/checkout/sessions",
+    ];
+
+    const gatewayParams = new URLSearchParams({
+      ui_mode: "embedded",
+      mode: isSubscription ? "subscription" : "payment",
+      return_url: cleanReturnUrl,
+      "line_items[0][price_data][currency]": "usd",
+      "line_items[0][price_data][product_data][name]": productName,
+      "line_items[0][price_data][unit_amount]": String(amountInCents),
+      "line_items[0][quantity]": "1",
+    });
+
+    if (targetEmail && targetEmail.includes("@")) {
+      gatewayParams.append("customer_email", targetEmail);
+    }
+    if (isSubscription) {
+      gatewayParams.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");
+    }
+
+    for (const gUrl of gatewayUrls) {
+      try {
+        const proxyResponse = await fetch(gUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Connection-Api-Key": "acct_1TtzfQIKKpSWYo2f",
+          },
+          body: gatewayParams.toString(),
+        });
+
+        const proxyContentType = proxyResponse.headers.get("content-type") || "";
+        if (proxyContentType.includes("application/json")) {
+          const fallbackSession = await proxyResponse.json();
+          if (fallbackSession && fallbackSession.client_secret) {
+            return { clientSecret: fallbackSession.client_secret };
+          }
+          if (fallbackSession?.error?.message) {
+            return { error: fallbackSession.error.message };
+          }
+        }
+      } catch (proxyErr) {
+        console.warn(`Gateway notice for ${gUrl}:`, proxyErr);
+      }
+    }
+
+    // 3. Fallback: Lovable / Supabase Cloud Deno Edge Function
     try {
       const { data: edgeData, error: edgeError } = await supabase.functions.invoke('create-checkout-session', {
         body: {
@@ -73,74 +160,7 @@ export async function createCertificationCheckout({ data }) {
         }
       }
     } catch (edgeErr) {
-      console.warn("Lovable cloud edge function invocation notice:", edgeErr);
-    }
-
-    // 2. Call local Vite dev server / backend endpoint
-    try {
-      const response = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          priceId,
-          returnUrl: cleanReturnUrl,
-          productName,
-          amountInCents,
-          email: targetEmail,
-          isSubscription,
-          interval: priceId.includes("yearly") ? "year" : "month",
-          mode: isSubscription ? "subscription" : "payment",
-        }),
-      });
-
-      const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        const session = await response.json();
-        if (session && session.client_secret) {
-          return { clientSecret: session.client_secret };
-        }
-        if (session && session.error) {
-          const msg = typeof session.error === "string" ? session.error : session.error.message;
-          return { error: msg || "Stripe API Error" };
-        }
-      }
-    } catch (apiErr) {
-      console.warn("create-checkout-session api error:", apiErr);
-    }
-
-    // 2. Fallback: Direct Stripe / Lovable gateway proxy if available
-    try {
-      const proxyResponse = await fetch("/api/stripe/v1/checkout/sessions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Connection-Api-Key": "acct_1TtzfQIKKpSWYo2f",
-        },
-        body: new URLSearchParams({
-          ui_mode: "embedded",
-          mode: isSubscription ? "subscription" : "payment",
-          return_url: cleanReturnUrl,
-          "line_items[0][price_data][currency]": "usd",
-          "line_items[0][price_data][product_data][name]": productName,
-          "line_items[0][price_data][unit_amount]": String(amountInCents),
-          "line_items[0][quantity]": "1",
-        }).toString(),
-      });
-
-      const proxyContentType = proxyResponse.headers.get("content-type") || "";
-      if (proxyContentType.includes("application/json")) {
-        const fallbackSession = await proxyResponse.json();
-        if (fallbackSession && fallbackSession.client_secret) {
-          return { clientSecret: fallbackSession.client_secret };
-        }
-        if (fallbackSession?.error?.message) {
-          return { error: fallbackSession.error.message };
-        }
-      }
-    } catch (proxyErr) {
-      console.warn("Proxy gateway fallback notice:", proxyErr);
+      console.warn("Lovable cloud edge function notice:", edgeErr);
     }
 
     throw new Error("Unable to create Stripe checkout session. Please ensure your backend API or Stripe server is deployed.");
