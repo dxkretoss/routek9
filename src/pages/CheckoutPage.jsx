@@ -192,17 +192,9 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
       {/* Payment Test Mode Banner */}
       {/* <PaymentTestModeBanner /> */}
 
-      {/* Hero Sub-Header matching Screenshot 3 */}
-      <div className="bg-rose-50/30 border-b border-slate-200/70 py-8">
+      {/* Hero Sub-Header */}
+      <div className="bg-rose-50/30 border-b border-slate-200/70 py-6 sm:py-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-3">
-
-          {/* <Link
-            to={`/training/${activeCourse.id}`}
-            className="text-xs font-bold text-slate-500 hover:text-rose-600 inline-flex items-center gap-1 transition-colors uppercase tracking-wider"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to course</span>
-          </Link> */}
 
           <div className="flex items-center gap-2">
             <span className="w-6 h-0.5 bg-rose-600 rounded-full" />
@@ -211,28 +203,34 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
             </span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-[#0b132b] font-serif-heading">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-[#0b132b] font-serif-heading leading-tight break-words">
             {activeCourse.title}
           </h1>
 
-          <p className="text-rose-600 text-xs sm:text-sm font-bold">
-            {activeCourse.subtitle}
-          </p>
+          {activeCourse.subtitle && (
+            <p className="text-rose-600 text-xs sm:text-sm font-bold leading-relaxed">
+              {activeCourse.subtitle}
+            </p>
+          )}
 
-          <div className="flex items-center gap-3 pt-1">
-            <span className="px-3 py-1 rounded-full bg-rose-100/80 text-rose-700 font-extrabold text-xs">
-              {activeCourse.projectedPay}
-            </span>
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-1">
+            {activeCourse.projectedPay && (
+              <span className="px-3 py-1 rounded-full bg-rose-100/80 text-rose-700 font-extrabold text-xs">
+                {activeCourse.projectedPay}
+              </span>
+            )}
             <span className="text-xl font-extrabold text-[#0b132b]">${activeCourse.price}</span>
-            <span className="text-xs text-slate-500 font-medium">{activeCourse.access}</span>
+            {activeCourse.access && (
+              <span className="text-xs text-slate-500 font-medium">{activeCourse.access}</span>
+            )}
           </div>
 
         </div>
       </div>
 
       {/* Main Payment Checkout Box matching Screenshot */}
-      <main className="flex-1 py-10">
-        <div className="max-w-lg mx-auto px-4 sm:px-6">
+      <main className="flex-1 py-8 sm:py-10">
+        <div className="max-w-lg mx-auto px-4 sm:px-6 w-full">
           <StripeEmbeddedCheckout
             priceId={`course_${activeCourse.id}`}
             priceAmount={activeCourse.price}

@@ -53,11 +53,10 @@ export function StripeEmbeddedCheckout({ priceId, fullName, email, customerEmail
 
   if (loading) {
     return (
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-12 text-center space-y-4 animate-fadeIn">
+      <div className="w-full max-w-full bg-white rounded-3xl border border-slate-200 shadow-xl p-8 sm:p-12 text-center space-y-4 animate-fadeIn overflow-hidden box-border">
         <Loader2 className="w-10 h-10 animate-spin text-rose-600 mx-auto" />
-        <div>
+        <div className="max-w-full overflow-hidden">
           <h4 className="text-sm font-extrabold text-[#0b132b]">Connecting to Stripe Secure Gateway...</h4>
-          {/* <p className="text-xs text-slate-400 font-medium mt-1">Initializing official 256-bit encrypted checkout session</p> */}
         </div>
       </div>
     );
@@ -65,14 +64,16 @@ export function StripeEmbeddedCheckout({ priceId, fullName, email, customerEmail
 
   if (error) {
     return (
-      <div className="bg-white rounded-3xl border border-rose-200 shadow-xl p-8 text-center space-y-4 animate-fadeIn">
-        <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-rose-600">
+      <div className="w-full max-w-full bg-white rounded-3xl border border-rose-200 shadow-xl p-6 sm:p-8 text-center space-y-4 animate-fadeIn overflow-hidden box-border">
+        <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-rose-600 shrink-0">
           <AlertCircle className="w-6 h-6" />
         </div>
-        <div className="space-y-1">
+        <div className="space-y-2 w-full max-w-full overflow-hidden">
           <h4 className="text-base font-extrabold text-[#0b132b]">Stripe Session Error</h4>
-          <p className="text-xs text-rose-600 font-bold">{error}</p>
-          <p className="text-[11px] text-slate-400 font-medium mt-2">
+          <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-100/80 max-w-full overflow-hidden">
+            <p className="text-xs text-rose-600 font-semibold break-all break-words leading-relaxed whitespace-pre-wrap">{error}</p>
+          </div>
+          <p className="text-[11px] text-slate-400 font-medium pt-1">
             Please check your Stripe API keys or retry loading the checkout.
           </p>
         </div>
@@ -88,7 +89,7 @@ export function StripeEmbeddedCheckout({ priceId, fullName, email, customerEmail
   }
 
   return (
-    <div id="checkout" className="w-full min-h-[450px] bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden p-4">
+    <div id="checkout" className="w-full max-w-full min-h-[450px] bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden p-2 sm:p-4 box-border">
       {clientSecret && (
         <EmbeddedCheckoutProvider stripe={getStripe()} options={{ clientSecret }}>
           <EmbeddedCheckout />

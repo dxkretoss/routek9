@@ -5,7 +5,7 @@ import { getStripeEnvironment } from "./stripe";
  * Uses Lovable Gateway / Vite Proxy to create official Stripe sessions seamlessly.
  */
 export async function createCertificationCheckout({ data }) {
-  const { priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName: customProductName, environment = getStripeEnvironment() } = data || {};
+  const { priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName: customProductName } = data || {};
 
   if (!priceId || !/^[a-zA-Z0-9_-]+$/.test(priceId)) {
     return { error: "Invalid priceId" };
@@ -16,19 +16,6 @@ export async function createCertificationCheckout({ data }) {
   }
 
   try {
-    const getEnvVar = (name) => {
-      if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env[name]) {
-        return import.meta.env[name];
-      }
-      if (typeof process !== "undefined" && process.env && process.env[name]) {
-        return process.env[name];
-      }
-      return undefined;
-    };
-
-    const stripeSecretKey = getEnvVar("VITE_STRIPE_SECRET_KEY") || getEnvVar("STRIPE_SANDBOX_API_KEY") || getEnvVar("STRIPE_SECRET_KEY");
-    const accountId = stripeSecretKey?.startsWith("acct_") ? stripeSecretKey : "acct_1TtzfQIKKpSWYo2f";
-
     const isSubscription = priceId.includes("pro") || priceId.includes("yearly") || priceId.includes("monthly");
 
     // Determine dynamic amount in cents from priceAmount if provided, or fallback to priceId rules
@@ -61,81 +48,75 @@ export async function createCertificationCheckout({ data }) {
       cleanReturnUrl += (cleanReturnUrl.includes("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
     }
 
-    const params = new URLSearchParams({
-      ui_mode: "embedded",
-      mode: isSubscription ? "subscription" : "payment",
-      return_url: cleanReturnUrl,
-      "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][product_data][name]": productName,
-      "line_items[0][price_data][unit_amount]": String(amountInCents),
-      "line_items[0][quantity]": "1",
-    });
-
     const targetEmail = (email || customerEmail || "").trim();
-    if (targetEmail && targetEmail.includes("@")) {
-      params.append("customer_email", targetEmail);
-    }
 
-    if (isSubscription) {
-      params.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");
-    }
-
-    // 1. Direct Stripe REST API Call if full sk_test_ / sk_live_ Secret Key is provided
-    if (stripeSecretKey && (stripeSecretKey.startsWith("sk_test_") || stripeSecretKey.startsWith("sk_live_")) && stripeSecretKey.length > 20) {
-      let response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    // 1. Call secure server-side Stripe checkout session endpoint
+    try {
+      const response = await fetch("/api/create-checkout-session", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${stripeSecretKey.trim()}`,
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": "application/json",
         },
-        body: params.toString(),
+        body: JSON.stringify({
+          returnUrl: cleanReturnUrl,
+          productName,
+          amountInCents,
+          email: targetEmail,
+          isSubscription,
+          interval: priceId.includes("yearly") ? "year" : "month",
+          mode: isSubscription ? "subscription" : "payment",
+        }),
       });
 
-      let session = await response.json();
-
-      // Fallback: If Stripe API returns ui_mode error, retry with standard embedded mode
-      if (session.error && session.error.param === "ui_mode") {
-        params.set("ui_mode", "embedded");
-        response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${stripeSecretKey.trim()}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: params.toString(),
-        });
-        session = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const session = await response.json();
+        if (session && session.client_secret) {
+          return { clientSecret: session.client_secret };
+        }
+        if (session && session.error) {
+          const msg = typeof session.error === "string" ? session.error : session.error.message;
+          return { error: msg || "Stripe API Error" };
+        }
       }
-
-      if (session.error) {
-        console.warn("Stripe API returned error:", session.error);
-        throw new Error(session.error.message || "Stripe API Error");
-      }
-      if (session.client_secret) {
-        return { clientSecret: session.client_secret };
-      }
+    } catch (apiErr) {
+      console.warn("create-checkout-session api error:", apiErr);
     }
 
-    // 2. Local Vite Proxy to Lovable Gateway (Bypasses browser CORS & uses acct_1TtzfQIKKpSWYo2f)
-    const proxyUrl = "/api/stripe/v1/checkout/sessions";
-    const response = await fetch(proxyUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Connection-Api-Key": accountId,
-      },
-      body: params.toString(),
-    });
+    // 2. Fallback: Direct Stripe / Lovable gateway proxy if available
+    try {
+      const proxyResponse = await fetch("/api/stripe/v1/checkout/sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Connection-Api-Key": "acct_1TtzfQIKKpSWYo2f",
+        },
+        body: new URLSearchParams({
+          ui_mode: "embedded",
+          mode: isSubscription ? "subscription" : "payment",
+          return_url: cleanReturnUrl,
+          "line_items[0][price_data][currency]": "usd",
+          "line_items[0][price_data][product_data][name]": productName,
+          "line_items[0][price_data][unit_amount]": String(amountInCents),
+          "line_items[0][quantity]": "1",
+        }).toString(),
+      });
 
-    const session = await response.json();
-    console.log("Stripe Checkout Gateway response:", session);
-
-    if (session && session.client_secret) {
-      return { clientSecret: session.client_secret };
+      const proxyContentType = proxyResponse.headers.get("content-type") || "";
+      if (proxyContentType.includes("application/json")) {
+        const fallbackSession = await proxyResponse.json();
+        if (fallbackSession && fallbackSession.client_secret) {
+          return { clientSecret: fallbackSession.client_secret };
+        }
+        if (fallbackSession?.error?.message) {
+          return { error: fallbackSession.error.message };
+        }
+      }
+    } catch (proxyErr) {
+      console.warn("Proxy gateway fallback notice:", proxyErr);
     }
 
-    const detail = typeof session === "object" ? JSON.stringify(session) : String(session);
-    throw new Error(`Stripe session error: ${session?.error?.message || session?.error || session?.message || detail}`);
+    throw new Error("Unable to create Stripe checkout session. Please ensure your backend API or Stripe server is deployed.");
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Stripe request failed" };
   }

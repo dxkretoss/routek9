@@ -306,17 +306,27 @@ export default function App() {
       }
     });
 
+    const isMobileResetPage = typeof window !== 'undefined' && window.location.pathname === '/mobile-reset-password';
+    const isWebResetPage = typeof window !== 'undefined' && window.location.pathname === '/resetpass';
+
     if (typeof window !== 'undefined' && window.location.hash.includes('type=recovery')) {
-      if (window.location.pathname !== '/resetpass') {
+      if (!isWebResetPage && !isMobileResetPage) {
         navigate('/resetpass', { replace: true });
       }
     }
 
     // 2. Subscribe to auth state changes (Google OAuth login, Email confirmation, Sign in, Sign out, Password Recovery)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const isRecovery = event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && (window.location.hash.includes('type=recovery') || window.location.pathname === '/resetpass'));
+      const isMobileReset = typeof window !== 'undefined' && window.location.pathname === '/mobile-reset-password';
+      const isWebReset = typeof window !== 'undefined' && window.location.pathname === '/resetpass';
+      const isRecovery = event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && (window.location.hash.includes('type=recovery') || isWebReset || isMobileReset));
+
+      if (isMobileReset) {
+        return;
+      }
+
       if (isRecovery) {
-        if (window.location.pathname !== '/resetpass') {
+        if (!isWebReset) {
           navigate('/resetpass', { replace: true });
         }
         return;
@@ -327,7 +337,9 @@ export default function App() {
         if (syncResult?.isActive) {
           const isRec = event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && (window.location.hash.includes('type=recovery') || window.location.pathname === '/resetpass'));
           if (isRec) {
-            navigate('/resetpass', { replace: true });
+            if (!isMobileReset && !isWebReset) {
+              navigate('/resetpass', { replace: true });
+            }
             return;
           }
           const hasHash = typeof window !== 'undefined' && (
@@ -842,13 +854,18 @@ export default function App() {
     return { success: true };
   };
 
+  const isResetFlowPage = typeof window !== 'undefined' && (
+    window.location.pathname === '/mobile-reset-password' ||
+    window.location.pathname === '/resetpass'
+  );
+
   const hasAuthHash = typeof window !== 'undefined' && (
     window.location.hash.includes('access_token=') ||
     window.location.hash.includes('type=signup') ||
     window.location.hash.includes('type=recovery')
   );
 
-  if (!currentUser && hasAuthHash) {
+  if (!currentUser && hasAuthHash && !isResetFlowPage) {
     return (
       <div className="min-h-screen bg-[#0b132b] flex flex-col items-center justify-center p-6 text-center text-white space-y-4 animate-fadeIn">
         <div className="w-16 h-16 rounded-3xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center shadow-xl">
