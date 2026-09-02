@@ -1,3 +1,6 @@
+// @ts-nocheck
+declare const Deno: any;
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -65,6 +68,12 @@ serve(async (req) => {
 
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY") || Deno.env.get("VITE_STRIPE_SECRET_KEY");
+
+    console.log("[create-checkout-session] STRIPE_SECRET_KEY status:", stripeKey
+      ? `✅ FOUND (Prefix: "${stripeKey.substring(0, 10)}...", Length: ${stripeKey.length} chars)`
+      : "❌ NOT FOUND (Please check Lovable Secrets)"
+    );
+
     if (!stripeKey) {
       return new Response(
         JSON.stringify({ error: "STRIPE_SECRET_KEY is not configured in Lovable Secrets." }),
@@ -73,6 +82,7 @@ serve(async (req) => {
     }
 
     const { priceId, returnUrl, productName, email } = await req.json();
+    console.log("[create-checkout-session] Request params:", { priceId, productName, email, returnUrl });
 
     if (!returnUrl) {
       return new Response(
@@ -105,6 +115,8 @@ serve(async (req) => {
       }
     }
 
+    console.log("[create-checkout-session] Verified pricing:", verified);
+
     const params = new URLSearchParams();
     params.append('ui_mode', 'embedded');
     params.append('mode', verified.isSubscription ? 'subscription' : 'payment');
@@ -132,11 +144,14 @@ serve(async (req) => {
     });
 
     const sessionData = await stripeRes.json();
+    console.log("[create-checkout-session] Stripe response status:", stripeRes.status, "session ID:", sessionData?.id || sessionData?.error?.message);
+
     return new Response(
       JSON.stringify(sessionData),
       { status: stripeRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err: any) {
+    console.error("[create-checkout-session] Uncaught error:", err);
     return new Response(
       JSON.stringify({ error: err?.message || 'Server error creating Stripe session' }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
