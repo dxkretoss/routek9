@@ -69,33 +69,30 @@ export async function createCertificationCheckout({ data }) {
       sessionParams.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");
     }
 
-    // 1. Invoke Lovable / Supabase Cloud Deno Edge Function (Uses Lovable Cloud Secrets)
-    const { data: edgeData, error: edgeError } = await supabase.functions.invoke('create-checkout-session', {
-      body: {
-        priceId,
-        returnUrl: cleanReturnUrl,
-        productName,
-        amountInCents,
-        email: targetEmail,
-      }
+    // Direct Stripe REST Checkout API using Restricted Key
+    const stripeRestrictedKey = (import.meta.env.VITE_STRIPE_SECRET_KEY || import.meta.env.VITE_PAYMENTS_SECRET_TOKEN || "").trim();
+
+    const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${stripeRestrictedKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: sessionParams.toString(),
     });
 
-    if (edgeError) {
-      console.error("Supabase Edge Function Error:", edgeError);
-      throw new Error(edgeError.message || "Failed to create checkout session from Lovable Edge function.");
+    const sessionData = await stripeRes.json();
+
+    if (sessionData && sessionData.client_secret) {
+      return { clientSecret: sessionData.client_secret };
     }
 
-    if (edgeData) {
-      if (edgeData.client_secret) {
-        return { clientSecret: edgeData.client_secret };
-      }
-      if (edgeData.error) {
-        const msg = typeof edgeData.error === "string" ? edgeData.error : (edgeData.error?.message || "Stripe session error");
-        return { error: msg };
-      }
+    if (sessionData && sessionData.error) {
+      const msg = typeof sessionData.error === "string" ? sessionData.error : (sessionData.error?.message || "Stripe Error");
+      return { error: msg };
     }
 
-    throw new Error("Unable to create Stripe checkout session. Please ensure your Lovable Edge function is deployed.");
+    throw new Error("Unable to create Stripe checkout session. Please check your Stripe connection.");
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Stripe request failed" };
   }
