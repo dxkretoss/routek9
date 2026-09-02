@@ -69,33 +69,70 @@ export async function createCertificationCheckout({ data }) {
       sessionParams.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");
     }
 
-    // Secure Server-Side Stripe Checkout Session Creation (Key is kept on server only)
-    const response = await fetch("/api/create-checkout-session", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        priceId,
-        returnUrl: cleanReturnUrl,
-        productName,
-        amountInCents,
-        email: targetEmail,
-        isSubscription,
-        interval: priceId.includes("yearly") ? "year" : "month",
-        mode: isSubscription ? "subscription" : "payment",
-      }),
-    });
+    // 1. If local server endpoint is available, try it
+    if (isLocalhost) {
+      try {
+        const response = await fetch("/api/create-checkout-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            priceId,
+            returnUrl: cleanReturnUrl,
+            productName,
+            amountInCents,
+            email: targetEmail,
+            isSubscription,
+            interval: priceId.includes("yearly") ? "year" : "month",
+            mode: isSubscription ? "subscription" : "payment",
+          }),
+        });
 
-    const sessionData = await response.json();
-
-    if (sessionData && sessionData.client_secret) {
-      return { clientSecret: sessionData.client_secret };
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const sessionData = await response.json();
+          if (sessionData?.client_secret) {
+            return { clientSecret: sessionData.client_secret };
+          }
+          if (sessionData?.error) {
+            const msg = typeof sessionData.error === "string" ? sessionData.error : (sessionData.error?.message || "Stripe Error");
+            return { error: msg };
+          }
+        }
+      } catch (localErr) {
+        console.warn("Local server session notice:", localErr);
+      }
     }
 
-    if (sessionData && sessionData.error) {
-      const msg = typeof sessionData.error === "string" ? sessionData.error : (sessionData.error?.message || "Stripe Error");
-      return { error: msg };
+    // 2. Direct Stripe REST API Call (For static production hosts like route-k9.com)
+    const restrictedKey = (
+      import.meta.env.VITE_STRIPE_RESTRICTED_KEY ||
+      import.meta.env.VITE_STRIPE_SECRET_KEY ||
+      import.meta.env.VITE_PAYMENTS_SECRET_TOKEN ||
+      ""
+    ).trim();
+
+    if (restrictedKey) {
+      const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${restrictedKey}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: sessionParams.toString(),
+      });
+
+      const sessionData = await stripeRes.json();
+
+      if (sessionData && sessionData.client_secret) {
+        return { clientSecret: sessionData.client_secret };
+      }
+
+      if (sessionData && sessionData.error) {
+        const msg = typeof sessionData.error === "string" ? sessionData.error : (sessionData.error?.message || "Stripe Error");
+        return { error: msg };
+      }
     }
 
     throw new Error("Unable to create Stripe checkout session. Please check your Stripe connection.");
