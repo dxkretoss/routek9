@@ -158,11 +158,7 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
 
                     return (
                       <div key={idx} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
-                        <button
-                          type="button"
-                          onClick={() => toggleModule(idx)}
-                          className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors cursor-pointer"
-                        >
+                        <div className="w-full px-5 py-4 flex items-center justify-between text-left">
                           <div className="space-y-0.5">
                             <div className="text-[10px] font-extrabold uppercase tracking-widest text-rose-600">
                               Module 0{mod.moduleNumber || idx + 1}
@@ -171,14 +167,10 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
                               {moduleTitle}
                             </div>
                           </div>
-                          {isExpanded ? (
-                            <ChevronUp className="w-5 h-5 text-slate-400" />
-                          ) : (
-                            <ChevronDown className="w-5 h-5 text-slate-400" />
-                          )}
-                        </button>
+                        </div>
 
-                        {isExpanded && (
+                        {/* Inner lesson content commented out for unpurchased preview — unlocked in course player after purchase */}
+                        {/* {isExpanded && (
                           <div className="px-5 pb-5 pt-3 border-t border-slate-100 bg-slate-50/50 space-y-3">
                             {bodyText && (
                               <p className="text-xs text-slate-700 font-medium leading-relaxed">
@@ -197,7 +189,7 @@ export default function CourseDetailPage({ currentUser, onLogout }) {
                               </div>
                             )}
                           </div>
-                        )}
+                        )} */}
                       </div>
                     );
                   })}

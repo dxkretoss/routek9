@@ -17,7 +17,9 @@ import {
   ArrowUpRight,
   AlertTriangle,
   X,
-  Eye
+  Eye,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 // ─── Phone Number Formatter ──────────────────────────────────────
@@ -274,6 +276,8 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
   const [profilesMap, setProfilesMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedTxModal, setSelectedTxModal] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     async function fetchTxAndProfiles() {
@@ -319,6 +323,17 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
 
   const filtered = rawList;
 
+  // Reset page on search or filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterPeriod, transactionsList]);
+
+  const totalItems = filtered.length;
+  const totalPages = Math.max(Math.ceil(totalItems / pageSize), 1);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const paginatedList = filtered.slice(startIndex, endIndex);
+
   if (loading && dbTransactions.length === 0 && !transactionsList) {
     return (
       <div className="py-8 text-center text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
@@ -342,19 +357,22 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50 text-xs">
-          {filtered.length === 0 ? (
+          {paginatedList.length === 0 ? (
             <tr>
               <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold">
                 No Stripe transactions found matching your criteria.
               </td>
             </tr>
           ) : (
-            filtered.map((tx) => {
+            paginatedList.map((tx) => {
               const formattedDate = new Date(tx.created_at || tx.date || Date.now()).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric'
               });
+              const txId = String(tx.id || '');
+              const isTest = txId.startsWith('cs_test_') || txId.startsWith('tx_test_') || tx.is_test === true || tx.environment === 'sandbox' || tx.environment === 'test' || (tx.status || '').toLowerCase().includes('test');
+
               return (
                 <tr key={tx.id || Math.random()} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-4 font-bold text-slate-900">{tx.email}</td>
@@ -362,9 +380,17 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
                   <td className="px-6 py-4 font-extrabold text-emerald-600">{tx.amount}</td>
                   <td className="px-6 py-4 text-slate-400 font-medium">{formattedDate}</td>
                   <td className="px-6 py-4">
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
-                      {tx.status || 'Succeeded'}
-                    </span>
+                    {isTest ? (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-extrabold uppercase border border-amber-200 inline-flex items-center gap-1.5 shadow-2xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span>Test Mode</span>
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200 inline-flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span>{tx.status || 'Succeeded'}</span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button
@@ -382,6 +408,97 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
         </tbody>
       </table>
 
+      {/* Pagination Controls Bar */}
+      {totalItems > 0 && (
+        <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs bg-slate-50/40">
+          <div className="flex items-center gap-3 text-slate-500 font-medium">
+            <span>
+              Showing <strong className="text-slate-800">{totalItems > 0 ? startIndex + 1 : 0}</strong> to{' '}
+              <strong className="text-slate-800">{endIndex}</strong> of{' '}
+              <strong className="text-slate-800">{totalItems}</strong> transactions
+            </span>
+            <div className="flex items-center gap-1.5 ml-2">
+              <span className="text-[11px] text-slate-400 font-bold">Rows:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer focus:outline-none shadow-2xs"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all shadow-2xs cursor-pointer"
+              title="First Page"
+            >
+              «
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Prev</span>
+            </button>
+
+            {/* Page number buttons */}
+            <div className="flex items-center gap-1 mx-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                .map((page, idx, arr) => {
+                  const prev = arr[idx - 1];
+                  return (
+                    <React.Fragment key={page}>
+                      {prev && page - prev > 1 && (
+                        <span className="px-1 text-slate-400 font-bold">...</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(page)}
+                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          currentPage === page
+                            ? 'bg-[#0b132b] text-white shadow-xs font-extrabold'
+                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all shadow-2xs cursor-pointer"
+              title="Last Page"
+            >
+              »
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Selected Transaction Details Modal */}
       {selectedTxModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
@@ -397,9 +514,15 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-400">
                       Stripe Payment Receipt
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      {selectedTxModal.status || 'Succeeded'}
-                    </span>
+                    {String(selectedTxModal.id || '').startsWith('cs_test_') || selectedTxModal.is_test || selectedTxModal.environment === 'sandbox' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        Test Mode
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {selectedTxModal.status || 'Succeeded'}
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-base font-extrabold text-white font-serif-heading">
                     {selectedTxModal.email || 'Customer Receipt'}
@@ -448,10 +571,10 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Payment Gateway</div>
-                  <div className="font-extrabold text-slate-800 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span>Stripe Checkout</span>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Environment</div>
+                  <div className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${String(selectedTxModal.id || '').startsWith('cs_test_') ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                    <span>{String(selectedTxModal.id || '').startsWith('cs_test_') ? 'Test Mode (Sandbox)' : 'Live Production'}</span>
                   </div>
                 </div>
               </div>

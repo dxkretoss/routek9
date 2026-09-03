@@ -283,10 +283,39 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
 
       const pageItems = pageProfiles || [];
 
+      // Fetch PRO subscription emails/user_ids from transactions to guarantee 100% sync
+      const proUsersSet = new Set();
+      try {
+        const { data: proTx } = await supabase
+          .from('transactions')
+          .select('user_id, email, course_id, description, status')
+          .eq('status', 'Succeeded');
+
+        if (proTx) {
+          proTx.forEach(tx => {
+            const desc = (tx.description || tx.course_id || '').toLowerCase();
+            if (desc.includes('pro') || desc.includes('yearly') || desc.includes('monthly') || desc.includes('membership')) {
+              if (tx.user_id) proUsersSet.add(tx.user_id);
+              if (tx.email) proUsersSet.add(tx.email.toLowerCase().trim());
+            }
+          });
+        }
+      } catch (txErr) {
+        console.warn("Error checking pro transactions:", txErr);
+      }
+
       // Format drivers for display
       const rawDrivers = pageItems.map((p) => {
         const isDeactivated = p.status === 'INACTIVE' || p.is_active === false;
         const avatarImage = p.avatar_url || null;
+        const isProMember =
+          p.is_pro === true ||
+          p.membership === 'Pro' ||
+          p.membership === 'pro' ||
+          p.subscription_plan === 'pro' ||
+          p.subscription_plan === 'yearly' ||
+          (p.id && proUsersSet.has(p.id)) ||
+          (p.email && proUsersSet.has(p.email.toLowerCase().trim()));
 
         return {
           ...p,
@@ -306,7 +335,8 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
           bio: p.bio || '',
           dot_number: p.dot_number || '',
           insurance_policy: p.insurance_policy || '',
-          membership: p.membership || 'Free'
+          is_pro: isProMember,
+          membership: isProMember ? 'Pro' : 'Free'
         };
       });
 
@@ -581,10 +611,10 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                           <div>
                             <div className="font-extrabold text-slate-900 flex items-center gap-2">
                               <span>{driver.full_name || 'Driver'}</span>
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${driver.membership === 'Pro'
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${driver.membership === 'Pro' || driver.is_pro
                                 ? 'bg-amber-50 text-amber-700 border-amber-300 font-black'
                                 : 'bg-slate-50 text-slate-500 border-slate-300'}`}>
-                                {driver.membership === 'Pro' ? '★ Pro' : 'Free'}
+                                {driver.membership === 'Pro' || driver.is_pro ? '★ Pro' : 'Free'}
                               </span>
                             </div>
                             <div className="text-[11px] text-slate-400 font-medium">{driver.email}</div>

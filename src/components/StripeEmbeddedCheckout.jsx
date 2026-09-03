@@ -4,52 +4,73 @@ import { getStripe, getStripeEnvironment } from "../lib/stripe";
 import { createCertificationCheckout } from "../lib/payments.functions";
 import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 
+// Cache promises globally to guarantee only 1 backend call per unique product/plan session
+const sessionPromiseCache = new Map();
+
 export function StripeEmbeddedCheckout({ priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName, onSuccess }) {
   const [clientSecret, setClientSecret] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    let isMounted = true;
+    let isCurrent = true;
+    const userEmail = (email || customerEmail || "").trim();
+    const effectiveName = (fullName || "").trim() || "Customer";
 
-    async function initCheckout() {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await createCertificationCheckout({
-          data: {
-            priceId,
-            fullName,
-            email: email || customerEmail,
-            returnUrl,
-            priceAmount,
-            productName,
-            environment: getStripeEnvironment()
-          },
-        });
+    if (!priceId || !productName || productName.toLowerCase().startsWith("loading")) {
+      return;
+    }
 
-        if (!isMounted) return;
+    const sessionKey = `${priceId}_${priceAmount}_${productName}_${userEmail}`;
 
+    setLoading(true);
+    setError(null);
+
+    // Reuse existing promise or initiate a single network call
+    if (!sessionPromiseCache.has(sessionKey)) {
+      const promise = createCertificationCheckout({
+        data: {
+          priceId,
+          fullName: effectiveName,
+          email: userEmail,
+          returnUrl,
+          priceAmount,
+          productName,
+          environment: getStripeEnvironment()
+        },
+      });
+      sessionPromiseCache.set(sessionKey, promise);
+    }
+
+    sessionPromiseCache
+      .get(sessionKey)
+      .then((result) => {
+        if (!isCurrent) return;
         if (result && result.clientSecret) {
           setClientSecret(result.clientSecret);
         } else if (result && result.error) {
+          sessionPromiseCache.delete(sessionKey); // Allow retry on failure
           setError(result.error);
         } else {
+          sessionPromiseCache.delete(sessionKey);
           setError("Failed to generate Stripe checkout session");
         }
-      } catch (err) {
-        if (!isMounted) return;
+      })
+      .catch((err) => {
+        if (!isCurrent) return;
+        sessionPromiseCache.delete(sessionKey);
         setError(err.message || "Failed to initialize Stripe checkout");
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setLoading(false);
+        }
+      });
 
-    initCheckout();
     return () => {
-      isMounted = false;
+      isCurrent = false;
     };
-  }, [priceId, fullName, email, customerEmail, returnUrl, priceAmount, productName]);
+  }, [priceId, priceAmount, productName]);
 
   if (loading) {
     return (

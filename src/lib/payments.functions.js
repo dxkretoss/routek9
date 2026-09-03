@@ -69,75 +69,47 @@ export async function createCertificationCheckout({ data }) {
       sessionParams.append("line_items[0][price_data][recurring][interval]", priceId.includes("yearly") ? "year" : "month");
     }
 
-    // 1. If local server endpoint is available, try it
-    if (isLocalhost) {
-      try {
-        const response = await fetch("/api/create-checkout-session", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            priceId,
-            returnUrl: cleanReturnUrl,
-            productName,
-            amountInCents,
-            email: targetEmail,
-            isSubscription,
-            interval: priceId.includes("yearly") ? "year" : "month",
-            mode: isSubscription ? "subscription" : "payment",
-          }),
-        });
+    // 100% Unified Flow: Node.js Backend Service (Local & Production)
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL || "http://localhost:5000").replace(/\/+$/, "");
 
-        const contentType = response.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          const sessionData = await response.json();
-          if (sessionData?.client_secret) {
-            return { clientSecret: sessionData.client_secret };
-          }
-          if (sessionData?.error) {
-            const msg = typeof sessionData.error === "string" ? sessionData.error : (sessionData.error?.message || "Stripe Error");
-            return { error: msg };
-          }
-        }
-      } catch (localErr) {
-        console.warn("Local server session notice:", localErr);
+    // Get active authenticated user if available
+    let currentUserId = null;
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      currentUserId = authData?.user?.id || null;
+    } catch (e) {}
+
+    const response = await fetch(`${backendUrl}/api/v1/payments/create-checkout-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        planId: priceId,
+        userId: currentUserId,
+        email: targetEmail,
+        fullName: fullName,
+        returnUrl: cleanReturnUrl,
+        productName,
+        amountInCents,
+      }),
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const sessionData = await response.json();
+      if (sessionData?.clientSecret || sessionData?.client_secret) {
+        return { clientSecret: sessionData.clientSecret || sessionData.client_secret };
       }
-    }
-
-    // 2. Direct Stripe REST API Call (For static production hosts like route-k9.com)
-    const restrictedKey = (
-      import.meta.env.VITE_STRIPE_RESTRICTED_KEY ||
-      import.meta.env.VITE_STRIPE_SECRET_KEY ||
-      import.meta.env.VITE_PAYMENTS_SECRET_TOKEN ||
-      ""
-    ).trim();
-
-    if (restrictedKey) {
-      const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${restrictedKey}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: sessionParams.toString(),
-      });
-
-      const sessionData = await stripeRes.json();
-
-      if (sessionData && sessionData.client_secret) {
-        return { clientSecret: sessionData.client_secret };
-      }
-
-      if (sessionData && sessionData.error) {
+      if (sessionData?.error) {
         const msg = typeof sessionData.error === "string" ? sessionData.error : (sessionData.error?.message || "Stripe Error");
         return { error: msg };
       }
     }
 
-    throw new Error("Unable to create Stripe checkout session. Please check your Stripe connection.");
+    throw new Error("Unable to connect to payment backend. Please ensure the backend service is running.");
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Stripe request failed" };
+    return { error: error instanceof Error ? error.message : "Payment request failed" };
   }
 }
 

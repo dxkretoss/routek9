@@ -138,6 +138,24 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
           console.warn("Could not save PRO notification:", notifErr);
         }
 
+        // Update user profile in database
+        if (currentUser?.id || currentUser?.email) {
+          try {
+            const updatePayload = {
+              is_pro: true,
+              membership: 'Pro',
+              subscription_plan: billingCycle === 'yearly' ? 'yearly' : 'pro'
+            };
+            if (currentUser.id) {
+              await supabase.from('profiles').update(updatePayload).eq('id', currentUser.id);
+            } else if (currentUser.email) {
+              await supabase.from('profiles').update(updatePayload).eq('email', currentUser.email);
+            }
+          } catch (profErr) {
+            console.warn("Could not update profile PRO status:", profErr);
+          }
+        }
+
         setShowSuccessModal(true);
       }
       handleSubSuccess();

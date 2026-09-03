@@ -452,11 +452,20 @@ export default function App() {
       let nextRenewal = null;
 
       try {
-        const { data: txs } = await supabase
+        const uId = profile?.id || currentUser?.id;
+        let txQuery = supabase
           .from('transactions')
-          .select('course_id, status, user_id, email, created_at, amount, description')
-          .eq('user_id', profile?.id || currentUser?.id)
-          .limit(20);
+          .select('course_id, status, user_id, email, created_at, amount, description');
+
+        if (uId && userEmail) {
+          txQuery = txQuery.or(`user_id.eq.${uId},email.eq.${userEmail}`);
+        } else if (uId) {
+          txQuery = txQuery.eq('user_id', uId);
+        } else if (userEmail) {
+          txQuery = txQuery.eq('email', userEmail);
+        }
+
+        const { data: txs } = await txQuery.limit(20);
 
         if (txs && txs.length > 0) {
           const userSubs = txs.filter(tx =>
@@ -507,8 +516,8 @@ export default function App() {
           bio: profile ? (profile.bio || '') : (isSameUser ? prev?.bio || '' : ''),
           latitude: profile?.latitude !== undefined && profile?.latitude !== null ? profile.latitude : (isSameUser ? prev?.latitude || null : null),
           longitude: profile?.longitude !== undefined && profile?.longitude !== null ? profile.longitude : (isSameUser ? prev?.longitude || null : null),
-          isPro: isPro || (isSameUser ? prev?.isPro || false : false),
-          subscriptionPlan: subscriptionPlan || (isSameUser ? prev?.subscriptionPlan || 'free' : 'free'),
+          isPro: Boolean(isPro || profile?.is_pro || profile?.membership === 'Pro' || profile?.membership === 'pro' || profile?.subscription_plan === 'pro' || profile?.subscription_plan === 'yearly'),
+          subscriptionPlan: subscriptionPlan || profile?.subscription_plan || 'free',
           subscribedAt: subscribedAt || (isSameUser ? prev?.subscribedAt || null : null),
           nextRenewal: nextRenewal || (isSameUser ? prev?.nextRenewal || null : null)
         };

@@ -74,12 +74,28 @@ export default function AdminRevenue() {
 
   const [chartCategory, setChartCategory] = useState('all'); // 'all', 'subscriptions', 'courses'
 
-  // Compute Revenue KPIs dynamically based on filteredTransactions
+  // Helper to detect test mode transactions
+  const isTestTx = (tx) => {
+    const id = String(tx.id || '');
+    return (
+      id.startsWith('cs_test_') ||
+      id.startsWith('tx_test_') ||
+      tx.is_test === true ||
+      tx.is_test_mode === true ||
+      tx.environment === 'sandbox' ||
+      tx.environment === 'test' ||
+      (tx.status || '').toLowerCase().includes('test')
+    );
+  };
+
+  // Only calculate real LIVE succeeded transactions in financial KPIs & charts
+  const liveSucceededTx = filteredTransactions.filter(
+    tx => (tx.status || 'Succeeded').toLowerCase() === 'succeeded' && !isTestTx(tx)
+  );
+
   let totalRevenue = 0;
   let courseSales = 0;
   let proSubscriptionsCount = 0;
-
-  const succeededTx = filteredTransactions.filter(tx => (tx.status || 'Succeeded').toLowerCase() === 'succeeded');
 
   const monthlyBreakdownMap = {};
   for (let i = 5; i >= 0; i--) {
@@ -89,7 +105,7 @@ export default function AdminRevenue() {
     monthlyBreakdownMap[mName] = { sub: 0, course: 0, total: 0 };
   }
 
-  succeededTx.forEach(tx => {
+  liveSucceededTx.forEach(tx => {
     const amtStr = String(tx.amount || '0');
     const val = parseFloat(amtStr.replace(/[^0-9.]/g, ''));
     if (!isNaN(val)) {
@@ -118,7 +134,7 @@ export default function AdminRevenue() {
     }
   });
 
-  const avgOrderValue = succeededTx.length > 0 ? totalRevenue / succeededTx.length : 0;
+  const avgOrderValue = liveSucceededTx.length > 0 ? totalRevenue / liveSucceededTx.length : 0;
   const mrr = totalRevenue - courseSales;
 
   const maxMonthTotal = Math.max(

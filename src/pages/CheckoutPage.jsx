@@ -231,15 +231,22 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
       {/* Main Payment Checkout Box matching Screenshot */}
       <main className="flex-1 py-8 sm:py-10">
         <div className="max-w-lg mx-auto px-4 sm:px-6 w-full">
-          <StripeEmbeddedCheckout
-            priceId={`course_${activeCourse.id}`}
-            priceAmount={activeCourse.price}
-            productName={activeCourse.title}
-            fullName={certName}
-            email={currentUser?.email || email}
-            returnUrl={window.location.href}
-            onSuccess={() => handlePay({ preventDefault: () => { } })}
-          />
+          {course ? (
+            <StripeEmbeddedCheckout
+              priceId={`course_${activeCourse.id}`}
+              priceAmount={activeCourse.price}
+              productName={activeCourse.title}
+              fullName={certName}
+              email={currentUser?.email || email}
+              returnUrl={window.location.href}
+              onSuccess={() => handlePay({ preventDefault: () => { } })}
+            />
+          ) : (
+            <div className="w-full bg-white rounded-3xl border border-slate-200 shadow-xl p-8 sm:p-12 text-center space-y-4">
+              <div className="w-8 h-8 border-4 border-rose-600 border-t-transparent rounded-full animate-spin mx-auto" />
+              <h4 className="text-sm font-extrabold text-[#0b132b]">Loading checkout...</h4>
+            </div>
+          )}
         </div>
       </main>
 
