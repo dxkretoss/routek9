@@ -28,6 +28,13 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   const price = billingCycle === 'yearly' ? 299 : 29;
   const cycleText = billingCycle === 'yearly' ? 'year' : 'month';
 
+  // Authentication Guard: Login is strictly required for PRO plan checkout
+  useEffect(() => {
+    if (!currentUser && !sessionId) {
+      navigate(`/login?redirect=/pro-checkout?cycle=${billingCycle}`);
+    }
+  }, [currentUser, sessionId, billingCycle, navigate]);
+
   const [currency, setCurrency] = useState('USD');
   const [email, setEmail] = useState(currentUser?.email || 'driver@routek9.com');
   const [cardNumber, setCardNumber] = useState('4242 4242 4242 4242');

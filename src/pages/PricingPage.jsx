@@ -25,6 +25,10 @@ export default function PricingPage({ currentUser, onLogout }) {
   const [billingCycle, setBillingCycle] = useState('monthly'); // 'monthly' or 'yearly'
 
   const handleSelectPro = () => {
+    if (!currentUser) {
+      navigate('/login?redirect=/pricing');
+      return;
+    }
     navigate(`/pro-checkout?cycle=${billingCycle}`);
   };
 

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Building2, ExternalLink, DollarSign, Calendar, MapPin, Lock, FileX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchGovContractsFromDb } from '../lib/govContracts';
 
 export default function GovernmentContractsSection({ currentUser, onOpenPricing, onTriggerGateModal }) {
+  const navigate = useNavigate();
   const [contracts, setContracts] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -210,6 +212,10 @@ export default function GovernmentContractsSection({ currentUser, onOpenPricing,
                           <button
                             type="button"
                             onClick={() => {
+                              if (!currentUser) {
+                                navigate('/login');
+                                return;
+                              }
                               if (onTriggerGateModal) {
                                 onTriggerGateModal({
                                   title: "Government Procurement Contacts Locked",

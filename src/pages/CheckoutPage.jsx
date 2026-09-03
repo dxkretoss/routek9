@@ -25,6 +25,13 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
 
   const [course, setCourse] = useState(null);
 
+  // Authentication Guard: Login is strictly required for course checkout
+  useEffect(() => {
+    if (!currentUser && !sessionId) {
+      navigate(`/login?redirect=/checkout/${courseId || ''}`);
+    }
+  }, [currentUser, courseId, sessionId, navigate]);
+
   useEffect(() => {
     async function load() {
       const allCourses = await getCourses();
