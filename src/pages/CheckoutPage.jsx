@@ -23,6 +23,9 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
   const location = useLocation();
   const navigate = useNavigate();
 
+  const queryParams = new URLSearchParams(location.search);
+  const sessionId = queryParams.get('session_id');
+
   const [course, setCourse] = useState(null);
 
   // Authentication Guard: Login is strictly required for course checkout
@@ -61,9 +64,6 @@ export default function CheckoutPage({ currentUser, onLogout, onCompletePurchase
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [hasProcessed, setHasProcessed] = useState(false);
   const processingRef = useRef(false);
-
-  const queryParams = new URLSearchParams(location.search);
-  const sessionId = queryParams.get('session_id');
 
   // Self-healing database insert helper for transactions
   async function safeInsertTransaction(payload) {

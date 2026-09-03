@@ -22,6 +22,9 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  const queryParams = new URLSearchParams(window.location.search);
+  const sessionId = queryParams.get('session_id') || searchParams.get('session_id');
+
   const cycleParam = searchParams.get('cycle') || 'monthly';
   const [billingCycle, setBillingCycle] = useState(cycleParam);
 
@@ -46,9 +49,6 @@ export default function ProCheckoutPage({ currentUser, onLogout, onUpgradePro })
   const [subscriptionReceipt, setSubscriptionReceipt] = useState(null);
   const [hasProcessed, setHasProcessed] = useState(false);
   const processingRef = useRef(false);
-
-  const queryParams = new URLSearchParams(window.location.search);
-  const sessionId = queryParams.get('session_id');
 
   // Self-healing database insert helper for transactions
   async function safeInsertTransaction(payload) {
