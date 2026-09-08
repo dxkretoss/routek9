@@ -172,7 +172,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
       try {
         const [bidsData, routesRes] = await Promise.allSettled([
           fetchAllRouteBids(),
-          supabase.from('routes').select('id, user_id, title, driver_name, stops_count, distance_miles, duration_minutes, status, stops_data, created_at').order('created_at', { ascending: false }).limit(100)
+          supabase.from('routes').select('id, user_id, title, driver_name, stops_count, distance_miles, duration_minutes, status, stops_data, created_at').order('created_at', { ascending: false, nullsFirst: false }).limit(100)
         ]);
 
         if (!isMounted) return;
@@ -266,7 +266,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
         .from('profiles')
         .select('id, email, role, full_name, created_at, updated_at, city, state_code, vehicle, dot_number, phone, is_active, status, experience, availability, has_cdl, ready_to_work, bio, insurance_policy, avatar_url')
         .or('role.eq.driver,role.is.null')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false, nullsFirst: false });
 
       if (searchQuery) {
         const q = searchQuery.trim();
@@ -338,6 +338,13 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
           is_pro: isProMember,
           membership: isProMember ? 'Pro' : 'Free'
         };
+      });
+
+      // Ensure newest driver records always appear first
+      rawDrivers.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.updated_at ? new Date(a.updated_at).getTime() : 0);
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
+        return timeB - timeA;
       });
 
       // Save to cache

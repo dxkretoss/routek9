@@ -169,7 +169,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
         const [txsRes, cdRes, routesRes] = await Promise.allSettled([
           supabase.from('transactions').select('amount, status, course_id, user_id, email, created_at').eq('status', 'Succeeded').limit(200),
           supabase.from('company_drivers').select('company_id, full_name, name, email, phone').eq('status', 'ACTIVE').limit(200),
-          supabase.from('routes').select('id, title, company_id, user_id, stops_count, distance_miles, duration_minutes, stops_data, created_at').not('company_id', 'is', null).order('created_at', { ascending: false }).limit(50)
+          supabase.from('routes').select('id, title, company_id, user_id, stops_count, distance_miles, duration_minutes, stops_data, created_at').not('company_id', 'is', null).order('created_at', { ascending: false, nullsFirst: false }).limit(50)
         ]);
 
         if (!isMounted) return;
@@ -276,13 +276,14 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
       const [metaRes, profRes] = await Promise.allSettled([
         supabase
           .from('company_profiles')
-          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description, avatar_url, logo')
+          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description, avatar_url, logo, created_at')
+          .order('created_at', { ascending: false, nullsFirst: false })
           .limit(200),
         supabase
           .from('profiles')
           .select('id, email, role, full_name, avatar_url, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work')
           .eq('role', 'company')
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false, nullsFirst: false })
           .range(from, to)
       ]);
 
@@ -322,6 +323,13 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
         };
       });
 
+      // Ensure newest company records always appear first
+      list.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeB - timeA;
+      });
+
       pageCacheRef.current[cacheKey] = {
         data: list,
         count: totalCompaniesCount
@@ -354,8 +362,8 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
   };
 
   useEffect(() => {
-    loadCompanies();
-  }, []);
+    loadCompanies(currentPage);
+  }, [searchQuery]);
 
   // Account Access Status Change Handler (ACTIVE vs INACTIVE)
   const handleAccountStatusChange = async (companyId, companyEmail, newStatus) => {
@@ -538,8 +546,13 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
                         </td>
 
                         {/* Date Joined */}
-                        <td className="px-6 py-4 text-slate-400 font-semibold">
-                          {comp.created_at ? new Date(comp.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Jul 30, 2026'}
+                        <td className="px-6 py-4">
+                          <div className="font-semibold text-slate-700">
+                            {comp.created_at ? new Date(comp.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Jul 30, 2026'}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-medium">
+                            {comp.created_at ? new Date(comp.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}
+                          </div>
                         </td>
 
                         {/* Account Access Toggle */}

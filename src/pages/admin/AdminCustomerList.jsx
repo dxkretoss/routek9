@@ -161,24 +161,45 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
       let ordersList = [];
       let customerProfilesList = [];
 
-      // Execute customer_orders and customer_profiles in parallel
-      const [ordersRes, cpRes] = await Promise.allSettled([
+      // Execute customer_orders, customer_profiles, and profiles in parallel
+      const [ordersRes, cpRes, profRes] = await Promise.allSettled([
         supabase
           .from('customer_orders')
           .select('id, customer_id, sender_name, sender_phone, recipient_name, recipient_phone, pickup_address, dropoff_address, order_status, status, price, created_at')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false, nullsFirst: false }),
         supabase
           .from('customer_profiles')
           .select('id, full_name, email, phone, avatar_url, created_at, updated_at')
+          .order('created_at', { ascending: false, nullsFirst: false }),
+        supabase
+          .from('profiles')
+          .select('id, full_name, email, phone, avatar_url, created_at, updated_at, role')
+          .eq('role', 'customer')
+          .order('created_at', { ascending: false, nullsFirst: false })
       ]);
 
       if (ordersRes.status === 'fulfilled' && ordersRes.value?.data) {
         ordersList = ordersRes.value.data;
+        // Ensure newest orders show first
+        ordersList.sort((a, b) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return timeB - timeA;
+        });
         setOrders(ordersList);
       }
 
       if (cpRes.status === 'fulfilled' && cpRes.value?.data) {
         customerProfilesList = cpRes.value.data;
+      }
+
+      // Also incorporate any customer accounts from profiles table
+      if (profRes.status === 'fulfilled' && Array.isArray(profRes.value?.data)) {
+        profRes.value.data.forEach(p => {
+          if (!customerProfilesList.some(cp => String(cp.id).toLowerCase() === String(p.id).toLowerCase())) {
+            customerProfilesList.push(p);
+          }
+        });
       }
 
       // Build customer directory records from customer_profiles
@@ -240,6 +261,13 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
           created_at: c.created_at || new Date().toISOString(),
           updated_at: c.updated_at || new Date().toISOString()
         };
+      });
+
+      // Ensure newest customer records always appear first
+      finalList.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.updated_at ? new Date(a.updated_at).getTime() : 0);
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
+        return timeB - timeA;
       });
 
       // Save to cache for instant rendering
@@ -451,8 +479,13 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
                         </td>
 
                         {/* Date Joined */}
-                        <td className="px-6 py-4 text-slate-400 font-semibold whitespace-nowrap">
-                          {cust.created_at ? new Date(cust.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Aug 11, 2026'}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="font-semibold text-slate-700">
+                            {cust.created_at ? new Date(cust.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Aug 11, 2026'}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-medium">
+                            {cust.created_at ? new Date(cust.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}
+                          </div>
                         </td>
 
                         {/* Actions */}
@@ -669,8 +702,13 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
                         </td>
 
                         {/* Order Date */}
-                        <td className="px-6 py-4 text-slate-400 font-semibold whitespace-nowrap">
-                          {ord.created_at ? new Date(ord.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Aug 11, 2026'}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="font-semibold text-slate-700">
+                            {ord.created_at ? new Date(ord.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Aug 11, 2026'}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-medium">
+                            {ord.created_at ? new Date(ord.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}
+                          </div>
                         </td>
 
                         {/* Actions */}
