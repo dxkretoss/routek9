@@ -110,6 +110,17 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
 
+  // Customer account protection guard
+  useEffect(() => {
+    if (currentUser?.role && (currentUser.role.toLowerCase() === 'customer' || currentUser.role.toLowerCase() === 'client')) {
+      if (onLogout) {
+        onLogout();
+      } else {
+        navigate('/login?error=customer_access_denied', { replace: true });
+      }
+    }
+  }, [currentUser?.role, onLogout, navigate]);
+
   // Persist activeTab to localStorage whenever user switches tabs
   useEffect(() => {
     if (activeTab) {

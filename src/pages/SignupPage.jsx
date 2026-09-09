@@ -3,7 +3,7 @@ import footerLogo from '../assets/footerlogo.png';
 import logo from '../assets/logo.png';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, Truck, ArrowRight, Lock, Mail, User, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck, Info } from 'lucide-react';
-import { supabase, createNotification } from '../lib/supabase';
+import { supabase, createNotification, verifyUserPlatformRole } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
 import { useVehicleClasses } from '../data/vehicleTypes';
@@ -150,7 +150,12 @@ export default function SignupPage({ onSignup }) {
       const cleanCity = city.trim();
       const cleanState = stateCode.trim().toUpperCase();
 
-      // 0. Pre-Signup Validation: Ensure email is unique in the database
+      // 0. Pre-Signup Validation: Ensure email is unique and not an App Customer
+      const custCheck = await verifyUserPlatformRole(null, cleanEmail);
+      if (!custCheck.allowed && custCheck.isCustomer) {
+        throw new Error(`The email "${cleanEmail}" is already registered as a Customer App account. Customer accounts cannot register on this Driver/Company platform. Please use a different email or log in via the RouteK9 Customer App.`);
+      }
+
       const { data: existingProfiles, error: checkError } = await supabase
         .from('profiles')
         .select('id')

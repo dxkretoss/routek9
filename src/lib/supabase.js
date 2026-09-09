@@ -1471,4 +1471,84 @@ export async function notifyNearbyDriversOnNewOrder(orderData, radiusMiles = DEF
   }
 }
 
+/**
+ * Validates whether a user has an authorized Driver, Company, or Admin profile ONLY in the 'profiles' table.
+ * If the user does not exist in 'profiles' (e.g. they only exist in the customer app) or their role is 'customer',
+ * access is rejected with standard invalid credentials.
+ */
+export async function verifyUserPlatformRole(userId, userEmail, userMetadata = null) {
+  try {
+    const cleanEmail = (userEmail || '').trim().toLowerCase();
+    const cleanId = userId ? String(userId).trim() : null;
+
+    // 1. Check user metadata if role explicitly states customer
+    const metaRole = (userMetadata?.role || userMetadata?.user_type || userMetadata?.account_type || '').trim().toLowerCase();
+    if (metaRole === 'customer' || metaRole === 'client') {
+      return {
+        allowed: false,
+        isCustomer: true,
+        role: 'customer',
+        message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+      };
+    }
+
+    // 2. Query ONLY the 'profiles' table (RouteK9 Web platform user table)
+    let profile = null;
+    if (cleanId) {
+      const { data: pById } = await supabase
+        .from('profiles')
+        .select('id, email, role, full_name')
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (pById) profile = pById;
+    }
+    if (!profile && cleanEmail) {
+      const { data: pByEmail } = await supabase
+        .from('profiles')
+        .select('id, email, role, full_name')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+      if (pByEmail) profile = pByEmail;
+    }
+
+    // If NO profile exists in the 'profiles' table -> Block!
+    if (!profile) {
+      return {
+        allowed: false,
+        isCustomer: true,
+        role: null,
+        message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+      };
+    }
+
+    const pRole = (profile.role || '').trim().toLowerCase();
+    const allowedRoles = ['driver', 'company', 'admin', 'superadmin', 'super_admin', 'dispatcher'];
+
+    // If role in profiles is customer or not an allowed platform role -> Block!
+    if (pRole === 'customer' || pRole === 'client' || !allowedRoles.includes(pRole)) {
+      return {
+        allowed: false,
+        isCustomer: true,
+        role: pRole || 'customer',
+        message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+      };
+    }
+
+    return {
+      allowed: true,
+      isCustomer: false,
+      role: pRole,
+      profile
+    };
+  } catch (err) {
+    console.warn("verifyUserPlatformRole error:", err);
+    return {
+      allowed: false,
+      isCustomer: true,
+      role: null,
+      message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+    };
+  }
+}
+
 

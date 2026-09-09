@@ -19,7 +19,7 @@ import {
   Loader2,
   Lock
 } from 'lucide-react';
-import { supabase, createNotification } from '../lib/supabase';
+import { supabase, createNotification, verifyUserPlatformRole } from '../lib/supabase';
 import Toast from '../components/Toast';
 import { US_STATES_LIST } from '../data/statesData';
 import { useVehicleClasses } from '../data/vehicleTypes';
@@ -64,6 +64,19 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
 
         if (user) {
           const userEmail = (user.email || currentUser?.email || '').trim().toLowerCase();
+
+          // Check if customer app account
+          const roleValidation = await verifyUserPlatformRole(user.id, userEmail, user.user_metadata);
+          if (!roleValidation.allowed || roleValidation.isCustomer) {
+            try {
+              await supabase.auth.signOut({ scope: 'local' });
+            } catch (soErr) {
+              console.warn("Local signout notice:", soErr);
+            }
+            navigate('/login?error=customer_access_denied', { replace: true });
+            return;
+          }
+
           const isSuperAdmin = user.user_metadata?.role === 'admin' || currentUser?.role === 'admin';
           if (isSuperAdmin) {
             navigate('/admin', { replace: true });

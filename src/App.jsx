@@ -48,7 +48,7 @@ import { DEFAULT_DISPATCH_RADIUS_MILES, calculateDistanceMiles } from './lib/dis
 import { US_STATES } from './data/statesData';
 import { mockRoutes as initialRoutes } from './data/mockRoutes';
 import { Truck, ShieldCheck, MapPin, DollarSign, Loader2, Bell, X } from 'lucide-react';
-import { supabase, updateDriverLocation, notifyNearbyDriversOnNewOrder } from './lib/supabase';
+import { supabase, updateDriverLocation, notifyNearbyDriversOnNewOrder, verifyUserPlatformRole } from './lib/supabase';
 
 // Cookie Helpers
 const SESSION_COOKIE_NAME = 'routek9_user_session';
@@ -309,11 +309,15 @@ export default function App() {
 
       if (session?.user) {
         const syncResult = await syncSupabaseProfile(session.user);
-        if (syncResult?.role !== 'admin' && syncResult?.needsOnboarding && window.location.pathname !== '/complete-profile') {
+        if (syncResult?.isActive && syncResult?.role !== 'admin' && syncResult?.needsOnboarding && window.location.pathname !== '/complete-profile') {
           navigate('/complete-profile', { replace: true });
         }
       } else if (currentUser?.email || currentUser?.id) {
-        syncSupabaseProfile({ id: currentUser.id, email: currentUser.email });
+        const syncResult = await syncSupabaseProfile({ id: currentUser.id, email: currentUser.email });
+        if (!syncResult?.isActive) {
+          setCurrentUser(null);
+          deleteCookie(SESSION_COOKIE_NAME);
+        }
       }
     });
 
@@ -383,6 +387,13 @@ export default function App() {
               navigate(targetPath, { replace: true });
             }
           }
+        } else {
+          // Blocked customer / non-driver account
+          try {
+            await supabase.auth.signOut({ scope: 'local' });
+          } catch (soErr) {}
+          setCurrentUser(null);
+          deleteCookie(SESSION_COOKIE_NAME);
         }
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
@@ -416,6 +427,23 @@ export default function App() {
           .ilike('email', userEmail)
           .maybeSingle();
         profile = pData;
+      }
+
+      // Customer App Account Blocking Check
+      const roleValidation = await verifyUserPlatformRole(supabaseUser.id, userEmail, supabaseUser.user_metadata);
+      if (!roleValidation.allowed || roleValidation.isCustomer) {
+        console.warn("Customer app user blocked from accessing web driver/company platform. Signing out immediately.");
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch (soErr) {
+          console.warn("Local signout notice:", soErr);
+        }
+        setCurrentUser(null);
+        deleteCookie(SESSION_COOKIE_NAME);
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          navigate('/login?error=customer_access_denied', { replace: true });
+        }
+        return { isActive: false, role: null, isCustomer: true };
       }
 
       // Deactivation Enforcement Check (from Supabase profile)

@@ -27,6 +27,10 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
 
   useEffect(() => {
     if (currentUser) {
+      if (currentUser.role && (currentUser.role.toLowerCase() === 'customer' || currentUser.role.toLowerCase() === 'client')) {
+        if (onLogout) onLogout();
+        return;
+      }
       setFullName(currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : ''));
       setEmail(currentUser.email || '');
       setPhone(currentUser.phone || '');
@@ -37,7 +41,7 @@ export default function ProfilePage({ currentUser, onLogout, onUpdateProfile, on
       setDotNumber(currentUser.dotNumber || '');
       setInsurancePolicy(currentUser.insurancePolicy || '');
     }
-  }, [currentUser]);
+  }, [currentUser, onLogout]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

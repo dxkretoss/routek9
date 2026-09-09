@@ -3,7 +3,7 @@ import footerLogo from '../assets/footerlogo.png';
 import logo from '../assets/logo.png';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, ArrowRight, Lock, Mail, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, MailCheck, X, KeyRound } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, verifyUserPlatformRole } from '../lib/supabase';
 import Toast from '../components/Toast';
 
 export default function LoginPage({ onLogin }) {
@@ -103,6 +103,14 @@ export default function LoginPage({ onLogin }) {
     const errorCode = hashParams.get('error_code') || queryParams.get('error_code');
     const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
 
+    if (errorParam === 'customer_access_denied' || queryParams.get('denied') === 'customer' || errorDesc?.toLowerCase().includes('customer')) {
+      setError("Invalid email or password. Please double-check your credentials or create a new account.");
+      if (window.location.hash || window.location.search) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      return;
+    }
+
     if (errorParam || errorCode || errorDesc) {
       const descLower = (errorDesc || '').toLowerCase();
       if (
@@ -148,10 +156,18 @@ export default function LoginPage({ onLogin }) {
     try {
       setForgotLoading(true);
 
+      // Check if email belongs to a customer app account
+      const custCheck = await verifyUserPlatformRole(null, cleanEmail);
+      if (!custCheck.allowed || custCheck.isCustomer) {
+        setForgotError("This email address is not registered. Please check your email or create a new account.");
+        setForgotLoading(false);
+        return;
+      }
+
       // Check if email is registered in profiles table
       const { data: existingProfile, error: checkErr } = await supabase
         .from('profiles')
-        .select('id, email')
+        .select('id, email, role')
         .ilike('email', cleanEmail)
         .maybeSingle();
 
@@ -191,16 +207,20 @@ export default function LoginPage({ onLogin }) {
     const cleanPassword = password.trim();
 
     try {
-      // 0. Pre-check: Verify if email belongs to an Admin/SuperAdmin BEFORE authenticating
+      // 0. Pre-check: Verify if email exists in profiles table and has an authorized role
       try {
         const { data: preCheck } = await supabase
           .from('profiles')
-          .select('role')
+          .select('id, role')
           .ilike('email', cleanEmail)
           .maybeSingle();
 
         if (preCheck) {
           const role = (preCheck.role || '').toLowerCase();
+          const allowedRoles = ['driver', 'company', 'admin', 'superadmin', 'super_admin', 'dispatcher'];
+          if (role === 'customer' || role === 'client' || !allowedRoles.includes(role)) {
+            throw new Error("Invalid email or password. Please double-check your credentials or create a new account.");
+          }
           const isAdmin =
             role === 'admin' ||
             role === 'superadmin' ||
@@ -235,8 +255,19 @@ export default function LoginPage({ onLogin }) {
       const userId = data.user?.id;
       let profileData = null;
 
+      // 2. Strict Customer Validation Check post-auth
+      const roleValidation = await verifyUserPlatformRole(userId, cleanEmail, data.user?.user_metadata);
+      if (!roleValidation.allowed || roleValidation.isCustomer) {
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch (soErr) {
+          console.warn("Local signout notice:", soErr);
+        }
+        throw new Error("Invalid email or password. Please double-check your credentials or create a new account.");
+      }
+
       if (userId) {
-        // 2. Fetch User Profile from Supabase profiles table
+        // Fetch User Profile from Supabase profiles table
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
         profileData = profile;
       }
