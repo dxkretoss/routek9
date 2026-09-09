@@ -461,13 +461,13 @@ export default function AdminDispatchOrders() {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-[#0b132b] text-white text-[11px] font-extrabold uppercase tracking-wider">
-                  <th className="p-4 rounded-tl-2xl">Order ID</th>
-                  <th className="p-4">Posted By (Customer)</th>
-                  <th className="p-4">Assigned Driver</th>
+                  <th className="p-4 rounded-tl-2xl whitespace-nowrap">Order ID</th>
+                  <th className="p-4 whitespace-nowrap">Posted By (Customer)</th>
+                  <th className="p-4 whitespace-nowrap">Assigned Driver</th>
                   <th className="p-4">Pickup & Drop-off Route</th>
-                  <th className="p-4 text-center">Payout</th>
-                  <th className="p-4 text-center">Status</th>
-                  <th className="p-4 text-center rounded-tr-2xl">Actions</th>
+                  <th className="p-4 text-center whitespace-nowrap">Payout</th>
+                  <th className="p-4 text-center whitespace-nowrap">Status</th>
+                  <th className="p-4 text-center rounded-tr-2xl whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
@@ -480,7 +480,7 @@ export default function AdminDispatchOrders() {
                   return (
                     <tr key={order.id || idx} className="hover:bg-slate-50/80 transition-colors">
                       {/* Order ID */}
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap">
                         <div className="font-mono font-extrabold text-rose-600 text-xs bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 inline-block mb-1">
                           {order.id}
                         </div>
@@ -488,7 +488,7 @@ export default function AdminDispatchOrders() {
                       </td>
 
                       {/* Posted By (User / Customer) */}
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <div>
                             <div className="font-bold text-slate-900 text-xs">{order.postedBy?.name || 'Registered Customer'}</div>
@@ -498,7 +498,7 @@ export default function AdminDispatchOrders() {
                       </td>
 
                       {/* Assigned Driver */}
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap">
                         {order.assignedDriver ? (
                           <div className="flex items-center gap-2">
                             <div className="w-7 h-7 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 font-bold text-[10px] shrink-0">
@@ -531,15 +531,15 @@ export default function AdminDispatchOrders() {
                       </td>
 
                       {/* Payout */}
-                      <td className="p-4 text-center">
+                      <td className="p-4 text-center whitespace-nowrap">
                         <div className="font-extrabold text-[#0b132b] text-sm">${Number(order.total_amount ?? order.price ?? 0).toFixed(2)}</div>
                         <div className="text-[10px] text-slate-400 font-bold">{order.distanceMiles} mi</div>
                       </td>
 
                       {/* Read-Only Live Status Badge */}
-                      <td className="p-4 text-center">
+                      <td className="p-4 text-center whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
+                          className={`inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border whitespace-nowrap shadow-2xs ${
                             isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                             isInTransit ? 'bg-purple-50 text-purple-700 border-purple-300' :
                             isAccepted ? 'bg-amber-50 text-amber-700 border-amber-300' :
@@ -547,12 +547,19 @@ export default function AdminDispatchOrders() {
                             'bg-sky-50 text-sky-700 border-sky-300'
                           }`}
                         >
-                          ● {order.status === 'IN_TRANSIT' ? 'IN TRANSIT' : (order.status || 'AVAILABLE')}
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            isCompleted ? 'bg-emerald-500' :
+                            isInTransit ? 'bg-purple-500 animate-pulse' :
+                            isAccepted ? 'bg-amber-500' :
+                            order.status === 'CANCELLED' ? 'bg-rose-500' :
+                            'bg-sky-500'
+                          }`}></span>
+                          <span>{order.status === 'IN_TRANSIT' ? 'IN TRANSIT' : (order.status || 'AVAILABLE')}</span>
                         </span>
                       </td>
 
                       {/* Actions */}
-                      <td className="p-4 text-center">
+                      <td className="p-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setSelectedOrder(order)}

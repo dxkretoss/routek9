@@ -291,16 +291,57 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
           setDbTransactions(data);
         }
 
-        // Fetch profiles map for customer lookup
-        const { data: profData } = await supabase.from('profiles').select('id, email, full_name, role, city, state_code, phone');
-        if (profData) {
-          const map = {};
-          profData.forEach(p => {
-            if (p.email) map[p.email.toLowerCase()] = p;
-            if (p.id) map[p.id] = p;
+        // Fetch profiles, customer_profiles, and company_profiles in parallel
+        const [profRes, cpRes, compRes] = await Promise.allSettled([
+          supabase.from('profiles').select('id, email, full_name, role, city, state_code, phone'),
+          supabase.from('customer_profiles').select('id, email, full_name, phone'),
+          supabase.from('company_profiles').select('user_id, contact_email, company_name, phone')
+        ]);
+
+        const map = {};
+
+        if (profRes.status === 'fulfilled' && profRes.value?.data) {
+          profRes.value.data.forEach(p => {
+            const role = p.role ? String(p.role).toLowerCase() : 'driver';
+            const userObj = { ...p, role: role || 'driver' };
+            if (p.email) map[p.email.toLowerCase().trim()] = userObj;
+            if (p.id) map[String(p.id).toLowerCase().trim()] = userObj;
           });
-          setProfilesMap(map);
         }
+
+        if (cpRes.status === 'fulfilled' && cpRes.value?.data) {
+          cpRes.value.data.forEach(cp => {
+            const userObj = { ...cp, role: 'customer' };
+            if (cp.email) {
+              const emailKey = cp.email.toLowerCase().trim();
+              if (!map[emailKey] || map[emailKey].role === 'driver') {
+                map[emailKey] = { ...(map[emailKey] || {}), ...userObj };
+              }
+            }
+            if (cp.id) {
+              const idKey = String(cp.id).toLowerCase().trim();
+              if (!map[idKey] || map[idKey].role === 'driver') {
+                map[idKey] = { ...(map[idKey] || {}), ...userObj };
+              }
+            }
+          });
+        }
+
+        if (compRes.status === 'fulfilled' && compRes.value?.data) {
+          compRes.value.data.forEach(comp => {
+            const userObj = { ...comp, role: 'company', full_name: comp.company_name };
+            if (comp.contact_email) {
+              const emailKey = comp.contact_email.toLowerCase().trim();
+              map[emailKey] = { ...(map[emailKey] || {}), ...userObj };
+            }
+            if (comp.user_id) {
+              const idKey = String(comp.user_id).toLowerCase().trim();
+              map[idKey] = { ...(map[idKey] || {}), ...userObj };
+            }
+          });
+        }
+
+        setProfilesMap(map);
       } catch (err) {
         console.warn("Failed to fetch transactions:", err);
       } finally {
@@ -310,15 +351,52 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
     fetchTxAndProfiles();
   }, []);
 
+  // Helper to determine buyer role (Driver, Company, Customer)
+  const getBuyerInfo = (tx) => {
+    if (!tx) return { role: 'driver', name: null, profile: null };
+
+    const emailKey = (tx.email || '').toLowerCase().trim();
+    const idKey = tx.user_id ? String(tx.user_id).toLowerCase().trim() : '';
+    const prof = (emailKey && profilesMap[emailKey]) || (idKey && profilesMap[idKey]);
+
+    let role = prof?.role;
+    if (!role) {
+      const desc = (tx.description || tx.desc || tx.course_id || '').toLowerCase();
+      if (desc.includes('company') || desc.includes('corporate') || desc.includes('fleet') || desc.includes('dispatch')) {
+        role = 'company';
+      } else if (desc.includes('customer') || desc.includes('package') || desc.includes('delivery order')) {
+        role = 'customer';
+      } else if (desc.includes('pro') || desc.includes('driver') || desc.includes('hipaa') || desc.includes('bloodborne') || desc.includes('notary') || desc.includes('cpr') || desc.includes('certification') || desc.includes('training') || desc.includes('course')) {
+        role = 'driver';
+      } else {
+        role = 'driver';
+      }
+    }
+
+    const cleanRole = String(role).toLowerCase();
+    const fullName = prof?.full_name || prof?.name || prof?.company_name || (emailKey ? emailKey.split('@')[0] : null);
+
+    return {
+      role: cleanRole,
+      name: fullName,
+      profile: prof
+    };
+  };
+
   let rawList = transactionsList || dbTransactions;
 
   if (searchQuery.trim().length > 0) {
     const query = searchQuery.toLowerCase().trim();
-    rawList = rawList.filter(tx =>
-      (tx.email || '').toLowerCase().includes(query) ||
-      (tx.description || tx.desc || '').toLowerCase().includes(query) ||
-      (tx.id || '').toLowerCase().includes(query)
-    );
+    rawList = rawList.filter(tx => {
+      const buyer = getBuyerInfo(tx);
+      return (
+        (tx.email || '').toLowerCase().includes(query) ||
+        (tx.description || tx.desc || '').toLowerCase().includes(query) ||
+        (tx.id || '').toLowerCase().includes(query) ||
+        buyer.role.includes(query) ||
+        (buyer.name || '').toLowerCase().includes(query)
+      );
+    });
   }
 
   const filtered = rawList;
@@ -348,7 +426,7 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
       <table className="w-full text-left border-collapse">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase tracking-wider text-slate-500">
-            <th className="px-6 py-3.5">Customer Email</th>
+            <th className="px-6 py-3.5">Customer Email & Role</th>
             <th className="px-6 py-3.5">Description</th>
             <th className="px-6 py-3.5">Amount</th>
             <th className="px-6 py-3.5">Date</th>
@@ -372,10 +450,41 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
               });
               const txId = String(tx.id || '');
               const isTest = txId.startsWith('cs_test_') || txId.startsWith('tx_test_') || tx.is_test === true || tx.environment === 'sandbox' || tx.environment === 'test' || (tx.status || '').toLowerCase().includes('test');
+              const buyerInfo = getBuyerInfo(tx);
 
               return (
                 <tr key={tx.id || Math.random()} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 font-bold text-slate-900">{tx.email}</td>
+                  {/* Customer Email & User Type Badge */}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2.5">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-slate-900">{tx.email || '—'}</span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase border shadow-2xs ${
+                            buyerInfo.role === 'company'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                              : buyerInfo.role === 'customer'
+                              ? 'bg-purple-50 text-purple-700 border-purple-300'
+                              : buyerInfo.role === 'driver'
+                              ? 'bg-blue-50 text-blue-700 border-blue-300'
+                              : 'bg-slate-100 text-slate-600 border-slate-300'
+                          }`}>
+                            {buyerInfo.role === 'company' && <Building2 className="w-2.5 h-2.5 text-emerald-600" />}
+                            {buyerInfo.role === 'customer' && <Users className="w-2.5 h-2.5 text-purple-600" />}
+                            {buyerInfo.role === 'driver' && <Truck className="w-2.5 h-2.5 text-blue-600" />}
+                            <span>
+                              {buyerInfo.role === 'company' ? 'Company' : buyerInfo.role === 'customer' ? 'Customer' : buyerInfo.role === 'driver' ? 'Driver' : 'Member'}
+                            </span>
+                          </span>
+                        </div>
+                        {buyerInfo.name && (
+                          <div className="text-[11px] text-slate-400 font-medium truncate max-w-[220px]">
+                            {buyerInfo.name}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
                   <td className="px-6 py-4 text-slate-600 font-medium">{tx.description || tx.desc || 'RouteK9 Item'}</td>
                   <td className="px-6 py-4 font-extrabold text-emerald-600">{tx.amount}</td>
                   <td className="px-6 py-4 text-slate-400 font-medium">{formattedDate}</td>
@@ -581,23 +690,38 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
 
               {/* Customer Profile Match Card */}
               {(() => {
-                const matchedProf = profilesMap[selectedTxModal.email?.toLowerCase()] || (selectedTxModal.user_id ? profilesMap[selectedTxModal.user_id] : null);
+                const buyerInfo = getBuyerInfo(selectedTxModal);
+                const matchedProf = buyerInfo.profile;
                 return (
-                  <div className="p-4 rounded-2xl bg-rose-50/50 border border-rose-200/80 space-y-2 text-left">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-rose-700 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Customer Profile Match</span>
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2 text-left">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Buyer Profile & Account Type</span>
+                      </div>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                        buyerInfo.role === 'company'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                          : buyerInfo.role === 'customer'
+                          ? 'bg-purple-50 text-purple-700 border-purple-300'
+                          : 'bg-blue-50 text-blue-700 border-blue-300'
+                      }`}>
+                        {buyerInfo.role === 'company' && <Building2 className="w-3 h-3 text-emerald-600" />}
+                        {buyerInfo.role === 'customer' && <Users className="w-3 h-3 text-purple-600" />}
+                        {buyerInfo.role === 'driver' && <Truck className="w-3 h-3 text-blue-600" />}
+                        <span>● {buyerInfo.role === 'company' ? 'Company Account' : buyerInfo.role === 'customer' ? 'Customer Account' : 'Driver Account'}</span>
+                      </span>
                     </div>
 
                     {matchedProf ? (
                       <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
                         <div>
                           <span className="text-[9px] text-slate-400 uppercase block font-bold">Full Name</span>
-                          <span className="font-extrabold text-slate-900">{matchedProf.full_name || matchedProf.name || 'Member'}</span>
+                          <span className="font-extrabold text-slate-900">{matchedProf.full_name || matchedProf.name || matchedProf.company_name || 'Member'}</span>
                         </div>
                         <div>
                           <span className="text-[9px] text-slate-400 uppercase block font-bold">Account Role</span>
-                          <span className="font-extrabold text-slate-900 capitalize">{matchedProf.role || 'Driver'}</span>
+                          <span className="font-extrabold text-slate-900 capitalize">{buyerInfo.role}</span>
                         </div>
                         {matchedProf.phone && (
                           <div>
@@ -605,16 +729,18 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
                             <span className="font-extrabold text-slate-800">{formatPhoneNumber(matchedProf.phone)}</span>
                           </div>
                         )}
-                        {matchedProf.city && (
+                        {(matchedProf.city || matchedProf.state_code || matchedProf.state) && (
                           <div>
                             <span className="text-[9px] text-slate-400 uppercase block font-bold">Location</span>
-                            <span className="font-extrabold text-slate-800">{matchedProf.city}, {matchedProf.state_code || 'US'}</span>
+                            <span className="font-extrabold text-slate-800">
+                              {matchedProf.city ? `${matchedProf.city}, ` : ''}{matchedProf.state_code || matchedProf.state || 'US'}
+                            </span>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-slate-500 font-medium">
-                        Buyer Email: <strong className="text-slate-800">{selectedTxModal.email}</strong> (Guest or direct Stripe Checkout customer).
+                      <p className="text-[11px] text-slate-500 font-medium pt-1">
+                        Buyer Email: <strong className="text-slate-800">{selectedTxModal.email}</strong> (Identified as {buyerInfo.role}).
                       </p>
                     )}
                   </div>

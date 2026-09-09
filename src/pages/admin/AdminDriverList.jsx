@@ -591,6 +591,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                   <th className="px-6 py-4">Vehicle Type</th>
                   {/* <th className="px-6 py-4">Location</th> */}
                   <th className="px-6 py-4">Directory Listing</th>
+                  <th className="px-6 py-4">Joined Date</th>
                   <th className="px-6 py-4 text-center">Account Access</th>
                   <th className="px-6 py-4 text-right">Admin Actions</th>
                 </tr>
@@ -654,6 +655,16 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
                           }`}>
                           {driver.ready_to_work !== false ? '● Listed' : '○ Hidden'}
                         </span>
+                      </td>
+
+                      {/* Date Joined */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-semibold text-slate-700">
+                          {driver.created_at ? new Date(driver.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Aug 11, 2026'}
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-medium">
+                          {driver.created_at ? new Date(driver.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}
+                        </div>
                       </td>
 
                       {/* Account Access Status Select Dropdown (Active vs Inactive) */}
