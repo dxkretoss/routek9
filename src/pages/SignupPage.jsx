@@ -180,6 +180,10 @@ export default function SignupPage({ onSignup }) {
           data: {
             full_name: nameToSave,
             role: signupRole,
+            user_role: signupRole,
+            user_type: signupRole,
+            account_type: signupRole,
+            app_platform: 'web',
             vehicle: signupRole === 'driver' ? vehicleType : '',
             city: cleanCity,
             state_code: cleanState
