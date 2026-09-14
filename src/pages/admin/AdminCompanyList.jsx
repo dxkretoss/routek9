@@ -168,7 +168,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
       try {
         const [txsRes, cdRes, routesRes] = await Promise.allSettled([
           supabase.from('transactions').select('amount, status, course_id, user_id, email, created_at').eq('status', 'Succeeded').limit(200),
-          supabase.from('company_drivers').select('company_id, full_name, name, email, phone').eq('status', 'ACTIVE').limit(200),
+          supabase.from('company_drivers').select('company_id, full_name, email, phone').eq('status', 'ACTIVE').limit(200),
           supabase.from('routes').select('id, title, company_id, user_id, stops_count, distance_miles, duration_minutes, stops_data, created_at').not('company_id', 'is', null).order('created_at', { ascending: false, nullsFirst: false }).limit(50)
         ]);
 

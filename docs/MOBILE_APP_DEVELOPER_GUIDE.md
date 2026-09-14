@@ -9,37 +9,27 @@ This document specifies the required setup and conventions for the **RouteK9 Mob
 
 When registering a new customer via the Mobile App using Supabase Auth, you **must** pass `role: 'customer'` inside the `options.data` payload.
 
-### Example (React Native / Flutter / JS SDK):
-
-```javascript
-import { supabase } from './supabaseClient';
-
-const handleCustomerSignup = async (email, password, fullName, phone) => {
-  const { data, error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
-    password: password,
-    options: {
-      data: {
-        full_name: fullName.trim(),
-        role: 'customer',           // REQUIRED: Identifies user as a Mobile Customer
-        user_role: 'customer',      // Fallback identifier
-        account_type: 'customer',   // Fallback identifier
-        app_platform: 'mobile',     // Identifies registration source
-        phone: phone || ''
-      },
-      // OPTIONAL: Configure deep-link or confirmation URL
-      // If left default or pointing to web, the web platform will confirm their email
-      // and instruct them to return to the mobile app.
-      emailRedirectTo: 'https://route-k9.com/login?customer_verified=true'
-    }
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+### Flutter (Dart) Example:
+```dart
+final Map<String, dynamic> metadata = {
+  'full_name': name,
+  'phone': phone,               // Saves to customer_profiles phone column
+  'role': 'customer',           // REQUIRED: Identifies user as a Mobile Customer
+  'user_role': 'customer',      // Fallback identifier
+  'account_type': 'customer',   // Fallback identifier
+  'app_platform': 'mobile',     // Identifies registration source
 };
+
+if (fcmToken != null) {
+  metadata['fcm_token'] = fcmToken;
+}
+
+final AuthResponse res = await supabase.auth.signUp(
+  email: email.trim().toLowerCase(),
+  password: password,
+  data: metadata,
+  emailRedirectTo: 'https://route-k9.com/login?customer_verified=true',
+);
 ```
 
 ---

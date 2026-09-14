@@ -57,7 +57,7 @@ The platform now enforces a strict separation between **Web Platform Users** and
 Run the following SQL in your **Supabase Dashboard -> SQL Editor** to ensure database triggers do not copy web users into `customer_profiles`:
 
 ```sql
--- 1. Update the database trigger to ONLY insert Customers
+-- 1. Update the database trigger to ONLY insert Customers (with phone and fcm_token)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -73,13 +73,18 @@ BEGIN
 
   -- ONLY insert into customer_profiles if the user registered as a 'customer' (Mobile App)
   IF user_role = 'customer' THEN
-    INSERT INTO public.customer_profiles (id, email, full_name)
+    INSERT INTO public.customer_profiles (id, email, full_name, phone, fcm_token)
     VALUES (
       NEW.id,
       NEW.email,
-      COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', '')
+      COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', ''),
+      COALESCE(NEW.raw_user_meta_data->>'phone', NEW.phone, ''),
+      COALESCE(NEW.raw_user_meta_data->>'fcm_token', '')
     )
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO UPDATE SET
+      phone = COALESCE(EXCLUDED.phone, customer_profiles.phone),
+      full_name = COALESCE(EXCLUDED.full_name, customer_profiles.full_name),
+      fcm_token = COALESCE(EXCLUDED.fcm_token, customer_profiles.fcm_token);
   END IF;
 
   RETURN NEW;
