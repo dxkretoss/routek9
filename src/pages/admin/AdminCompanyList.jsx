@@ -182,7 +182,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
           if (compIds.length > 0) {
             Promise.allSettled([
               supabase.from('profiles').select('id, email, full_name, avatar_url, city, state_code, phone').in('id', compIds),
-              supabase.from('company_profiles').select('user_id, company_name, contact_name, city, state, phone, contact_email, website, avatar_url, logo').in('user_id', compIds)
+              supabase.from('company_profiles').select('user_id, company_name, contact_name, city, state, phone, contact_email, website').in('user_id', compIds)
             ]).then(([profResult, metaResult]) => {
               if (!isMounted) return;
               const profs = (profResult.status === 'fulfilled' && profResult.value?.data) ? profResult.value.data : [];
@@ -276,7 +276,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
       const [metaRes, profRes] = await Promise.allSettled([
         supabase
           .from('company_profiles')
-          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description, avatar_url, logo, created_at')
+          .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description, created_at')
           .order('created_at', { ascending: false, nullsFirst: false })
           .limit(200),
         supabase
