@@ -156,15 +156,7 @@ export default function LoginPage({ onLogin }) {
     try {
       setForgotLoading(true);
 
-      // Check if email belongs to a customer app account
-      const custCheck = await verifyUserPlatformRole(null, cleanEmail);
-      if (!custCheck.allowed || custCheck.isCustomer) {
-        setForgotError("This email address is not registered. Please check your email or create a new account.");
-        setForgotLoading(false);
-        return;
-      }
-
-      // Check if email is registered in profiles table
+      // Check if email is registered in profiles table (Driver / Company web platform)
       const { data: existingProfile, error: checkErr } = await supabase
         .from('profiles')
         .select('id, email, role')
@@ -177,6 +169,13 @@ export default function LoginPage({ onLogin }) {
 
       if (!existingProfile) {
         setForgotError("This email address is not registered. Please check your email or create a new account.");
+        setForgotLoading(false);
+        return;
+      }
+
+      const pRole = (existingProfile.role || '').toLowerCase();
+      if (pRole === 'customer' || pRole === 'client') {
+        setForgotError("This email address is not registered on the Driver/Company platform.");
         setForgotLoading(false);
         return;
       }
@@ -207,7 +206,7 @@ export default function LoginPage({ onLogin }) {
     const cleanPassword = password.trim();
 
     try {
-      // 0. Pre-check: Verify if email exists in profiles table and has an authorized role
+      // 0. Pre-check: Verify if email is a customer app account
       try {
         const { data: preCheck } = await supabase
           .from('profiles')
@@ -217,17 +216,19 @@ export default function LoginPage({ onLogin }) {
 
         if (preCheck) {
           const role = (preCheck.role || '').toLowerCase();
-          const allowedRoles = ['driver', 'company', 'admin', 'superadmin', 'super_admin', 'dispatcher'];
-          if (role === 'customer' || role === 'client' || !allowedRoles.includes(role)) {
+          if (role === 'customer' || role === 'client') {
             throw new Error("Invalid email or password. Please double-check your credentials or create a new account.");
           }
-          const isAdmin =
-            role === 'admin' ||
-            role === 'superadmin' ||
-            role === 'super_admin';
+        } else {
+          // If NOT in profiles table, check if they exist in customer_profiles (pure mobile customer)
+          const { data: custPreCheck } = await supabase
+            .from('customer_profiles')
+            .select('id, email')
+            .ilike('email', cleanEmail)
+            .maybeSingle();
 
-          if (isAdmin) {
-            throw new Error("Invalid email or password. Please double-check your credentials.");
+          if (custPreCheck) {
+            throw new Error("Invalid email or password. Please double-check your credentials or create a new account.");
           }
         }
       } catch (preErr) {
@@ -268,7 +269,11 @@ export default function LoginPage({ onLogin }) {
 
       if (userId) {
         // Fetch User Profile from Supabase profiles table
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
+        let { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+        if (!profile && cleanEmail) {
+          const { data: profByEmail } = await supabase.from('profiles').select('*').ilike('email', cleanEmail).maybeSingle();
+          profile = profByEmail;
+        }
         profileData = profile;
       }
 

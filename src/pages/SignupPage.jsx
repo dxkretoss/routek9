@@ -150,20 +150,26 @@ export default function SignupPage({ onSignup }) {
       const cleanCity = city.trim();
       const cleanState = stateCode.trim().toUpperCase();
 
-      // 0. Pre-Signup Validation: Ensure email is unique and not an App Customer
-      const custCheck = await verifyUserPlatformRole(null, cleanEmail);
-      if (!custCheck.allowed && custCheck.isCustomer) {
-        throw new Error(`The email "${cleanEmail}" is already registered as a Customer App account. Customer accounts cannot register on this Driver/Company platform. Please use a different email or log in via the RouteK9 Customer App.`);
-      }
-
-      const { data: existingProfiles, error: checkError } = await supabase
+      // 0. Pre-Signup Validation: Check if already registered in profiles table (Driver / Company web platform)
+      const { data: existingProfiles } = await supabase
         .from('profiles')
         .select('id')
-        .eq('email', cleanEmail)
+        .ilike('email', cleanEmail)
         .limit(1);
 
       if (existingProfiles && existingProfiles.length > 0) {
         throw new Error(`An account with email "${cleanEmail}" already exists. Please log in instead.`);
+      }
+
+      // Check customer_profiles table (Mobile Customer App)
+      const { data: customerExists } = await supabase
+        .from('customer_profiles')
+        .select('id, email')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      if (customerExists) {
+        throw new Error(`The email "${cleanEmail}" is already registered as a Customer App account. Customer accounts cannot register on this Driver/Company platform. Please use a different email or log in via the RouteK9 Customer App.`);
       }
 
       // 1. Supabase Auth Registration
@@ -215,6 +221,13 @@ export default function SignupPage({ onSignup }) {
             throw new Error(`An account with email "${cleanEmail}" already exists. Please log in instead.`);
           }
           throw upsertErr;
+        }
+
+        // Clean up any trigger-generated customer record so driver account stays exclusively in profiles
+        try {
+          await supabase.from('customer_profiles').delete().eq('id', userId);
+        } catch (cleanErr) {
+          // ignore
         }
 
         // Create welcome notification

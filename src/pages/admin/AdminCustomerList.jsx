@@ -161,8 +161,8 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
       let ordersList = [];
       let customerProfilesList = [];
 
-      // Execute customer_orders, customer_profiles, and profiles in parallel
-      const [ordersRes, cpRes, profRes] = await Promise.allSettled([
+      // Execute customer_orders, customer_profiles, and web profiles in parallel
+      const [ordersRes, cpRes, profRes, webProfilesRes] = await Promise.allSettled([
         supabase
           .from('customer_orders')
           .select('id, customer_id, sender_name, sender_phone, recipient_name, recipient_phone, pickup_address, dropoff_address, order_status, status, price, created_at')
@@ -175,7 +175,11 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
           .from('profiles')
           .select('id, full_name, email, phone, avatar_url, created_at, updated_at, role')
           .eq('role', 'customer')
-          .order('created_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false, nullsFirst: false }),
+        supabase
+          .from('profiles')
+          .select('id, email, role')
+          .in('role', ['driver', 'company', 'admin', 'superadmin', 'super_admin', 'dispatcher'])
       ]);
 
       if (ordersRes.status === 'fulfilled' && ordersRes.value?.data) {
@@ -189,8 +193,22 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
         setOrders(ordersList);
       }
 
+      const driverIds = new Set();
+      const driverEmails = new Set();
+      if (webProfilesRes.status === 'fulfilled' && Array.isArray(webProfilesRes.value?.data)) {
+        webProfilesRes.value.data.forEach(p => {
+          if (p.id) driverIds.add(String(p.id).toLowerCase());
+          if (p.email) driverEmails.add(p.email.toLowerCase().trim());
+        });
+      }
+
       if (cpRes.status === 'fulfilled' && cpRes.value?.data) {
-        customerProfilesList = cpRes.value.data;
+        // Exclude any driver/company web accounts from customer directory
+        customerProfilesList = cpRes.value.data.filter(c => {
+          const idMatch = c.id && driverIds.has(String(c.id).toLowerCase());
+          const emailMatch = c.email && driverEmails.has(String(c.email).toLowerCase().trim());
+          return !idMatch && !emailMatch;
+        });
       }
 
       // Also incorporate any customer accounts from profiles table

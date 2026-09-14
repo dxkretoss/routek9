@@ -1472,27 +1472,28 @@ export async function notifyNearbyDriversOnNewOrder(orderData, radiusMiles = DEF
 }
 
 /**
- * Validates whether a user has an authorized Driver, Company, or Admin profile ONLY in the 'profiles' table.
- * If the user does not exist in 'profiles' (e.g. they only exist in the customer app) or their role is 'customer',
- * access is rejected with standard invalid credentials.
+ * Validates whether a user is a Customer App user vs a Driver/Company/Admin platform user.
+ * - If the user has a valid Driver/Company/Admin profile in 'profiles', access is ALLOWED.
+ * - If the user only exists in 'customer_profiles' table (or metadata/role is customer), access is REJECTED.
+ * - If the user exists in neither (new registrant), access is ALLOWED for registration.
  */
 export async function verifyUserPlatformRole(userId, userEmail, userMetadata = null) {
   try {
     const cleanEmail = (userEmail || '').trim().toLowerCase();
     const cleanId = userId ? String(userId).trim() : null;
 
-    // 1. Check user metadata if role explicitly states customer
+    // 1. Check user metadata if role explicitly states customer or client
     const metaRole = (userMetadata?.role || userMetadata?.user_type || userMetadata?.account_type || '').trim().toLowerCase();
     if (metaRole === 'customer' || metaRole === 'client') {
       return {
         allowed: false,
         isCustomer: true,
         role: 'customer',
-        message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+        message: 'Customer accounts cannot access the Driver/Company platform. Please use the RouteK9 Customer App.'
       };
     }
 
-    // 2. Query ONLY the 'profiles' table (RouteK9 Web platform user table)
+    // 2. Query the 'profiles' table first (RouteK9 Web platform: driver, company, admin, dispatcher)
     let profile = null;
     if (cleanId) {
       const { data: pById } = await supabase
@@ -1511,42 +1512,67 @@ export async function verifyUserPlatformRole(userId, userEmail, userMetadata = n
       if (pByEmail) profile = pByEmail;
     }
 
-    // If NO profile exists in the 'profiles' table -> Block!
-    if (!profile) {
+    // If profile exists in 'profiles'
+    if (profile) {
+      const pRole = (profile.role || '').trim().toLowerCase();
+      if (pRole === 'customer' || pRole === 'client') {
+        return {
+          allowed: false,
+          isCustomer: true,
+          role: 'customer',
+          message: 'The email is registered as a customer account. Customer accounts cannot access the Driver/Company platform.'
+        };
+      }
       return {
-        allowed: false,
-        isCustomer: true,
-        role: null,
-        message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+        allowed: true,
+        isCustomer: false,
+        role: pRole || 'driver',
+        profile
       };
     }
 
-    const pRole = (profile.role || '').trim().toLowerCase();
-    const allowedRoles = ['driver', 'company', 'admin', 'superadmin', 'super_admin', 'dispatcher'];
+    // 3. If NOT in 'profiles', check if user exists in 'customer_profiles' (Mobile Customer App)
+    let customerRecord = null;
+    if (cleanId) {
+      const { data: cById } = await supabase
+        .from('customer_profiles')
+        .select('id, email, full_name')
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (cById) customerRecord = cById;
+    }
+    if (!customerRecord && cleanEmail) {
+      const { data: cByEmail } = await supabase
+        .from('customer_profiles')
+        .select('id, email, full_name')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+      if (cByEmail) customerRecord = cByEmail;
+    }
 
-    // If role in profiles is customer or not an allowed platform role -> Block!
-    if (pRole === 'customer' || pRole === 'client' || !allowedRoles.includes(pRole)) {
+    if (customerRecord) {
       return {
         allowed: false,
         isCustomer: true,
-        role: pRole || 'customer',
-        message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+        role: 'customer',
+        message: 'The email is already registered as a Customer App account. Customer accounts cannot access the Driver/Company platform.'
       };
     }
 
+    // 4. Brand new user (not in profiles and not in customer_profiles)
     return {
       allowed: true,
       isCustomer: false,
-      role: pRole,
-      profile
+      role: null,
+      profile: null
     };
   } catch (err) {
     console.warn("verifyUserPlatformRole error:", err);
     return {
-      allowed: false,
-      isCustomer: true,
+      allowed: true,
+      isCustomer: false,
       role: null,
-      message: 'Invalid email or password. Please double-check your credentials or create a new account.'
+      profile: null
     };
   }
 }
