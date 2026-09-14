@@ -179,7 +179,6 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
         supabase
           .from('profiles')
           .select('id, email, role')
-          .in('role', ['driver', 'company', 'admin', 'superadmin', 'super_admin', 'dispatcher'])
       ]);
 
       if (ordersRes.status === 'fulfilled' && ordersRes.value?.data) {
@@ -197,8 +196,12 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
       const driverEmails = new Set();
       if (webProfilesRes.status === 'fulfilled' && Array.isArray(webProfilesRes.value?.data)) {
         webProfilesRes.value.data.forEach(p => {
-          if (p.id) driverIds.add(String(p.id).toLowerCase());
-          if (p.email) driverEmails.add(p.email.toLowerCase().trim());
+          const role = (p.role || '').toLowerCase().trim();
+          // Any profile that is NOT explicitly customer is a Driver/Company/Admin web user
+          if (role !== 'customer' && role !== 'client') {
+            if (p.id) driverIds.add(String(p.id).toLowerCase());
+            if (p.email) driverEmails.add(p.email.toLowerCase().trim());
+          }
         });
       }
 
