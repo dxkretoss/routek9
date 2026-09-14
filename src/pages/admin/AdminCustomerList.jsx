@@ -22,7 +22,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
-export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) {
+export default function AdminCustomerList({ searchQuery = '', setSearchQuery, onRefresh }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(
@@ -39,6 +39,14 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
   const [directoryPage, setDirectoryPage] = useState(1);
   const [ordersPage, setOrdersPage] = useState(1);
   const itemsPerPage = 10;
+  const [searchInput, setSearchInput] = useState(searchQuery || '');
+  const [appliedSearch, setAppliedSearch] = useState(searchQuery || '');
+
+  // Keep searchInput in sync if prop searchQuery changes externally
+  useEffect(() => {
+    setSearchInput(searchQuery || '');
+    setAppliedSearch(searchQuery || '');
+  }, [searchQuery]);
 
   // Sync URL search param changes to activeTab
   useEffect(() => {
@@ -67,6 +75,8 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
 
   // Reset search when active tab changes
   useEffect(() => {
+    setSearchInput('');
+    setAppliedSearch('');
     if (setSearchQuery) setSearchQuery('');
   }, [activeTab]);
 
@@ -151,10 +161,10 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
       let customerProfilesList = [];
 
       // Execute customer_orders, customer_profiles, and web profiles in parallel
-      const [ordersRes, cpRes, profRes, webProfilesRes, compProfRes] = await Promise.allSettled([
+      const [ordersRes, cpRes, webProfilesRes, compProfRes] = await Promise.allSettled([
         supabase
           .from('customer_orders')
-          .select('id, customer_id, sender_name, sender_phone, recipient_name, recipient_phone, pickup_address, dropoff_address, order_status, status, price, created_at')
+          .select('*')
           .order('created_at', { ascending: false, nullsFirst: false }),
         supabase
           .from('customer_profiles')
@@ -162,13 +172,7 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
           .order('created_at', { ascending: false, nullsFirst: false }),
         supabase
           .from('profiles')
-          .select('id, full_name, email, phone, avatar_url, created_at, updated_at, role')
-          .eq('role', 'customer')
-          .order('created_at', { ascending: false, nullsFirst: false }),
-        supabase
-          .from('profiles')
           .select('id, email, role')
-          .or('role.eq.driver,role.is.null,role.eq.company,role.eq.admin,role.eq.superadmin,role.eq.dispatcher')
           .limit(10000),
         supabase
           .from('company_profiles')
@@ -230,15 +234,6 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
           .in('id', ghostCustomerIds)
           .then(() => {})
           .catch(err => console.warn("Ghost customer DB cleanup notice:", err));
-      }
-
-      // Also incorporate any customer accounts from profiles table
-      if (profRes.status === 'fulfilled' && Array.isArray(profRes.value?.data)) {
-        profRes.value.data.forEach(p => {
-          if (!customerProfilesList.some(cp => String(cp.id).toLowerCase() === String(p.id).toLowerCase())) {
-            customerProfilesList.push(p);
-          }
-        });
       }
 
       // Build customer directory records from customer_profiles
@@ -323,9 +318,10 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
     loadData();
   }, []);
 
-  // Filter customers based on search term
+  // Filter customers based on applied search term
   const filteredCustomers = customers.filter((c) => {
-    const q = (searchQuery || '').toLowerCase();
+    const q = (appliedSearch || '').toLowerCase().trim();
+    if (!q) return true;
     const name = (c.full_name || '').toLowerCase();
     const email = (c.email || '').toLowerCase();
     const phone = (c.phone || '').toLowerCase();
@@ -334,9 +330,10 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
     return name.includes(q) || email.includes(q) || phone.includes(q) || id.includes(q);
   });
 
-  // Filter customer orders based on search term
+  // Filter customer orders based on applied search term
   const filteredOrders = orders.filter((o) => {
-    const q = (searchQuery || '').toLowerCase();
+    const q = (appliedSearch || '').toLowerCase().trim();
+    if (!q) return true;
     const ref = (o.order_ref || '').toLowerCase();
     const cat = (o.category || '').toLowerCase();
     const pAddr = (o.pickup_address || '').toLowerCase();
@@ -377,7 +374,10 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
           </p>
         </div>
         <button
-          onClick={loadData}
+          onClick={() => {
+            loadData();
+            if (typeof onRefresh === 'function') onRefresh();
+          }}
           className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-2 self-start sm:self-auto"
         >
           <span>Refresh Data</span>
@@ -420,20 +420,36 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search customers by name, email, phone, or ID..."
-                value={searchQuery}
+                placeholder="Search customers & press Enter..."
+                value={searchInput}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setDirectoryPage(1);
-                  setOrdersPage(1);
+                  const val = e.target.value;
+                  setSearchInput(val);
+                  if (!val.trim()) {
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                    setDirectoryPage(1);
+                    setOrdersPage(1);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setAppliedSearch(searchInput.trim());
+                    if (setSearchQuery) setSearchQuery(searchInput.trim());
+                    setDirectoryPage(1);
+                    setOrdersPage(1);
+                  }
                 }}
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
                   type="button"
                   onClick={() => {
-                    setSearchQuery('');
+                    setSearchInput('');
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
                     setDirectoryPage(1);
                     setOrdersPage(1);
                   }}
@@ -587,20 +603,36 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search orders by order ref, pickup, dropoff, or status..."
-                value={searchQuery}
+                placeholder="Search orders & press Enter..."
+                value={searchInput}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setDirectoryPage(1);
-                  setOrdersPage(1);
+                  const val = e.target.value;
+                  setSearchInput(val);
+                  if (!val.trim()) {
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                    setDirectoryPage(1);
+                    setOrdersPage(1);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setAppliedSearch(searchInput.trim());
+                    if (setSearchQuery) setSearchQuery(searchInput.trim());
+                    setDirectoryPage(1);
+                    setOrdersPage(1);
+                  }
                 }}
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
                   type="button"
                   onClick={() => {
-                    setSearchQuery('');
+                    setSearchInput('');
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
                     setDirectoryPage(1);
                     setOrdersPage(1);
                   }}

@@ -157,7 +157,7 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
             try {
               const { data: ordData, count: ordCount } = await supabase
                 .from('customer_orders')
-                .select('id, customer_id, sender_name, sender_phone, created_at, price', { count: 'exact' })
+                .select('*', { count: 'exact' })
                 .order('created_at', { ascending: false })
                 .limit(5);
 
@@ -168,11 +168,11 @@ export default function AdminDashboard({ drivers = [], companies = [], allUsers 
               if (ordData && ordData.length > 0 && isMounted) {
                 setRecentCustomers(ordData.map(o => ({
                   id: o.id,
-                  full_name: o.sender_name || 'Customer',
-                  email: '—',
-                  phone: o.sender_phone || '',
+                  full_name: o.customer_name || o.sender_name || o.recipient_name || 'Customer',
+                  email: o.customer_email || '—',
+                  phone: o.customer_phone || o.sender_phone || o.phone || '',
                   total_deliveries: 1,
-                  total_saved: Number(o.price || 0),
+                  total_saved: Number(o.price || o.total_amount || 0),
                   created_at: o.created_at
                 })));
               }

@@ -52,6 +52,14 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [totalDriversCount, setTotalDriversCount] = useState(driversCount || 513);
+  const [searchInput, setSearchInput] = useState(searchQuery || '');
+  const [appliedSearch, setAppliedSearch] = useState(searchQuery || '');
+
+  // Keep searchInput in sync if prop searchQuery changes externally
+  useEffect(() => {
+    setSearchInput(searchQuery || '');
+    setAppliedSearch(searchQuery || '');
+  }, [searchQuery]);
 
   // Sync URL search param changes to activeTab (e.g. browser back/forward or reload)
   useEffect(() => {
@@ -76,10 +84,6 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
       return next;
     }, { replace: true });
   };
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, vehicleFilter]);
 
   // Reset search when active tab changes
   useEffect(() => {
@@ -243,11 +247,13 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
   }, []);
 
   // Fast Driver Profiles Loader (10 items per page range without blocking count scans)
-  const loadData = async (targetPage = currentPage) => {
-    const cacheKey = `${targetPage}_${(searchQuery || '').trim().toLowerCase()}_${vehicleFilter || 'all'}`;
+  const loadData = async (targetPage = currentPage, searchOverride, forceFresh = false) => {
+    const activeSearch = typeof searchOverride === 'string' ? searchOverride : (appliedSearch || '');
+    const q = activeSearch.trim();
+    const cacheKey = `${targetPage}_${q.toLowerCase()}_${vehicleFilter || 'all'}`;
 
-    // Instant cache hit
-    if (pageCacheRef.current[cacheKey]) {
+    // Instant cache hit unless forceFresh is requested
+    if (!forceFresh && pageCacheRef.current[cacheKey]) {
       setDrivers(pageCacheRef.current[cacheKey].data);
       if (typeof pageCacheRef.current[cacheKey].count === 'number') {
         setTotalDriversCount(pageCacheRef.current[cacheKey].count);
@@ -268,8 +274,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
         .or('role.eq.driver,role.is.null')
         .order('created_at', { ascending: false, nullsFirst: false });
 
-      if (searchQuery) {
-        const q = searchQuery.trim();
+      if (q) {
         query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,city.ilike.%${q}%,state_code.ilike.%${q}%`);
       }
 
@@ -357,7 +362,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
       setLoading(false);
 
       // Async background count update when searching or filtering
-      if (searchQuery || vehicleFilter !== 'all') {
+      if (q || vehicleFilter !== 'all') {
         (async () => {
           try {
             let countQ = supabase
@@ -365,8 +370,7 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
               .select('id', { count: 'exact', head: true })
               .or('role.eq.driver,role.is.null');
 
-            if (searchQuery) {
-              const q = searchQuery.trim();
+            if (q) {
               countQ = countQ.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,city.ilike.%${q}%,state_code.ilike.%${q}%`);
             }
             if (vehicleFilter && vehicleFilter !== 'all') {
@@ -390,9 +394,16 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
     }
   };
 
+  // Trigger search on appliedSearch or vehicleFilter change
+  useEffect(() => {
+    setCurrentPage(1);
+    loadData(1);
+  }, [appliedSearch, vehicleFilter]);
+
+  // Trigger page change
   useEffect(() => {
     loadData(currentPage);
-  }, [searchQuery, vehicleFilter]);
+  }, [currentPage]);
 
   // Fetch Certifications dynamically from Supabase database when modal opens
   useEffect(() => {
@@ -508,7 +519,11 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
           </p>
         </div>
         <button
-          onClick={() => loadData(currentPage)}
+          onClick={() => {
+            pageCacheRef.current = {};
+            loadData(currentPage, undefined, true);
+            if (typeof onRefresh === 'function') onRefresh();
+          }}
           className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-2 self-start sm:self-auto"
         >
           <span>Refresh Data</span>
@@ -565,15 +580,33 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search drivers or location..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search drivers & press Enter..."
+                value={searchInput}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchInput(val);
+                  if (!val.trim()) {
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setAppliedSearch(searchInput.trim());
+                    if (setSearchQuery) setSearchQuery(searchInput.trim());
+                  }
+                }}
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => {
+                    setSearchInput('');
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
                   title="Clear search"
                 >
@@ -788,15 +821,33 @@ export default function AdminDriverList({ users = [], driversCount = 0, searchQu
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search routes by ID or title..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search routes & press Enter..."
+                value={searchInput}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchInput(val);
+                  if (!val.trim()) {
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setAppliedSearch(searchInput.trim());
+                    if (setSearchQuery) setSearchQuery(searchInput.trim());
+                  }
+                }}
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => {
+                    setSearchInput('');
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
                   title="Clear search"
                 >

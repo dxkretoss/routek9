@@ -26,7 +26,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { formatPhoneNumber } from './components/AdminComponents';
 
-export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
+export default function AdminCompanyList({ searchQuery = '', setSearchQuery, onRefresh }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(
@@ -47,6 +47,14 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCompaniesCount, setTotalCompaniesCount] = useState(64);
   const itemsPerPage = 10;
+  const [searchInput, setSearchInput] = useState(searchQuery || '');
+  const [appliedSearch, setAppliedSearch] = useState(searchQuery || '');
+
+  // Keep searchInput in sync if prop searchQuery changes externally
+  useEffect(() => {
+    setSearchInput(searchQuery || '');
+    setAppliedSearch(searchQuery || '');
+  }, [searchQuery]);
 
   // Sync URL search param changes to activeTab
   useEffect(() => {
@@ -73,6 +81,8 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
 
   // Reset search when active tab changes
   useEffect(() => {
+    setSearchInput('');
+    setAppliedSearch('');
     if (setSearchQuery) setSearchQuery('');
   }, [activeTab]);
 
@@ -128,8 +138,8 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
   }, [routes, companies, companyProfilesMap]);
 
   const filteredGroupedRoutes = groupedRoutesByCompany.filter(g => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
+    if (!appliedSearch) return true;
+    const q = appliedSearch.toLowerCase();
     return (
       g.companyName.toLowerCase().includes(q) ||
       (g.companyEmail && g.companyEmail.toLowerCase().includes(q)) ||
@@ -252,13 +262,14 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
   }, []);
 
   // Load Company Profiles from Supabase & Cache
-  const loadCompanies = async (pageToLoad = currentPage) => {
+  const loadCompanies = async (pageToLoad = currentPage, forceFresh = false) => {
     const p = typeof pageToLoad === 'number' ? pageToLoad : currentPage;
     setCurrentPage(p);
-    const cacheKey = `comp_${p}_${(searchQuery || '').trim().toLowerCase()}`;
+    const q = (appliedSearch || '').trim().toLowerCase();
+    const cacheKey = `comp_${p}_${q}`;
 
-    // Instant cache hit
-    if (pageCacheRef.current[cacheKey]) {
+    // Instant cache hit unless forceFresh is requested
+    if (!forceFresh && pageCacheRef.current[cacheKey]) {
       setCompanies(pageCacheRef.current[cacheKey].data);
       if (typeof pageCacheRef.current[cacheKey].count === 'number') {
         setTotalCompaniesCount(pageCacheRef.current[cacheKey].count);
@@ -363,7 +374,11 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
 
   useEffect(() => {
     loadCompanies(currentPage);
-  }, [searchQuery]);
+  }, [currentPage]);
+
+  useEffect(() => {
+    loadCompanies(1);
+  }, [appliedSearch]);
 
   // Account Access Status Change Handler (ACTIVE vs INACTIVE)
   const handleAccountStatusChange = async (companyId, companyEmail, newStatus) => {
@@ -390,19 +405,21 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
     }
   };
 
-  // Filter companies based on search term
+  // Filter companies based on applied search term
   const filteredCompanies = companies.filter((c) => {
-    const q = (searchQuery || '').toLowerCase();
+    const q = (appliedSearch || '').toLowerCase().trim();
+    if (!q) return true;
     const name = (c.company_name || c.full_name || '').toLowerCase();
-    const email = (c.email || '').toLowerCase();
+    const email = (c.email || c.contact_email || '').toLowerCase();
     const city = (c.city || '').toLowerCase();
-    const state = (c.state_code || '').toLowerCase();
+    const state = (c.state_code || c.state || '').toLowerCase();
 
     return name.includes(q) || email.includes(q) || city.includes(q) || state.includes(q);
   });
 
   const filteredRoutes = routes.filter((r) => {
-    const q = (searchQuery || '').toLowerCase();
+    const q = (appliedSearch || '').toLowerCase().trim();
+    if (!q) return true;
     return (
       (r.title || '').toLowerCase().includes(q) ||
       (r.companyName || '').toLowerCase().includes(q) ||
@@ -423,7 +440,11 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
           </p>
         </div>
         <button
-          onClick={loadCompanies}
+          onClick={() => {
+            pageCacheRef.current = {};
+            loadCompanies(currentPage, true);
+            if (typeof onRefresh === 'function') onRefresh();
+          }}
           className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-2 self-start sm:self-auto"
         >
           <span>Refresh Data</span>
@@ -464,15 +485,33 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search by company name, email, city, or state..."
-                value={searchQuery || ''}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search companies & press Enter..."
+                value={searchInput}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchInput(val);
+                  if (!val.trim()) {
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setAppliedSearch(searchInput.trim());
+                    if (setSearchQuery) setSearchQuery(searchInput.trim());
+                  }
+                }}
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => {
+                    setSearchInput('');
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
                   title="Clear search"
                 >
@@ -667,15 +706,33 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery }) {
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search routes by ID, title, or company..."
-                value={searchQuery || ''}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search routes & press Enter..."
+                value={searchInput}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchInput(val);
+                  if (!val.trim()) {
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setAppliedSearch(searchInput.trim());
+                    if (setSearchQuery) setSearchQuery(searchInput.trim());
+                  }
+                }}
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-2xs"
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => {
+                    setSearchInput('');
+                    setAppliedSearch('');
+                    if (setSearchQuery) setSearchQuery('');
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
                   title="Clear search"
                 >
