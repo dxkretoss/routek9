@@ -428,7 +428,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     name: '',
     phone: '',
     email: '',
-    vehicle: 'Cargo Van',
+    vehicle: '',
     city: 'Houston',
     state: 'TX',
     cdl: false
@@ -437,7 +437,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     name: '',
     phone: '',
     email: '',
-    vehicle: 'Cargo Van',
+    vehicle: '',
     city: 'Houston',
     state: 'TX',
     cdl: false
@@ -645,7 +645,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
     const name = newDriverForm.name.trim();
     const phone = (newDriverForm.phone || '').trim();
     const enteredEmail = (newDriverForm.email || '').trim().toLowerCase();
-    const vehicle = newDriverForm.vehicle;
+    const vehicle = newDriverForm.vehicle || (PRIMARY_VEHICLE_CLASSES.length > 0 ? PRIMARY_VEHICLE_CLASSES[0] : 'Cargo Van');
     const city = (newDriverForm.city || '').trim();
     const state = (newDriverForm.state || '').trim();
 
@@ -710,7 +710,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
 
         alert(`📩 Fleet Join Invitation sent to registered driver (${enteredEmail})! They will appear in your fleet list as soon as they accept in their Inbox.`);
         setIsAddDriverModalOpen(false);
-        setNewDriverForm({ name: '', phone: '', email: '', vehicle: 'Cargo Van', city: 'Houston', state: 'TX', cdl: false });
+        setNewDriverForm({ name: '', phone: '', email: '', vehicle: PRIMARY_VEHICLE_CLASSES[0] || '', city: 'Houston', state: 'TX', cdl: false });
         await fetchFleetFromSupabase();
         return;
       }
@@ -749,7 +749,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       name: '',
       phone: '',
       email: '',
-      vehicle: 'Cargo Van',
+      vehicle: PRIMARY_VEHICLE_CLASSES[0] || '',
       city: 'Houston',
       state: 'TX',
       cdl: false
@@ -762,7 +762,7 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
       name: driver.name || '',
       phone: driver.phone || '',
       email: driver.email || '',
-      vehicle: driver.vehicle || 'Cargo Van',
+      vehicle: driver.vehicle || (PRIMARY_VEHICLE_CLASSES.length > 0 ? PRIMARY_VEHICLE_CLASSES[0] : ''),
       city: driver.city || 'Houston',
       state: driver.state || 'TX',
       cdl: Boolean(driver.cdl)
@@ -3133,16 +3133,13 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Vehicle Class *</label>
                 <select
                   required
-                  value={newDriverForm.vehicle}
+                  value={newDriverForm.vehicle || (PRIMARY_VEHICLE_CLASSES.length > 0 ? PRIMARY_VEHICLE_CLASSES[0] : '')}
                   onChange={(e) => setNewDriverForm(prev => ({ ...prev, vehicle: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
                 >
-                  <option value="Cargo Van">Cargo Van</option>
-                  <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
-                  <option value="16ft Box Truck">16ft Box Truck</option>
-                  <option value="26ft Box Truck">26ft Box Truck</option>
-                  <option value="Sedan / Hatchback">Sedan / Hatchback</option>
-                  <option value="Minivan / SUV">Minivan / SUV</option>
+                  {PRIMARY_VEHICLE_CLASSES.map((vc) => (
+                    <option key={vc} value={vc}>{vc}</option>
+                  ))}
                 </select>
               </div>
 
@@ -3260,16 +3257,13 @@ export default function DashboardPage({ currentUser, onLogout, purchasedCourses 
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Vehicle Class</label>
                 <select
-                  value={editDriverForm.vehicle}
+                  value={editDriverForm.vehicle || (PRIMARY_VEHICLE_CLASSES.length > 0 ? PRIMARY_VEHICLE_CLASSES[0] : '')}
                   onChange={(e) => setEditDriverForm(prev => ({ ...prev, vehicle: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none cursor-pointer"
                 >
-                  <option value="Cargo Van">Cargo Van</option>
-                  <option value="Sprinter / High-Top Van">Sprinter / High-Top Van</option>
-                  <option value="16ft Box Truck">16ft Box Truck</option>
-                  <option value="26ft Box Truck">26ft Box Truck</option>
-                  <option value="Sedan / Hatchback">Sedan / Hatchback</option>
-                  <option value="Minivan / SUV">Minivan / SUV</option>
+                  {PRIMARY_VEHICLE_CLASSES.map((vc) => (
+                    <option key={vc} value={vc}>{vc}</option>
+                  ))}
                 </select>
               </div>
 
