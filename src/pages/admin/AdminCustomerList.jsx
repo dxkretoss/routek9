@@ -142,19 +142,8 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
     };
   }
 
-  // In-memory cache for instant switching
-  const customersCacheRef = React.useRef(null);
-
   // Load Customer Profiles & Customer Orders from Supabase
-  const loadData = async (forceRefresh = false) => {
-    if (!forceRefresh && customersCacheRef.current) {
-      setCustomers(customersCacheRef.current.customers || []);
-      setOrders(customersCacheRef.current.orders || []);
-      setAllProfiles(customersCacheRef.current.allProfiles || []);
-      setLoading(false);
-      return;
-    }
-
+  const loadData = async () => {
     setLoading(true);
     try {
       let custData = [];
@@ -162,7 +151,7 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
       let customerProfilesList = [];
 
       // Execute customer_orders, customer_profiles, and web profiles in parallel
-      const [ordersRes, cpRes, profRes, webProfilesRes] = await Promise.allSettled([
+      const [ordersRes, cpRes, profRes, webProfilesRes, compProfRes] = await Promise.allSettled([
         supabase
           .from('customer_orders')
           .select('id, customer_id, sender_name, sender_phone, recipient_name, recipient_phone, pickup_address, dropoff_address, order_status, status, price, created_at')
@@ -179,6 +168,11 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
         supabase
           .from('profiles')
           .select('id, email, role')
+          .limit(10000),
+        supabase
+          .from('company_profiles')
+          .select('user_id, contact_email')
+          .limit(10000)
       ]);
 
       if (ordersRes.status === 'fulfilled' && ordersRes.value?.data) {
@@ -199,19 +193,42 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
           const role = (p.role || '').toLowerCase().trim();
           // Any profile that is NOT explicitly customer is a Driver/Company/Admin web user
           if (role !== 'customer' && role !== 'client') {
-            if (p.id) driverIds.add(String(p.id).toLowerCase());
+            if (p.id) driverIds.add(String(p.id).toLowerCase().trim());
             if (p.email) driverEmails.add(p.email.toLowerCase().trim());
           }
         });
       }
+      if (compProfRes.status === 'fulfilled' && Array.isArray(compProfRes.value?.data)) {
+        compProfRes.value.data.forEach(cp => {
+          if (cp.user_id) driverIds.add(String(cp.user_id).toLowerCase().trim());
+          if (cp.contact_email) driverEmails.add(cp.contact_email.toLowerCase().trim());
+        });
+      }
 
+      const ghostCustomerIds = [];
       if (cpRes.status === 'fulfilled' && cpRes.value?.data) {
         // Exclude any driver/company web accounts from customer directory
         customerProfilesList = cpRes.value.data.filter(c => {
-          const idMatch = c.id && driverIds.has(String(c.id).toLowerCase());
-          const emailMatch = c.email && driverEmails.has(String(c.email).toLowerCase().trim());
-          return !idMatch && !emailMatch;
+          const cId = c.id ? String(c.id).toLowerCase().trim() : '';
+          const cEmail = c.email ? String(c.email).toLowerCase().trim() : '';
+          const idMatch = cId && driverIds.has(cId);
+          const emailMatch = cEmail && driverEmails.has(cEmail);
+          if (idMatch || emailMatch) {
+            if (c.id) ghostCustomerIds.push(c.id);
+            return false;
+          }
+          return true;
         });
+      }
+
+      // Automatically clean up ghost records from customer_profiles table in Supabase
+      if (ghostCustomerIds.length > 0) {
+        supabase
+          .from('customer_profiles')
+          .delete()
+          .in('id', ghostCustomerIds)
+          .then(() => {})
+          .catch(err => console.warn("Ghost customer DB cleanup notice:", err));
       }
 
       // Also incorporate any customer accounts from profiles table
@@ -290,13 +307,6 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
         const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
         return timeB - timeA;
       });
-
-      // Save to cache for instant rendering
-      customersCacheRef.current = {
-        customers: finalList,
-        orders: ordersList,
-        allProfiles: customerProfilesList
-      };
 
       setCustomers(finalList);
       setAllProfiles(customerProfilesList);
