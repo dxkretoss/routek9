@@ -168,6 +168,7 @@ export default function AdminCustomerList({ searchQuery = '', setSearchQuery }) 
         supabase
           .from('profiles')
           .select('id, email, role')
+          .or('role.eq.driver,role.is.null,role.eq.company,role.eq.admin,role.eq.superadmin,role.eq.dispatcher')
           .limit(10000),
         supabase
           .from('company_profiles')
