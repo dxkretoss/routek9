@@ -79,6 +79,45 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       include: ['react-simple-maps', 'prop-types', 'topojson-client', 'd3-scale', 'jodit-react', 'jodit']
     },
+    build: {
+      chunkSizeWarningLimit: 800,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('jodit') || id.includes('jodit-react')) {
+                return 'vendor-editor';
+              }
+              if (id.includes('leaflet')) {
+                return 'vendor-leaflet';
+              }
+              if (id.includes('react-simple-maps') || id.includes('d3') || id.includes('topojson')) {
+                return 'vendor-maps';
+              }
+              if (id.includes('html2canvas') || id.includes('dompurify')) {
+                return 'vendor-canvas';
+              }
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+              if (id.includes('@stripe')) {
+                return 'vendor-stripe';
+              }
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('react-phone-input-2')) {
+                return 'vendor-phone';
+              }
+              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+                return 'vendor-react';
+              }
+              return 'vendor-misc';
+            }
+          }
+        }
+      }
+    },
     server: {
       port: 5173,
       proxy: {

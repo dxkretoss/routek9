@@ -285,6 +285,11 @@ export default function SignupPage({ onSignup }) {
       setGoogleLoading(true);
       setError(null);
 
+      // Save user selected role before redirecting to Google OAuth
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('routek9_pending_signup_role', signupRole || 'driver');
+      }
+
       const resetOnFocus = () => {
         setTimeout(() => setGoogleLoading(false), 2000);
         window.removeEventListener('focus', resetOnFocus);

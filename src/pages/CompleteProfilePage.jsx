@@ -33,8 +33,12 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
   const navigate = useNavigate();
   const hasLoadedRef = useRef(false);
 
-  // Role Selection: 'driver' or 'company' (fixed from signup)
-  const [role, setRole] = useState(currentUser?.role || 'driver');
+  // Role Selection: 'driver' or 'company'
+  const [role, setRole] = useState(() => {
+    const pending = typeof window !== 'undefined' ? localStorage.getItem('routek9_pending_signup_role') : null;
+    if (pending === 'company' || pending === 'driver') return pending;
+    return currentUser?.role === 'company' ? 'company' : 'driver';
+  });
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -103,7 +107,10 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
                 navigate('/dashboard', { replace: true });
                 return;
               }
-              if (prof.role) {
+              const pendingRole = typeof window !== 'undefined' ? localStorage.getItem('routek9_pending_signup_role') : null;
+              if (pendingRole === 'company' || pendingRole === 'driver') {
+                setRole(pendingRole);
+              } else if (prof.role) {
                 setRole(prof.role.toLowerCase() === 'company' ? 'company' : 'driver');
               }
               if (prof.full_name) setFullName(prof.full_name);
@@ -115,8 +122,11 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
                 setVehicleClass(prof.vehicle);
               }
             } else {
+              const pendingRole = typeof window !== 'undefined' ? localStorage.getItem('routek9_pending_signup_role') : null;
               const metaRole = user.user_metadata?.role;
-              if (metaRole) {
+              if (pendingRole === 'company' || pendingRole === 'driver') {
+                setRole(pendingRole);
+              } else if (metaRole) {
                 setRole(metaRole.toLowerCase() === 'company' ? 'company' : 'driver');
               }
             }
@@ -259,6 +269,10 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
         onComplete(updatedUserData);
       }
 
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('routek9_pending_signup_role');
+      }
+
       navigate('/dashboard', { replace: true });
     } catch (err) {
       console.error("Complete profile error:", err);
@@ -358,20 +372,21 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5 text-left">
-            {/* FIXED ACCOUNT ROLE */}
+            {/* ACCOUNT ROLE SELECTION */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  ACCOUNT ROLE
+                  ACCOUNT ROLE <span className="text-rose-500">*</span>
                 </label>
+                <span className="text-[11px] text-slate-400 font-medium">Select your account type</span>
               </div>
-              <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100/90 rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200">
                 <button
                   type="button"
-                  disabled
-                  className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-not-allowed ${role === 'driver'
+                  onClick={() => setRole('driver')}
+                  className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${role === 'driver'
                     ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
-                    : 'bg-transparent text-slate-400 opacity-50'
+                    : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-white/60'
                     }`}
                 >
                   <Truck className="w-4 h-4" />
@@ -380,10 +395,10 @@ export default function CompleteProfilePage({ currentUser, onComplete }) {
 
                 <button
                   type="button"
-                  disabled
-                  className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-not-allowed ${role === 'company'
+                  onClick={() => setRole('company')}
+                  className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${role === 'company'
                     ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
-                    : 'bg-transparent text-slate-400 opacity-50'
+                    : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-white/60'
                     }`}
                 >
                   <Building2 className="w-4 h-4" />
