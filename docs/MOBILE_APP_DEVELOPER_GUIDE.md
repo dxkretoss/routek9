@@ -26,7 +26,11 @@ const handleCustomerSignup = async (email, password, fullName, phone) => {
         account_type: 'customer',   // Fallback identifier
         app_platform: 'mobile',     // Identifies registration source
         phone: phone || ''
-      }
+      },
+      // OPTIONAL: Configure deep-link or confirmation URL
+      // If left default or pointing to web, the web platform will confirm their email
+      // and instruct them to return to the mobile app.
+      emailRedirectTo: 'https://route-k9.com/login?customer_verified=true'
     }
   });
 

@@ -89,6 +89,8 @@ export default function LoginPage({ onLogin }) {
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [forgotError, setForgotError] = useState(null);
 
+  const [customerNotice, setCustomerNotice] = useState(null);
+
   React.useEffect(() => {
     if (searchParams.get('forgot') === 'true') {
       setShowForgotModal(true);
@@ -103,8 +105,8 @@ export default function LoginPage({ onLogin }) {
     const errorCode = hashParams.get('error_code') || queryParams.get('error_code');
     const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
 
-    if (errorParam === 'customer_access_denied' || queryParams.get('denied') === 'customer' || errorDesc?.toLowerCase().includes('customer')) {
-      setError("Invalid email or password. Please double-check your credentials or create a new account.");
+    if (searchParams.get('customer_verified') === 'true' || errorParam === 'customer_access_denied' || queryParams.get('denied') === 'customer' || errorDesc?.toLowerCase().includes('customer')) {
+      setCustomerNotice("Email Verified Successfully! Your Customer account has been confirmed. Please open the RouteK9 Customer Mobile App to sign in.");
       if (window.location.hash || window.location.search) {
         window.history.replaceState(null, '', window.location.pathname);
       }
@@ -585,6 +587,20 @@ export default function LoginPage({ onLogin }) {
           ) : (
             /* Standard Login Form */
             <>
+              {customerNotice && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-3.5 shadow-sm text-left animate-fadeIn">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-bold text-emerald-900">Email Verified Successfully!</h4>
+                    <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                      Your Customer account has been confirmed. This web portal is for Drivers and Dispatch Companies — please open the <strong>RouteK9 Mobile Customer App</strong> on your phone to log in and start booking deliveries.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2 text-center lg:text-left">
                 <h2 className="text-3xl font-extrabold text-[#0b132b] tracking-tight font-serif-heading">
                   Log in to your account

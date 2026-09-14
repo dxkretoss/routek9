@@ -441,7 +441,7 @@ export default function App() {
         setCurrentUser(null);
         deleteCookie(SESSION_COOKIE_NAME);
         if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-          navigate('/login?error=customer_access_denied', { replace: true });
+          navigate('/login?customer_verified=true', { replace: true });
         }
         return { isActive: false, role: null, isCustomer: true };
       }
