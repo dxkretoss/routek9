@@ -262,11 +262,12 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery, onR
   }, []);
 
   // Load Company Profiles from Supabase & Cache
+  // Load Company Profiles from Supabase & Cache
   const loadCompanies = async (pageToLoad = currentPage, forceFresh = false) => {
     const p = typeof pageToLoad === 'number' ? pageToLoad : currentPage;
     setCurrentPage(p);
-    const q = (appliedSearch || '').trim().toLowerCase();
-    const cacheKey = `comp_${p}_${q}`;
+    const q = (appliedSearch || '').trim();
+    const cacheKey = `comp_${p}_${q.toLowerCase()}`;
 
     // Instant cache hit unless forceFresh is requested
     if (!forceFresh && pageCacheRef.current[cacheKey]) {
@@ -283,19 +284,24 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery, onR
     const to = from + itemsPerPage - 1;
 
     try {
+      let query = supabase
+        .from('profiles')
+        .select('id, email, role, full_name, avatar_url, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work', { count: 'exact' })
+        .eq('role', 'company')
+        .order('created_at', { ascending: false, nullsFirst: false });
+
+      if (q) {
+        query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,city.ilike.%${q}%,state_code.ilike.%${q}%`);
+      }
+
       // 1. Fetch company_profiles metadata and profiles in parallel
       const [metaRes, profRes] = await Promise.allSettled([
         supabase
           .from('company_profiles')
           .select('user_id, company_name, contact_name, city, state, phone, contact_email, website, contract_types, service_area, description, created_at')
           .order('created_at', { ascending: false, nullsFirst: false })
-          .limit(200),
-        supabase
-          .from('profiles')
-          .select('id, email, role, full_name, avatar_url, city, state_code, phone, status, is_active, created_at, experience, dot_number, website_url, ready_to_work')
-          .eq('role', 'company')
-          .order('created_at', { ascending: false, nullsFirst: false })
-          .range(from, to)
+          .limit(500),
+        query.range(from, to)
       ]);
 
       const companyMeta = (metaRes.status === 'fulfilled' && metaRes.value?.data) ? metaRes.value.data : [];
@@ -306,6 +312,7 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery, onR
       }, {});
 
       const rawProfiles = (profRes.status === 'fulfilled' && profRes.value?.data) ? profRes.value.data : [];
+      const returnedCount = (profRes.status === 'fulfilled' && typeof profRes.value?.count === 'number') ? profRes.value.count : null;
 
       const list = rawProfiles.map((p) => {
         const meta = metaMap[p.id] || {};
@@ -341,30 +348,16 @@ export default function AdminCompanyList({ searchQuery = '', setSearchQuery, onR
         return timeB - timeA;
       });
 
+      const effectiveCount = returnedCount !== null ? returnedCount : (q ? list.length : totalCompaniesCount);
+      setTotalCompaniesCount(effectiveCount);
+
       pageCacheRef.current[cacheKey] = {
         data: list,
-        count: totalCompaniesCount
+        count: effectiveCount
       };
 
       setCompanies(list);
       setLoading(false);
-
-      // Async background count
-      if (p === 1) {
-        supabase
-          .from('profiles')
-          .select('id', { count: 'exact', head: true })
-          .eq('role', 'company')
-          .then(res => {
-            if (typeof res.count === 'number') {
-              setTotalCompaniesCount(res.count);
-              if (pageCacheRef.current[cacheKey]) {
-                pageCacheRef.current[cacheKey].count = res.count;
-              }
-            }
-          })
-          .catch(() => { });
-      }
     } catch (err) {
       console.warn("AdminCompanyList load error:", err);
     } finally {

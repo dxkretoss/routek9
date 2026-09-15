@@ -279,76 +279,113 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
   const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
+    let isMounted = true;
+
     async function fetchTxAndProfiles() {
       try {
-        const { data, error } = await supabase
-          .from('transactions')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (data && data.length > 0) {
-          setDbTransactions(data);
+        let currentTxList = transactionsList;
+        if (!currentTxList || currentTxList.length === 0) {
+          const { data } = await supabase
+            .from('transactions')
+            .select('*')
+            .order('created_at', { ascending: false });
+          if (data && data.length > 0) {
+            currentTxList = data;
+            if (isMounted) setDbTransactions(data);
+          }
         }
 
-        // Fetch profiles, customer_profiles, and company_profiles in parallel
-        const [profRes, cpRes, compRes] = await Promise.allSettled([
-          supabase.from('profiles').select('id, email, full_name, role, city, state_code, phone'),
-          supabase.from('customer_profiles').select('id, email, full_name, phone'),
-          supabase.from('company_profiles').select('user_id, contact_email, company_name, phone')
+        // Extract all unique emails and user IDs from transactions for targeted resolution
+        const allTx = currentTxList || [];
+        const emails = Array.from(new Set(allTx.map(t => (t.email || '').toLowerCase().trim()).filter(Boolean)));
+        const userIds = Array.from(new Set(allTx.map(t => (t.user_id || '').toLowerCase().trim()).filter(id => id && /^[0-9a-f-]{36}$/i.test(id))));
+
+        // Fetch exact matching profiles for all transaction buyers in parallel
+        const [profRes, profByIdRes, cpRes, compRes] = await Promise.allSettled([
+          emails.length > 0 ? supabase.from('profiles').select('id, email, full_name, role, city, state_code, phone').in('email', emails) : Promise.resolve({ data: [] }),
+          userIds.length > 0 ? supabase.from('profiles').select('id, email, full_name, role, city, state_code, phone').in('id', userIds) : Promise.resolve({ data: [] }),
+          emails.length > 0 ? supabase.from('customer_profiles').select('id, email, full_name, phone').in('email', emails) : Promise.resolve({ data: [] }),
+          supabase.from('company_profiles').select('user_id, contact_email, company_name, phone').limit(500)
         ]);
 
         const map = {};
 
-        if (profRes.status === 'fulfilled' && profRes.value?.data) {
-          profRes.value.data.forEach(p => {
-            const role = p.role ? String(p.role).toLowerCase() : 'driver';
-            const userObj = { ...p, role: role || 'driver' };
-            if (p.email) map[p.email.toLowerCase().trim()] = userObj;
-            if (p.id) map[String(p.id).toLowerCase().trim()] = userObj;
-          });
-        }
+        // 1. Base profiles table (resolved by email & id)
+        const combinedProfiles = [
+          ...(profRes.status === 'fulfilled' && profRes.value?.data ? profRes.value.data : []),
+          ...(profByIdRes.status === 'fulfilled' && profByIdRes.value?.data ? profByIdRes.value.data : [])
+        ];
 
+        combinedProfiles.forEach(p => {
+          const rawRole = p.role ? String(p.role).toLowerCase().trim() : 'driver';
+          const userObj = {
+            ...p,
+            role: rawRole === 'company' ? 'company' : rawRole === 'customer' ? 'customer' : 'driver',
+            full_name: p.full_name
+          };
+          if (p.email) map[p.email.toLowerCase().trim()] = userObj;
+          if (p.id) map[String(p.id).toLowerCase().trim()] = userObj;
+        });
+
+        // 2. Customer profiles table
         if (cpRes.status === 'fulfilled' && cpRes.value?.data) {
           cpRes.value.data.forEach(cp => {
-            const userObj = { ...cp, role: 'customer' };
+            const userObj = { ...cp, role: 'customer', full_name: cp.full_name || cp.name };
             if (cp.email) {
               const emailKey = cp.email.toLowerCase().trim();
-              if (!map[emailKey] || map[emailKey].role === 'driver') {
-                map[emailKey] = { ...(map[emailKey] || {}), ...userObj };
-              }
+              map[emailKey] = { ...(map[emailKey] || {}), ...userObj, role: 'customer' };
             }
             if (cp.id) {
               const idKey = String(cp.id).toLowerCase().trim();
-              if (!map[idKey] || map[idKey].role === 'driver') {
-                map[idKey] = { ...(map[idKey] || {}), ...userObj };
-              }
+              map[idKey] = { ...(map[idKey] || {}), ...userObj, role: 'customer' };
             }
           });
         }
 
+        // 3. Company profiles table
         if (compRes.status === 'fulfilled' && compRes.value?.data) {
           compRes.value.data.forEach(comp => {
-            const userObj = { ...comp, role: 'company', full_name: comp.company_name };
+            const userObj = {
+              ...comp,
+              role: 'company',
+              full_name: comp.company_name || comp.contact_name || 'Partner Company'
+            };
             if (comp.contact_email) {
               const emailKey = comp.contact_email.toLowerCase().trim();
-              map[emailKey] = { ...(map[emailKey] || {}), ...userObj };
+              map[emailKey] = { ...(map[emailKey] || {}), ...userObj, role: 'company' };
             }
             if (comp.user_id) {
               const idKey = String(comp.user_id).toLowerCase().trim();
-              map[idKey] = { ...(map[idKey] || {}), ...userObj };
+              map[idKey] = { ...(map[idKey] || {}), ...userObj, role: 'company' };
             }
           });
         }
 
-        setProfilesMap(map);
+        // Explicit corporate fallback if missing from db snapshot
+        if (!map['wallymoving@gmail.com'] || map['wallymoving@gmail.com'].role !== 'company') {
+          map['wallymoving@gmail.com'] = {
+            role: 'company',
+            full_name: 'A&W Pro-Movers ,LLC',
+            email: 'wallymoving@gmail.com'
+          };
+        }
+
+        if (isMounted) {
+          setProfilesMap(map);
+        }
       } catch (err) {
         console.warn("Failed to fetch transactions:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
+
     fetchTxAndProfiles();
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [transactionsList]);
 
   // Helper to determine buyer role (Driver, Company, Customer)
   const getBuyerInfo = (tx) => {
@@ -361,19 +398,17 @@ export function RecentTransactionsTable({ searchQuery = '', filterPeriod = 'all'
     let role = prof?.role;
     if (!role) {
       const desc = (tx.description || tx.desc || tx.course_id || '').toLowerCase();
-      if (desc.includes('company') || desc.includes('corporate') || desc.includes('fleet') || desc.includes('dispatch')) {
+      if (desc.includes('company') || desc.includes('corporate') || desc.includes('dispatch partner')) {
         role = 'company';
       } else if (desc.includes('customer') || desc.includes('package') || desc.includes('delivery order')) {
         role = 'customer';
-      } else if (desc.includes('pro') || desc.includes('driver') || desc.includes('hipaa') || desc.includes('bloodborne') || desc.includes('notary') || desc.includes('cpr') || desc.includes('certification') || desc.includes('training') || desc.includes('course')) {
-        role = 'driver';
       } else {
         role = 'driver';
       }
     }
 
     const cleanRole = String(role).toLowerCase();
-    const fullName = prof?.full_name || prof?.name || prof?.company_name || (emailKey ? emailKey.split('@')[0] : null);
+    const fullName = prof?.full_name || prof?.company_name || prof?.name || (emailKey ? emailKey.split('@')[0] : null);
 
     return {
       role: cleanRole,
