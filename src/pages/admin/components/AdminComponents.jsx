@@ -28,8 +28,6 @@ export function formatPhoneNumber(phone) {
   const raw = String(phone).trim();
   if (!raw) return 'N/A';
 
-  if (raw.startsWith('+')) return raw;
-
   const digits = raw.replace(/\D/g, '');
   if (!digits) return raw;
 
@@ -42,6 +40,7 @@ export function formatPhoneNumber(phone) {
   if (digits.length === 12 && digits.startsWith('91')) {
     return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
   }
+  if (raw.startsWith('+')) return raw;
   return `+${digits}`;
 }
 

@@ -23,11 +23,13 @@ import {
   HeartPulse
 } from 'lucide-react';
 import { supabase, fetchCprNotaryBookings } from '../../lib/supabase';
+import { formatPhoneNumber } from './components/AdminComponents';
 
 export default function AdminCprNotaryBookings() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'confirmed', 'completed', 'cancelled'
   const [serviceTab, setServiceTab] = useState('all'); // 'all', 'cpr', 'notary'
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -158,7 +160,7 @@ export default function AdminCprNotaryBookings() {
 
   // Filter Bookings locally by Service Tab & Search Query
   const filteredBookings = bookings.filter((item) => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = (appliedSearch || '').trim().toLowerCase();
 
     // 1. Service Category Tab Filter ('cpr' vs 'notary' vs 'all')
     let matchesTab = true;
@@ -190,6 +192,7 @@ export default function AdminCprNotaryBookings() {
     if (!isoStr) return 'Aug 11, 2026';
     try {
       const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return String(isoStr);
       return d.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -197,6 +200,24 @@ export default function AdminCprNotaryBookings() {
       });
     } catch {
       return 'Aug 11, 2026';
+    }
+  };
+
+  const formatTime = (isoStr, timeField = null) => {
+    if (timeField && typeof timeField === 'string' && timeField.trim()) {
+      return timeField.trim();
+    }
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return '';
     }
   };
 
@@ -290,15 +311,33 @@ export default function AdminCprNotaryBookings() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search orders by customer name, email, booking ref, address, or service title..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full pl-10 ${searchQuery ? 'pr-10' : 'pr-4'} py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-xs font-medium focus:outline-hidden focus:border-rose-500 transition-all`}
+            placeholder="Search orders & press Enter..."
+            value={searchInput}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSearchInput(val);
+              if (!val.trim()) {
+                setAppliedSearch('');
+                setCurrentPage(1);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                setAppliedSearch(searchInput.trim());
+                setCurrentPage(1);
+              }
+            }}
+            className={`w-full pl-10 ${searchInput ? 'pr-10' : 'pr-4'} py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-xs font-semibold focus:outline-hidden focus:border-rose-500 transition-all`}
           />
-          {searchQuery && (
+          {searchInput && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchInput('');
+                setAppliedSearch('');
+                setCurrentPage(1);
+              }}
               className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100 transition-all"
             >
               <X className="w-4 h-4" />
@@ -394,7 +433,7 @@ export default function AdminCprNotaryBookings() {
                   <th className="px-4 py-4">SERVICE / CLASS TYPE</th>
                   <th className="px-4 py-4">TOTAL AMOUNT</th>
                   <th className="px-4 py-4">STATUS</th>
-                  <th className="px-4 py-4">ORDER DATE</th>
+                  <th className="px-4 py-4">SCHEDULED DATE & TIME</th>
                   <th className="px-4 py-4 text-right">ADMIN ACTIONS</th>
                 </tr>
               </thead>
@@ -403,6 +442,9 @@ export default function AdminCprNotaryBookings() {
                   const custName = ord.customer_name || formatCustomerName(ord.customer_id);
                   const shortCustId = ord.customer_id ? String(ord.customer_id).substring(0, 12) + '...' : '—';
                   const serviceDisplay = ord.service_title || formatServiceLabel(ord.service_type);
+
+                  const scheduledDate = formatDate(ord.scheduled_at || ord.booking_date || ord.created_at);
+                  const scheduledTime = formatTime(ord.scheduled_at || ord.created_at, ord.scheduled_time || ord.booking_time || ord.time_slot || ord.time) || '10:00 AM';
 
                   return (
                     <tr key={ord.id} className="hover:bg-slate-50/60 transition-colors">
@@ -455,9 +497,15 @@ export default function AdminCprNotaryBookings() {
                         {renderStatusBadge(ord.status)}
                       </td>
 
-                      {/* Order Date */}
-                      <td className="px-4 py-3.5 text-slate-500 font-bold whitespace-nowrap">
-                        {formatDate(ord.scheduled_at || ord.created_at)}
+                      {/* Scheduled Date & Time */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="font-extrabold text-slate-900">
+                          {scheduledDate}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1.5 mt-0.5">
+                          <Clock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                          <span>{scheduledTime}</span>
+                        </div>
                       </td>
 
                       {/* Admin Actions Button */}
@@ -545,7 +593,7 @@ export default function AdminCprNotaryBookings() {
               </div>
             </div>
 
-            <div className="space-y-3 bg-slate-50/75 p-4 rounded-2xl border border-slate-200/80 text-xs font-semibold">
+            <div className="space-y-3 bg-slate-50/75 p-4 rounded-2xl border border-slate-200/80 text-xs font-semibold max-h-[450px] overflow-y-auto pr-3">
               <div className="flex justify-between border-b border-slate-200/60 pb-2">
                 <span className="text-slate-500">Status</span>
                 <span>{renderStatusBadge(selectedBooking.status)}</span>
@@ -560,6 +608,13 @@ export default function AdminCprNotaryBookings() {
                 <div className="flex justify-between border-b border-slate-200/60 pb-2">
                   <span className="text-slate-500">Customer Email</span>
                   <span className="font-mono text-rose-600 font-bold">{selectedBooking.customer_email}</span>
+                </div>
+              )}
+
+              {selectedBooking.customer_phone && (
+                <div className="flex justify-between border-b border-slate-200/60 pb-2">
+                  <span className="text-slate-500">Customer Phone</span>
+                  <span className="font-semibold text-slate-800">{formatPhoneNumber(selectedBooking.customer_phone)}</span>
                 </div>
               )}
 
@@ -581,8 +636,14 @@ export default function AdminCprNotaryBookings() {
               </div>
 
               <div className="flex justify-between border-b border-slate-200/60 pb-2">
-                <span className="text-slate-500">Scheduled At</span>
-                <span className="font-bold text-slate-900">{formatDate(selectedBooking.scheduled_at)}</span>
+                <span className="text-slate-500">Scheduled Date & Time</span>
+                <div className="text-right">
+                  <div className="font-extrabold text-slate-900">{formatDate(selectedBooking.scheduled_at || selectedBooking.booking_date || selectedBooking.created_at)}</div>
+                  <div className="text-[11px] text-rose-600 font-bold flex items-center justify-end gap-1 mt-0.5">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{formatTime(selectedBooking.scheduled_at || selectedBooking.created_at, selectedBooking.scheduled_time || selectedBooking.booking_time || selectedBooking.time_slot || selectedBooking.time) || '10:00 AM'}</span>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-between border-b border-slate-200/60 pb-2">
@@ -611,8 +672,8 @@ export default function AdminCprNotaryBookings() {
               </div>
 
               <div className="flex justify-between pt-1 text-[10px] text-slate-400 font-medium">
-                <span>Created: {formatDate(selectedBooking.created_at)}</span>
-                <span>Updated: {formatDate(selectedBooking.updated_at)}</span>
+                <span>Created: {formatDate(selectedBooking.created_at)} {formatTime(selectedBooking.created_at)}</span>
+                <span>Updated: {formatDate(selectedBooking.updated_at)} {formatTime(selectedBooking.updated_at)}</span>
               </div>
             </div>
 
